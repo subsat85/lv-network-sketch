@@ -33,7 +33,7 @@ function App() {
   };
 
   return (
-    <div className="fixed inset-0 w-full bg-gray-50 flex flex-col overflow-hidden touch-manipulation no-select">
+    <div className="fixed inset-0 w-full bg-ios-grouped flex flex-col overflow-hidden touch-manipulation no-select">
       <main className="w-full h-full relative flex flex-col"
         style={{
           paddingTop: "env(safe-area-inset-top)",

@@ -2601,8 +2601,8 @@ export const SketchCanvas: React.FC = () => {
       </svg>
       
       {/* Cable Selection Panel */}
-      <div className="absolute bottom-safe-bottom left-0 right-0 p-2 flex justify-center pointer-events-none">
-        <div className="bg-white/90 backdrop-blur-sm rounded-full shadow-lg border border-gray-200 p-2 flex space-x-2 pointer-events-auto overflow-x-auto max-w-full">
+      <div className={`absolute bottom-safe-bottom left-0 right-0 p-2 flex justify-center pointer-events-none ${elements.some(el => el.type === 'cable') ? '' : 'hidden'}`}>
+        <div className="ui-float !rounded-full px-2 py-1.5 flex gap-2 pointer-events-auto overflow-x-auto no-scrollbar max-w-full">
           {elements.filter(el => el.type === 'cable').map((el) => (
             <button
               key={el.id}
@@ -2611,9 +2611,7 @@ export const SketchCanvas: React.FC = () => {
                 setActiveCableId(el.id);
                 setConnectionStartPoleId(null);
               }}
-              className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${
-                selectedId === el.id ? 'border-blue-500 scale-110' : 'border-transparent hover:scale-105'
-              }`}
+              className={`ui-swatch m-0.5 flex items-center justify-center ${selectedId === el.id ? 'is-active' : ''}`}
               style={{ backgroundColor: el.strokeColor }}
               aria-label={`Select cable ${el.id}`}
             >
@@ -2632,13 +2630,13 @@ export const SketchCanvas: React.FC = () => {
       )}
 
       {editingDistance && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingDistance(null)}>
-          <div className="bg-white rounded-xl p-4 shadow-xl w-64" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold mb-4">Edit Distance</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setEditingDistance(null)}>
+          <div className="bg-white rounded-[14px] p-4 shadow-float w-72 max-w-[calc(100vw-32px)]" onClick={e => e.stopPropagation()}>
+            <h3 className="text-[17px] font-semibold text-ios-label text-center mb-3">Edit Distance</h3>
             <input
               type="number"
               inputMode="decimal"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-4 text-lg"
+              className="ui-field w-full h-11 mb-4 text-[17px]"
               value={editingDistance.value}
               onChange={e => setEditingDistance({ ...editingDistance, value: e.target.value })}
               autoFocus
@@ -2649,15 +2647,15 @@ export const SketchCanvas: React.FC = () => {
                 }
               }}
             />
-            <div className="flex justify-end space-x-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
-                className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+                className="min-h-[44px] rounded-ctl bg-ios-fill text-[17px] text-ios-blue active:bg-ios-fill-strong"
                 onClick={() => setEditingDistance(null)}
               >
                 Cancel
               </button>
               <button
-                className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg"
+                className="min-h-[44px] rounded-ctl bg-ios-blue text-[17px] font-semibold text-white active:bg-ios-blue-pressed"
                 onClick={() => {
                   updateConnectionDistance(editingDistance.key, editingDistance.value || '1');
                   setEditingDistance(null);
