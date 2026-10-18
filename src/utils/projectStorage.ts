@@ -37,7 +37,7 @@ const PROJECTS_STORE_KEY = 'yw_projects';
 // - 'projects_meta': Array of ProjectMetadata
 // - 'project_{id}': ProjectData
 
-const META_KEY = 'projects_meta';
+export const META_KEY = 'projects_meta';
 
 export const getProjectsMeta = async (): Promise<ProjectMetadata[]> => {
   return (await get<ProjectMetadata[]>(META_KEY)) || [];

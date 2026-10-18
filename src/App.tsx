@@ -8,6 +8,7 @@ import { FloatingHistoryControls } from './components/FloatingHistoryControls';
 import { SharePreview } from './components/SharePreview';
 import { PreviewErrorBoundary } from './components/PreviewErrorBoundary';
 import { TransformerInfoModal } from './components/TransformerInfoModal';
+import { AutosaveNotice } from './components/AutosaveNotice';
 import { useDrawingStore } from './store/drawingStore';
 import { TransformerTableElement } from './types/drawing';
 
@@ -55,6 +56,8 @@ function App() {
         </div>
 
         <StylePanel />
+
+        <AutosaveNotice />
 
         <ProjectManager 
           isOpen={showProjectManager} 

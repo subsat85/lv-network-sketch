@@ -229,6 +229,7 @@ export const useDrawingStore = create<DrawingState>((set, get) => ({
     redoStack: [],
     elements: [], 
     connectionDistances: {},
+    connectionLabelOffsets: {},
     selectedId: null, 
     activeCableId: null 
   })),
