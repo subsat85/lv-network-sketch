@@ -38,8 +38,9 @@ const consumer = (id: string, poleId: string): ConsumerElement =>
   ({ id, type: 'consumer', poleId, x: 10, y: 10, strokeColor: '#000', fillColor: 'transparent', strokeWidth: 2 } as unknown as ConsumerElement);
 
 // Builds a drawing through the store's own actions (as the UI does).
+// each call is a separate user action (its own undo step)
 const drawNetwork = () => {
-  const s = () => useDrawingStore.getState();
+  const s = () => { const st = useDrawingStore.getState(); st.commitHistory(); return st; };
   s().addElement(pole('A', 0, 0));
   s().addElement(pole('B', 200, 0));
   s().addElement(pole('C', 400, 0));
@@ -53,6 +54,7 @@ const drawNetwork = () => {
   s().setPoleSizeScale(1.4);
   s().setConsumerVariant('square');
   s().setStyle({ strokeColor: '#123456' });
+  s();
 };
 
 const persisted = () => {

@@ -192,6 +192,7 @@ describe('store.deleteElement for poles', () => {
     const s = useDrawingStore.getState();
     const res = s.deleteElement('pB');
     expect(res.ok).toBe(true);
+    useDrawingStore.getState().commitHistory(); // end of the user action
     let st = useDrawingStore.getState();
     expect(st.history).toHaveLength(1);
     expect(st.selectedId).toBeNull();
@@ -221,14 +222,20 @@ describe('store.deleteElement for poles', () => {
   });
 
   it('undo of an unrelated later step does not touch distances', () => {
+    // three separate user actions
     useDrawingStore.getState().deleteElement('pB');
+    useDrawingStore.getState().commitHistory();
     useDrawingStore.getState().addElement(pole('pZ', 500, 500));
+    useDrawingStore.getState().commitHistory();
     useDrawingStore.getState().updateConnectionDistance(pairKey('pC', 'pE'), '99');
+    useDrawingStore.getState().commitHistory();
+    useDrawingStore.getState().undo(); // undoes the distance edit
+    expect(useDrawingStore.getState().connectionDistances[pairKey('pC', 'pE')]).toBe('15');
     useDrawingStore.getState().undo(); // removes pZ only
     const st = useDrawingStore.getState();
     expect(byId(st.elements, 'pZ')).toBeUndefined();
     expect(byId(st.elements, 'pB')).toBeUndefined();
-    expect(st.connectionDistances[pairKey('pC', 'pE')]).toBe('99');
+    expect(st.connectionDistances[pairKey('pC', 'pE')]).toBe('15');
   });
 
   it('non-pole elements are still deleted as before', () => {

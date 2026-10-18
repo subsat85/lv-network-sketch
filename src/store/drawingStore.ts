@@ -1,20 +1,101 @@
 import { create } from 'zustand';
 import { DrawingElement, ToolType, DrawingStyle } from '../types/drawing';
-import { deletePoleCascade, applyPatch, MapPatch, DeletePoleFailure } from '../utils/deletePole';
+import { deletePoleCascade, DeletePoleFailure } from '../utils/deletePole';
 
-// Undo/redo for "delete pole" must also restore distances and label offsets,
-// which are not part of the elements history. The delete step registers what it
-// changed in those maps, keyed by the exact history snapshot arrays it created:
-// popping the pre-delete snapshot (undo) applies `before`, popping the
-// post-delete snapshot from the redo stack applies `after`.
-type MapsPatch = { distances: MapPatch; labelOffsets: MapPatch };
-const undoPatches = new WeakMap<DrawingElement[], MapsPatch>();
-const redoPatches = new WeakMap<DrawingElement[], MapsPatch>();
+// ---------------------------------------------------------------------------
+// Undo / redo
+//
+// A history entry is a snapshot of the whole drawing document: elements plus
+// the per-pole-pair distances and label offsets. Snapshots share unchanged
+// objects with the live state (all updates are immutable), so they are cheap.
+//
+// One logical operation = one entry. Every change to the document opens a
+// "pending step" that remembers the document as it was before; the step is
+// committed when the operation is over:
+//   - at the end of a pointer gesture (all pointers lifted) — so a drag, a
+//     freehand stroke turned into a shape, or a label drag is one step;
+//   - otherwise right after the current task, so several store calls made by
+//     one handler (e.g. split a cable + set two distances) are one step;
+//   - before undo / redo, and when saveHistory() marks a boundary.
+// A step whose document ends up equal to where it started (e.g. selecting an
+// element without changing it) is dropped. The history keeps the last
+// HISTORY_LIMIT steps; the oldest are discarded first.
+// ---------------------------------------------------------------------------
+
+export interface DocSnapshot {
+  elements: DrawingElement[];
+  connectionDistances: Record<string, string>;
+  connectionLabelOffsets: Record<string, { x: number, y: number }>;
+}
+export const HISTORY_LIMIT = 100;
+
+const docOf = (s: DocSnapshot): DocSnapshot => ({
+  elements: s.elements,
+  connectionDistances: s.connectionDistances,
+  connectionLabelOffsets: s.connectionLabelOffsets,
+});
+
+const sameRecord = <T,>(a: Record<string, T>, b: Record<string, T>, eq: (x: T, y: T) => boolean) => {
+  if (a === b) return true;
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && eq(a[k], b[k]));
+};
+export const docEqual = (a: DocSnapshot, b: DocSnapshot) => {
+  if (a.elements !== b.elements) {
+    if (a.elements.length !== b.elements.length) return false;
+    for (let i = 0; i < a.elements.length; i++) {
+      const x = a.elements[i], y = b.elements[i];
+      if (x !== y && JSON.stringify(x) !== JSON.stringify(y)) return false;
+    }
+  }
+  return sameRecord(a.connectionDistances, b.connectionDistances, (x, y) => x === y)
+    && sameRecord(a.connectionLabelOffsets, b.connectionLabelOffsets, (x, y) => x === y || (x.x === y.x && x.y === y.y));
+};
+
+const pushLimited = (list: DocSnapshot[], item: DocSnapshot) => {
+  const next = [...list, item];
+  return next.length > HISTORY_LIMIT ? next.slice(next.length - HISTORY_LIMIT) : next;
+};
+
+// pointer-gesture tracking (installed on window by the app; called directly in tests)
+const activePointers = new Set<number>();
+let commitTimer: ReturnType<typeof setTimeout> | null = null;
+const scheduleCommit = () => {
+  if (commitTimer) clearTimeout(commitTimer);
+  commitTimer = setTimeout(() => {
+    commitTimer = null;
+    if (activePointers.size === 0) useDrawingStore.getState().commitHistory();
+  }, 0);
+};
+export const historyGestureStart = (pointerId: number) => { activePointers.add(pointerId); };
+export const historyGestureEnd = (pointerId?: number) => {
+  if (pointerId === undefined) activePointers.clear(); else activePointers.delete(pointerId);
+  if (activePointers.size === 0) scheduleCommit();
+};
+export const installHistoryGestureTracking = (target: Window = window) => {
+  // capture phase: runs even when a canvas handler stops propagation
+  const down = (e: PointerEvent) => historyGestureStart(e.pointerId);
+  const up = (e: PointerEvent) => historyGestureEnd(e.pointerId);
+  const reset = () => historyGestureEnd();
+  target.addEventListener('pointerdown', down, true);
+  target.addEventListener('pointerup', up, true);
+  target.addEventListener('pointercancel', up, true);
+  target.addEventListener('blur', reset);
+  return () => {
+    target.removeEventListener('pointerdown', down, true);
+    target.removeEventListener('pointerup', up, true);
+    target.removeEventListener('pointercancel', up, true);
+    target.removeEventListener('blur', reset);
+  };
+};
 
 interface DrawingState {
   elements: DrawingElement[];
-  history: DrawingElement[][];
-  redoStack: DrawingElement[][];
+  history: DocSnapshot[];
+  redoStack: DocSnapshot[];
+  // document as it was before the operation in progress (not yet committed)
+  pendingStep: DocSnapshot | null;
   tool: ToolType;
   style: DrawingStyle;
   selectedId: string | null;
@@ -33,6 +114,7 @@ interface DrawingState {
   showDistanceLabels: boolean;
   
   saveHistory: () => void;
+  commitHistory: () => void;
   setTool: (tool: ToolType) => void;
   setProjectInfo: (id: string | null, name: string | null) => void;
   setAttachedImage: (image: string | null) => void;
@@ -59,10 +141,21 @@ interface DrawingState {
   loadProject: (data: { elements: DrawingElement[], style: DrawingStyle, poleSizeScale: number, consumerVariant: 'circle' | 'square', connectionDistances?: Record<string, string>, connectionLabelOffsets?: Record<string, { x: number, y: number }> }) => void;
 }
 
-export const useDrawingStore = create<DrawingState>((set, get) => ({
+export const useDrawingStore = create<DrawingState>((set, get) => {
+  // Apply a change to the document, opening a pending undo step if none is open.
+  const mutate = (changes: Partial<DrawingState> | ((s: DrawingState) => Partial<DrawingState>)) => {
+    const s = get();
+    const patch = typeof changes === 'function' ? changes(s) : changes;
+    if (s.pendingStep) { set(patch); return; }
+    set({ ...patch, pendingStep: docOf(s) });
+    scheduleCommit();
+  };
+
+  return {
   elements: [],
   history: [],
   redoStack: [],
+  pendingStep: null,
   tool: 'select',
   style: {
     strokeColor: '#000000',
@@ -100,6 +193,7 @@ export const useDrawingStore = create<DrawingState>((set, get) => ({
     connectionLabelOffsets: data.connectionLabelOffsets || {},
     history: [], // Clear history on load
     redoStack: [], // Clear redo stack on load
+    pendingStep: null,
     selectedId: null,
     activeSymbolId: null,
     activeCableId: null,
@@ -119,33 +213,22 @@ export const useDrawingStore = create<DrawingState>((set, get) => ({
   setShowDistanceLabels: (show) => set({ showDistanceLabels: show }),
   setStyle: (updates) => set((state) => ({ style: { ...state.style, ...updates } })),
   
-  addElement: (element) => set((state) => ({ 
-    history: [...state.history, state.elements],
-    redoStack: [],
+  addElement: (element) => mutate((state) => ({ 
     elements: [...state.elements, element] 
   })),
   
-  updateElement: (id, updates) => set((state) => {
-    return {
-      elements: state.elements.map((el) => (el.id === id ? { ...el, ...updates } : el)),
-    };
-  }),
+  updateElement: (id, updates) => mutate((state) => ({
+    elements: state.elements.map((el) => (el.id === id ? { ...el, ...updates } as DrawingElement : el)),
+  })),
 
-  updateElements: (updates) => set((state) => {
-    const newElements = state.elements.map((el) => {
+  updateElements: (updates) => mutate((state) => ({
+    elements: state.elements.map((el) => {
       const update = updates.find(u => u.id === el.id);
-      return update ? { ...el, ...update.changes } : el;
-    });
-    return {
-      elements: newElements,
-      history: [...state.history, state.elements],
-      redoStack: [],
-    };
-  }),
+      return update ? { ...el, ...update.changes } as DrawingElement : el;
+    }),
+  })),
 
-  updateSymbolModifiers: (id, modifiers) => set((state) => ({
-    history: [...state.history, state.elements],
-    redoStack: [],
+  updateSymbolModifiers: (id, modifiers) => mutate((state) => ({
     elements: state.elements.map((el) => {
       if (el.id === id && el.type === 'symbol') {
         const currentModifiers = el.modifiers || {};
@@ -175,18 +258,24 @@ export const useDrawingStore = create<DrawingState>((set, get) => ({
     }),
   })),
 
-  updateConnectionDistance: (key, distance) => set((state) => ({
+  updateConnectionDistance: (key, distance) => mutate((state) => ({
     connectionDistances: { ...state.connectionDistances, [key]: distance }
   })),
 
-  updateConnectionLabelOffset: (key, offset) => set((state) => ({
+  updateConnectionLabelOffset: (key, offset) => mutate((state) => ({
     connectionLabelOffsets: { ...state.connectionLabelOffsets, [key]: offset }
   })),
 
-  saveHistory: () => set((state) => ({ 
-    history: [...state.history, state.elements],
-    redoStack: [] 
-  })),
+  // Close the operation in progress (if it changed the document) as one undo step.
+  commitHistory: () => {
+    const s = get();
+    if (!s.pendingStep) return;
+    if (docEqual(s.pendingStep, docOf(s))) { set({ pendingStep: null }); return; }
+    set({ history: pushLimited(s.history, s.pendingStep), redoStack: [], pendingStep: null });
+  },
+
+  // Kept for existing callers: marks a step boundary before a new operation.
+  saveHistory: () => get().commitHistory(),
 
   deleteElement: (id) => {
     const state = get();
@@ -196,12 +285,8 @@ export const useDrawingStore = create<DrawingState>((set, get) => ({
       // cable through it, as one atomic, single-undo-step change.
       const res = deletePoleCascade(state.elements, state.connectionDistances, state.connectionLabelOffsets, id);
       if (!res.ok) return { ok: false, reason: (res as DeletePoleFailure).reason };
-      const patch: MapsPatch = { distances: res.distancePatch, labelOffsets: res.labelOffsetPatch };
-      undoPatches.set(state.elements, patch);
       const gone = new Set(res.removedElementIds);
-      set({
-        history: [...state.history, state.elements],
-        redoStack: [],
+      mutate({
         elements: res.elements,
         connectionDistances: res.connectionDistances,
         connectionLabelOffsets: res.connectionLabelOffsets,
@@ -210,9 +295,7 @@ export const useDrawingStore = create<DrawingState>((set, get) => ({
       });
       return { ok: true };
     }
-    set({
-      history: [...state.history, state.elements],
-      redoStack: [],
+    mutate({
       elements: state.elements.filter((el) => el.id !== id),
       selectedId: state.selectedId === id ? null : state.selectedId,
     });
@@ -224,58 +307,40 @@ export const useDrawingStore = create<DrawingState>((set, get) => ({
   setActiveCableId: (id) => set({ activeCableId: id }),
   setActiveShapeType: (type) => set({ activeShapeType: type, tool: 'shape', selectedId: null, activeCableId: null }),
   
-  clearCanvas: () => set((state) => ({ 
-    history: [...state.history, state.elements],
-    redoStack: [],
-    elements: [], 
+  clearCanvas: () => mutate({
+    elements: [],
     connectionDistances: {},
     connectionLabelOffsets: {},
-    selectedId: null, 
-    activeCableId: null 
-  })),
+    selectedId: null,
+    activeCableId: null,
+  }),
 
-  undo: () => set((state) => {
-    if (state.history.length === 0) return {};
+  undo: () => {
+    get().commitHistory();
+    const state = get();
+    if (state.history.length === 0) return;
     const previous = state.history[state.history.length - 1];
-    const newHistory = state.history.slice(0, -1);
-    const patch = undoPatches.get(previous);
-    if (patch) {
-      // hand the patch over to the redo side (whatever array is current now)
-      undoPatches.delete(previous);
-      redoPatches.set(state.elements, patch);
-    }
-    return { 
-      ...(patch ? {
-        connectionDistances: applyPatch(state.connectionDistances, patch.distances, 'before'),
-        connectionLabelOffsets: applyPatch(state.connectionLabelOffsets, patch.labelOffsets, 'before'),
-      } : {}),
-      elements: previous, 
-      history: newHistory, 
-      redoStack: [state.elements, ...state.redoStack],
-      selectedId: null, 
-      activeCableId: null 
-    };
-  }),
-
-  redo: () => set((state) => {
-    if (state.redoStack.length === 0) return {};
-    const next = state.redoStack[0];
-    const newRedoStack = state.redoStack.slice(1);
-    const patch = redoPatches.get(next);
-    if (patch) {
-      redoPatches.delete(next);
-      undoPatches.set(state.elements, patch);
-    }
-    return {
-      ...(patch ? {
-        connectionDistances: applyPatch(state.connectionDistances, patch.distances, 'after'),
-        connectionLabelOffsets: applyPatch(state.connectionLabelOffsets, patch.labelOffsets, 'after'),
-      } : {}),
-      elements: next,
-      history: [...state.history, state.elements],
-      redoStack: newRedoStack,
+    set({
+      ...docOf(previous),
+      history: state.history.slice(0, -1),
+      redoStack: [docOf(state), ...state.redoStack],
       selectedId: null,
-      activeCableId: null
-    };
-  }),
-}));
+      activeCableId: null,
+    });
+  },
+
+  redo: () => {
+    get().commitHistory();
+    const state = get();
+    if (state.redoStack.length === 0) return;
+    const next = state.redoStack[0];
+    set({
+      ...docOf(next),
+      history: pushLimited(state.history, docOf(state)),
+      redoStack: state.redoStack.slice(1),
+      selectedId: null,
+      activeCableId: null,
+    });
+  },
+  };
+});

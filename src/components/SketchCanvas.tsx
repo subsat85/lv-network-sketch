@@ -576,8 +576,11 @@ export const SketchCanvas: React.FC = () => {
       
       const el = elements.find(e => e.id === selectedId);
       if (el) {
-        let newX = el.x + dx;
-        let newY = el.y + dy;
+        // auto-placed consumer: start from where it is drawn and pin it there
+        const autoConsumer = el.type === 'consumer' && !(el as ConsumerElement).hasManualPosition;
+        const base = autoConsumer ? consumerAutoPosition(el as ConsumerElement) : { x: el.x, y: el.y };
+        let newX = base.x + dx;
+        let newY = base.y + dy;
 
         // Snap if it's a symbol
         if (el.type === 'symbol') {
@@ -597,7 +600,7 @@ export const SketchCanvas: React.FC = () => {
              controlY: arc.controlY + dy
            });
         } else {
-           updateElement(selectedId, { x: newX, y: newY });
+           updateElement(selectedId, autoConsumer ? { x: newX, y: newY, hasManualPosition: true } : { x: newX, y: newY });
         }
         setDragStart(coords); 
       }
@@ -995,32 +998,28 @@ export const SketchCanvas: React.FC = () => {
     (e.target as Element).setPointerCapture(e.pointerId);
   };
 
+  // Where an auto-placed consumer is drawn (same formula the renderer uses).
+  const consumerAutoPosition = (consumer: ConsumerElement) => {
+    const consumersOnPole = elements.filter(e => e.type === 'consumer' && (e as ConsumerElement).poleId === consumer.poleId);
+    const index = consumersOnPole.findIndex(e => e.id === consumer.id);
+    const placement = getSmartPlacement(consumer.poleId);
+    const radius = POLE_RADIUS * poleSizeScale;
+    const consumerRadius = 16 * consumerSizeScale;
+    const margin = 5 * consumerSizeScale;
+    const spacing = consumerRadius * 2 + margin;
+    const startOffset = radius + consumerRadius + margin;
+    const totalOffset = startOffset + index * spacing;
+    return { x: placement.x + placement.dx * totalOffset, y: placement.y + placement.dy * totalOffset };
+  };
+
   const handleElementPointerDown = (e: React.PointerEvent, id: string) => {
     if (pointersRef.current.size > 1) return;
 
     if (tool === 'select') {
       e.stopPropagation(); 
-      saveHistory(); // Save before drag
-      
-      // If consumer and not manual, set initial manual position to current smart position
-      const el = elements.find(e => e.id === id);
-      if (el && el.type === 'consumer' && !(el as ConsumerElement).hasManualPosition) {
-         const consumer = el as ConsumerElement;
-         const consumersOnPole = elements.filter(e => e.type === 'consumer' && (e as ConsumerElement).poleId === consumer.poleId);
-         const index = consumersOnPole.findIndex(e => e.id === consumer.id);
-         const placement = getSmartPlacement(consumer.poleId);
-         const radius = POLE_RADIUS * poleSizeScale;
-         const consumerRadius = 16 * consumerSizeScale;
-         const margin = 5 * consumerSizeScale;
-         const spacing = consumerRadius * 2 + margin;
-         const startOffset = radius + consumerRadius + margin;
-         const stackOffset = index * spacing;
-         const totalOffset = startOffset + stackOffset;
-         const cx = placement.x + placement.dx * totalOffset;
-         const cy = placement.y + placement.dy * totalOffset;
-         
-         updateElement(id, { x: cx, y: cy, hasManualPosition: true });
-      }
+      saveHistory(); // step boundary before a possible drag
+      // (an auto-placed consumer gets its manual position on the first drag move,
+      // so selecting it without moving does not change the drawing)
 
       setSelectedId(id);
       setIsDragging(true);
