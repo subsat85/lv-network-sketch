@@ -6,6 +6,31 @@ export default {
   ],
   theme: {
     extend: {
+      // iOS-inspired design tokens (UI chrome only — never used on drawing elements)
+      colors: {
+        ios: {
+          blue: '#007AFF',
+          'blue-pressed': '#0062CC',
+          red: '#FF3B30',
+          green: '#34C759',
+          label: '#1C1C1E',
+          secondary: '#6B6B70',
+          tertiary: '#AEAEB2',
+          separator: 'rgba(60, 60, 67, 0.16)',
+          fill: 'rgba(118, 118, 128, 0.12)',
+          'fill-strong': 'rgba(118, 118, 128, 0.20)',
+          grouped: '#F2F2F7',
+        },
+      },
+      borderRadius: {
+        ctl: '10px',
+        panel: '16px',
+      },
+      boxShadow: {
+        float: '0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 20px rgba(0, 0, 0, 0.08)',
+        sheet: '0 -1px 0 rgba(60, 60, 67, 0.10), 0 -6px 20px rgba(0, 0, 0, 0.05)',
+        segment: '0 1px 2px rgba(0, 0, 0, 0.10), 0 1px 1px rgba(0, 0, 0, 0.04)',
+      },
       // Mobile-first screen sizes
       screens: {
         'mobile': '375px', // Standard mobile (iPhone)

@@ -50,6 +50,144 @@
   }
 }
 
+/* ------------------------------------------------------------------
+   UI design system (iOS-inspired). Applies to app chrome only:
+   toolbars, panels, menus. Drawing elements inside the SVG canvas are
+   never styled by these classes.
+   ------------------------------------------------------------------ */
+@layer components {
+  /* Square icon button — toolbars, rails, floating controls (44×44) */
+  .ui-icon-btn {
+    @apply relative inline-flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-ctl text-ios-label
+           transition-[background-color,color,transform,box-shadow] duration-150 ease-out
+           active:scale-[0.92] active:bg-ios-fill-strong
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue/60
+           disabled:pointer-events-none disabled:text-ios-tertiary;
+    -webkit-tap-highlight-color: transparent;
+  }
+  @media (hover: hover) {
+    .ui-icon-btn:hover:not(.is-active):not(:disabled) {
+      @apply bg-ios-fill;
+    }
+  }
+  /* Selected tool: tinted fill + accent glyph */
+  .ui-icon-btn.is-active {
+    @apply bg-ios-blue/[0.12] text-ios-blue;
+  }
+  /* Symbol buttons keep their own black glyphs; show selection with a ring too */
+  .ui-icon-btn.is-active.is-symbol {
+    @apply ring-[1.5px] ring-inset ring-ios-blue;
+  }
+  .ui-icon-btn.is-destructive:not(:disabled) {
+    @apply text-ios-red;
+  }
+  .ui-icon-btn.is-confirm {
+    @apply bg-ios-green/[0.14] text-[#248A3D];
+  }
+
+  /* Floating, lightweight surfaces (rail, floating controls, popovers) */
+  .ui-float {
+    @apply rounded-panel border border-ios-separator bg-white/95 shadow-float;
+  }
+
+  /* Hairline group separators */
+  .ui-sep-v {
+    @apply mx-1 h-6 w-px flex-shrink-0 bg-ios-separator;
+  }
+  .ui-sep-h {
+    @apply my-1 h-px w-7 flex-shrink-0 bg-ios-separator;
+  }
+
+  /* Text field (iOS search-field look) */
+  .ui-field {
+    @apply h-9 rounded-ctl border border-transparent bg-ios-fill px-3 text-[15px] text-ios-label placeholder:text-ios-tertiary
+           transition-colors focus:border-ios-blue/40 focus:bg-white focus:outline-none focus:ring-2 focus:ring-ios-blue/25;
+  }
+
+  /* Properties sheet rows */
+  .ui-row {
+    @apply flex min-h-[44px] items-center justify-between gap-3;
+  }
+  .ui-row-label {
+    @apply text-[15px] font-normal text-ios-label;
+  }
+  .ui-row-value {
+    @apply min-w-[3rem] text-right text-[15px] tabular-nums text-ios-secondary;
+  }
+
+  /* Stepper (− | +) */
+  .ui-stepper {
+    @apply inline-flex h-8 items-center overflow-hidden rounded-[9px] bg-ios-fill;
+  }
+  .ui-stepper-btn {
+    @apply inline-flex h-8 w-11 items-center justify-center text-ios-label transition-colors active:bg-ios-fill-strong
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ios-blue/60;
+  }
+  .ui-stepper-div {
+    @apply h-4 w-px bg-ios-separator;
+  }
+
+  /* Segmented control */
+  .ui-segment {
+    @apply inline-flex rounded-[9px] bg-ios-fill p-[2px];
+  }
+  .ui-segment-item {
+    @apply min-h-[28px] rounded-[7px] px-3 text-[13px] font-medium text-ios-label transition-[background-color,box-shadow] duration-150
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue/60;
+  }
+  .ui-segment-item.is-active {
+    @apply bg-white shadow-segment;
+  }
+
+  /* Switch */
+  .ui-switch {
+    @apply relative inline-flex h-[31px] w-[51px] flex-shrink-0 items-center rounded-full bg-ios-fill-strong transition-colors duration-200
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue/60;
+  }
+  .ui-switch[aria-checked='true'] {
+    @apply bg-ios-green;
+  }
+  .ui-switch-knob {
+    @apply absolute left-[2px] h-[27px] w-[27px] rounded-full bg-white shadow-segment transition-transform duration-200 ease-out;
+  }
+  .ui-switch[aria-checked='true'] .ui-switch-knob {
+    @apply translate-x-[20px];
+  }
+
+  /* Colour swatch */
+  .ui-swatch {
+    @apply h-[30px] w-[30px] flex-shrink-0 rounded-full ring-1 ring-inset ring-black/10 transition-[box-shadow,transform] duration-150 active:scale-90
+           focus:outline-none;
+  }
+  .ui-swatch.is-active {
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px theme('colors.ios.blue');
+  }
+
+  /* Menu / popover items */
+  .ui-menu-item {
+    @apply flex min-h-[44px] w-full items-center justify-between gap-3 px-4 text-left text-[15px] text-ios-label
+           transition-colors active:bg-ios-fill
+           focus:outline-none focus-visible:bg-ios-fill;
+  }
+  @media (hover: hover) {
+    .ui-menu-item:hover {
+      @apply bg-ios-fill;
+    }
+  }
+
+  /* Tinted secondary action */
+  .ui-tinted-btn {
+    @apply inline-flex min-h-[36px] w-full items-center justify-center rounded-ctl bg-ios-blue/[0.10] px-4 text-[15px] font-medium text-ios-blue
+           transition-colors active:bg-ios-blue/[0.18] focus:outline-none focus-visible:ring-2 focus-visible:ring-ios-blue/60;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-icon-btn, .ui-switch, .ui-switch-knob, .ui-swatch, .ui-segment-item, .ui-stepper-btn {
+    transition: none !important;
+  }
+}
+
 @layer utilities {
   .no-scrollbar::-webkit-scrollbar {
     display: none;
