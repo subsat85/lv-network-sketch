@@ -9,7 +9,8 @@ import {
   ProjectMetadata, 
   Project 
 } from '../utils/projectStorage';
-import { serializeProject, deserializeProject } from '../utils/projectSerialization';
+import { serializeProject } from '../utils/projectSerialization';
+import { planImport, applyImport, ImportPlan, ImportChoice, copyName } from '../utils/projectImport';
 import { saveFile, openFile } from '../utils/filePickers';
 
 interface ProjectManagerProps {
@@ -22,6 +23,9 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
   const [view, setView] = useState<'list' | 'save'>('list');
   const [projectName, setProjectName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [pendingImport, setPendingImport] = useState<ImportPlan | null>(null);
+  const [confirmReplace, setConfirmReplace] = useState(false);
 
   const { 
     elements, 
@@ -41,6 +45,9 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
 
   useEffect(() => {
     if (isOpen) {
+      setImportError(null);
+      setPendingImport(null);
+      setConfirmReplace(false);
       refreshProjects();
       if (currentProjectName) {
         setProjectName(currentProjectName);
@@ -181,44 +188,53 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
     }
   };
 
-  const handleImport = async () => {
+  const finishImport = async (plan: ImportPlan, choice: ImportChoice) => {
+    setIsLoading(true);
     try {
-      const json = await openFile('.json,application/json');
-      if (!json) return; // Cancelled
-
-      const data = deserializeProject(json);
-      
-      if (elements.length > 0 && !confirm('Importing will replace the current project. Continue?')) {
-        return;
-      }
-
-      // Atomic replace
-      loadProjectToStore({
-        elements: data.elements,
-        style: data.style,
-        poleSizeScale: data.poleSizeScale,
-        consumerVariant: data.consumerVariant,
-        connectionDistances: data.connectionDistances,
-        connectionLabelOffsets: data.connectionLabelOffsets,
-        distanceTextScale: data.distanceTextScale,
-        consumerSizeScale: data.consumerSizeScale
-      } as any);
-      
-      // Update metadata if present
-      if (data.metadata) {
-        setProjectInfo(data.metadata.id, data.metadata.name);
-        setProjectName(data.metadata.name || '');
-      } else {
-        setProjectInfo(null, 'Imported Project');
-        setProjectName('Imported Project');
-      }
-      
+      const res = await applyImport(plan, choice);
+      if (!res.ok) { setImportError((res as { message: string }).message); return; }
+      setPendingImport(null);
+      setConfirmReplace(false);
+      if (res.status === 'cancelled') return;
+      setImportError(null);
+      setProjectName(res.projectName);
+      await refreshProjects();
       onClose();
-    } catch (error) {
-      console.error('Import failed', error);
-      alert('Failed to import project: ' + (error as Error).message);
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  const handleImport = async () => {
+    setImportError(null);
+    let json: string | null;
+    try {
+      json = await openFile('.json,application/json');
+    } catch (error) {
+      console.error('Import failed', error);
+      setImportError('تعذّر قراءة الملف. لم يتغيّر أي شيء.');
+      return;
+    }
+    if (!json) return; // Cancelled
+
+    // Validate the whole file before touching the canvas or storage.
+    const planned = await planImport(json);
+    if (!planned.ok) { setImportError((planned as { message: string }).message); return; }
+    const plan = planned.plan;
+
+    if (plan.conflict) {
+      // A saved project has the same id: let the user choose (replace / copy / cancel).
+      setConfirmReplace(false);
+      setPendingImport(plan);
+      return;
+    }
+    if (elements.length > 0 && !confirm('Importing will replace the current drawing on the canvas. Continue?')) {
+      return;
+    }
+    await finishImport(plan, 'open');
+  };
+
+  const fmt = (t?: number) => (t ? new Date(t).toLocaleString() : '—');
 
   if (!isOpen) return null;
 
@@ -233,7 +249,39 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
         </div>
 
         <div className="p-4 flex-1 overflow-y-auto">
-          {view === 'list' ? (
+          {importError && (
+            <div role="alert" dir="rtl" className="mb-3 whitespace-pre-line rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {importError}
+            </div>
+          )}
+          {pendingImport && pendingImport.conflict ? (
+            <div className="space-y-3" dir="rtl" data-testid="import-conflict">
+              <h3 className="font-semibold text-gray-900">يوجد مشروع محفوظ بنفس المعرّف</h3>
+              <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700 space-y-1">
+                <div>المشروع المحفوظ: <bdi className="font-medium">{pendingImport.conflict.name}</bdi> — آخر حفظ {fmt(pendingImport.conflict.updatedAt)}</div>
+                <div>الملف المستورد: <bdi className="font-medium">{pendingImport.name}</bdi> — تاريخ التصدير {fmt(pendingImport.data.metadata?.exportedAt)}</div>
+                {pendingImport.conflict.updatedAt > (pendingImport.data.metadata?.exportedAt || 0) && (
+                  <div className="font-medium text-red-600">تنبيه: المشروع المحفوظ أحدث من الملف.</div>
+                )}
+                <div className="text-gray-500">أي خيار غير الإلغاء سيستبدل الرسم الحالي على الشاشة.</div>
+              </div>
+              {confirmReplace ? (
+                <div className="space-y-2 rounded-lg border border-red-200 bg-red-50 p-3">
+                  <p className="text-sm text-red-700">سيُحذف محتوى المشروع المحفوظ «<bdi>{pendingImport.conflict.name}</bdi>» ويُستبدل بمحتوى الملف. لا يمكن التراجع عن ذلك.</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => finishImport(pendingImport, 'replace')} disabled={isLoading} className="flex-1 p-2 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-50">تأكيد الاستبدال</button>
+                    <button onClick={() => setConfirmReplace(false)} disabled={isLoading} className="flex-1 p-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200">رجوع</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid gap-2">
+                  <button onClick={() => setConfirmReplace(true)} disabled={isLoading} className="p-3 rounded-lg bg-red-50 text-red-600 hover:bg-red-100">استبدال المشروع المحفوظ…</button>
+                  <button onClick={() => finishImport(pendingImport, 'copy')} disabled={isLoading} className="p-3 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100">حفظ كنسخة جديدة: <bdi>{copyName(pendingImport.name)}</bdi></button>
+                  <button onClick={() => finishImport(pendingImport, 'cancel')} disabled={isLoading} className="p-3 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200">إلغاء</button>
+                </div>
+              )}
+            </div>
+          ) : view === 'list' ? (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2">
                 <button

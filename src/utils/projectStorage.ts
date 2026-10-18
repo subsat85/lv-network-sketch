@@ -1,4 +1,4 @@
-import { get, set, del, keys, many } from 'idb-keyval';
+import { get, set, del, setMany } from 'idb-keyval';
 import { DrawingElement, DrawingStyle } from '../types/drawing';
 
 export interface ProjectData {
@@ -65,8 +65,12 @@ export const saveProject = async (project: Project): Promise<void> => {
   // Sort by updatedAt desc
   newMeta.sort((a, b) => b.updatedAt - a.updatedAt);
 
-  await set(META_KEY, newMeta);
-  await set(`project_${project.id}`, project.data);
+  // One IndexedDB transaction: either both the list entry and the data are
+  // written, or neither is (no half-saved project if the write fails).
+  await setMany([
+    [META_KEY, newMeta],
+    [`project_${project.id}`, project.data],
+  ]);
 };
 
 export const loadProject = async (id: string): Promise<Project | null> => {
