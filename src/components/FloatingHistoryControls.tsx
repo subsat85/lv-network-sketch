@@ -2,14 +2,15 @@ import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Undo2, Redo2, History, GripHorizontal, Minimize2, Pencil, Square, Circle, Triangle, ArrowRight, Compass, Spline, Shapes } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import { ShapeType } from '../types/drawing';
+import { ICON_MD } from './ui/icons';
 
 const SHAPES: { id: ShapeType; icon: React.ReactNode }[] = [
-  { id: 'rectangle', icon: <Square size={18} /> },
-  { id: 'circle', icon: <Circle size={18} /> },
-  { id: 'triangle', icon: <Triangle size={18} /> },
-  { id: 'arrow', icon: <ArrowRight size={18} /> },
-  { id: 'compass', icon: <Compass size={18} /> },
-  { id: 'curved_arrow', icon: <Spline size={18} /> },
+  { id: 'rectangle', icon: <Square {...ICON_MD} /> },
+  { id: 'circle', icon: <Circle {...ICON_MD} /> },
+  { id: 'triangle', icon: <Triangle {...ICON_MD} /> },
+  { id: 'arrow', icon: <ArrowRight {...ICON_MD} /> },
+  { id: 'compass', icon: <Compass {...ICON_MD} /> },
+  { id: 'curved_arrow', icon: <Spline {...ICON_MD} /> },
 ];
 
 export const FloatingHistoryControls: React.FC = () => {
@@ -89,17 +90,18 @@ export const FloatingHistoryControls: React.FC = () => {
       <div
         ref={containerRef}
         style={{ transform: `translate(${position.x}px, ${position.y}px)`, touchAction: 'none' }}
-        className="fixed top-0 left-0 z-50 shadow-lg rounded-full bg-white border border-gray-200 cursor-move"
+        className="fixed top-0 left-0 z-50 ui-float !rounded-full p-0.5 cursor-move"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
       >
         <button
           onClick={() => setIsExpanded(true)}
-          className="p-3 text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+          className="ui-icon-btn !rounded-full text-ios-blue"
           aria-label="Show Controls"
+          title="Show Controls"
         >
-          <History size={24} />
+          <History {...ICON_MD} />
         </button>
       </div>
     );
@@ -110,59 +112,67 @@ export const FloatingHistoryControls: React.FC = () => {
       <div
         ref={containerRef}
         style={{ transform: `translate(${position.x}px, ${position.y}px)`, touchAction: 'none' }}
-        className="fixed top-0 left-0 z-50 flex flex-col items-center bg-white border border-gray-200 shadow-lg rounded-2xl p-1 gap-1 cursor-move select-none"
+        className="fixed top-0 left-0 z-50 flex flex-col items-center ui-float p-1 gap-0.5 cursor-move select-none"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
       >
-        <div className="py-1 text-gray-400 cursor-grab active:cursor-grabbing flex items-center justify-center">
-          <GripHorizontal size={18} />
+        <div className="h-5 w-11 text-ios-tertiary cursor-grab active:cursor-grabbing flex items-center justify-center"
+          aria-hidden="true">
+          <GripHorizontal size={16} strokeWidth={2} />
         </div>
 
         <button
           onClick={() => setTool('draw')}
-          className={`p-2 rounded-xl transition-colors ${tool === 'draw' ? 'bg-blue-100 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+          className={`ui-icon-btn ${tool === 'draw' ? 'is-active' : ''}`}
           title="قلم حر"
+          aria-label="قلم حر"
+          aria-pressed={tool === 'draw'}
         >
-          <Pencil size={18} />
+          <Pencil {...ICON_MD} />
         </button>
 
         <button
           onClick={() => setShowShapesMenu(!showShapesMenu)}
-          className={`p-2 rounded-xl transition-colors ${tool === 'shape' ? 'bg-blue-100 text-blue-600' : 'text-gray-700 hover:bg-gray-100'}`}
+          className={`ui-icon-btn ${tool === 'shape' || showShapesMenu ? 'is-active' : ''}`}
           title="أشكال"
+          aria-label="أشكال"
+          aria-expanded={showShapesMenu}
         >
-          <Shapes size={18} />
+          <Shapes {...ICON_MD} />
         </button>
 
-        <div className="w-6 h-px bg-gray-200 my-1" />
+        <div className="ui-sep-h" aria-hidden="true" />
 
         <button
           onClick={undo}
           disabled={history.length === 0}
-          className={`p-2 rounded-xl transition-colors ${history.length > 0 ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-300'}`}
+          className="ui-icon-btn"
           title="تراجع"
+          aria-label="تراجع"
         >
-          <Undo2 size={18} />
+          <Undo2 {...ICON_MD} />
         </button>
 
         <button
           onClick={redo}
           disabled={redoStack.length === 0}
-          className={`p-2 rounded-xl transition-colors ${redoStack.length > 0 ? 'text-gray-700 hover:bg-gray-100' : 'text-gray-300'}`}
+          className="ui-icon-btn"
           title="إعادة"
+          aria-label="إعادة"
         >
-          <Redo2 size={18} />
+          <Redo2 {...ICON_MD} />
         </button>
 
-        <div className="w-6 h-px bg-gray-200 my-1" />
+        <div className="ui-sep-h" aria-hidden="true" />
 
         <button
           onClick={() => setIsExpanded(false)}
-          className="p-2 text-gray-500 hover:bg-gray-100 rounded-xl transition-colors"
+          className="ui-icon-btn text-ios-secondary"
           title="تصغير"
+          aria-label="تصغير"
         >
-          <Minimize2 size={16} />
+          <Minimize2 size={18} strokeWidth={1.75} />
         </button>
       </div>
 
@@ -171,21 +181,18 @@ export const FloatingHistoryControls: React.FC = () => {
         <div
           style={{ 
             position: 'fixed',
-            left: `${position.x - 180}px`,
+            left: `${Math.max(8, position.x - 180)}px`,
             top: `${position.y}px`
           }}
-          className="z-50 bg-white border border-gray-200 shadow-lg rounded-xl p-2 grid grid-cols-3 gap-1"
+          className="z-50 ui-float p-1.5 grid grid-cols-3 gap-0.5"
         >
           {SHAPES.map((shape) => (
             <button
               key={shape.id}
               onClick={() => handleShapeClick(shape.id)}
-              className={`p-2 rounded-lg transition-colors ${
-                tool === 'shape' && activeShapeType === shape.id 
-                  ? 'bg-blue-100 text-blue-600' 
-                  : 'text-gray-700 hover:bg-gray-100'
-              }`}
+              className={`ui-icon-btn ${tool === 'shape' && activeShapeType === shape.id ? 'is-active' : ''}`}
               title={shape.id}
+              aria-label={shape.id}
             >
               {shape.icon}
             </button>

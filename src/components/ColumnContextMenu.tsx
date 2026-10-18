@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useDrawingStore } from '../store/drawingStore';
 import { SymbolElement, CableElement, TextElement } from '../types/drawing';
+import { Check } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -135,7 +136,8 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
   return (
     <div 
       ref={menuRef}
-      className="fixed z-[51] bg-white shadow-lg rounded-lg p-2 flex flex-col gap-2 border border-gray-200"
+      className="fixed z-[51] ui-float !rounded-[14px] py-1 flex flex-col min-w-[220px] divide-y divide-ios-separator"
+      role="menu"
       style={placed ? { left: placed.left, top: placed.top } : {
         left: position.x, 
         top: position.y,
@@ -143,35 +145,50 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
       }}
     >
       <button 
-        className={`px-4 py-2 text-sm rounded font-medium transition-colors ${element.isProposed ? 'bg-red-100 text-red-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+        className={`ui-menu-item ${element.isProposed ? 'text-ios-red font-medium' : ''}`}
+        role="menuitemcheckbox"
+        aria-checked={!!(element.isProposed)}
         onClick={toggleProposed}
       >
-        Proposed Pole
+        <span>Proposed Pole</span>
+        {(element.isProposed) && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
       </button>
       <button 
-        className={`px-4 py-2 text-sm rounded font-medium transition-colors ${modifiers.isProposedReplacement ? 'bg-red-100 text-red-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+        className={`ui-menu-item ${modifiers.isProposedReplacement ? 'text-ios-red font-medium' : ''}`}
+        role="menuitemcheckbox"
+        aria-checked={!!(modifiers.isProposedReplacement)}
         onClick={toggleProposedReplacement}
       >
-        Proposed Replacement
+        <span>Proposed Replacement</span>
+        {(modifiers.isProposedReplacement) && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
       </button>
       <button 
-        className={`px-4 py-2 text-sm rounded font-medium transition-colors ${modifiers.isTilted ? 'bg-red-100 text-red-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+        className={`ui-menu-item ${modifiers.isTilted ? 'text-ios-red font-medium' : ''}`}
+        role="menuitemcheckbox"
+        aria-checked={!!(modifiers.isTilted)}
         onClick={toggleTilted}
       >
-        Tilted
+        <span>Tilted</span>
+        {(modifiers.isTilted) && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
       </button>
       <button 
-        className={`px-4 py-2 text-sm rounded font-medium transition-colors ${modifiers.isRusted ? 'bg-red-100 text-red-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+        className={`ui-menu-item ${modifiers.isRusted ? 'text-ios-red font-medium' : ''}`}
+        role="menuitemcheckbox"
+        aria-checked={!!(modifiers.isRusted)}
         onClick={toggleRusted}
       >
-        Rusted
+        <span>Rusted</span>
+        {(modifiers.isRusted) && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
       </button>
       {element.symbolId !== 'transformer' && (
         <button 
-          className={`px-4 py-2 text-sm rounded font-medium transition-colors ${modifiers.note ? 'bg-blue-100 text-blue-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+          className={`ui-menu-item ${modifiers.note ? 'text-ios-blue font-medium' : ''}`}
+          role="menuitemcheckbox"
+          aria-checked={!!(modifiers.note)}
           onClick={toggleNote}
         >
-          {modifiers.note ? 'Remove Note' : 'Add Note'}
+          <span>{modifiers.note ? 'Remove Note' : 'Add Note'}</span>
+          {(modifiers.note) && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
         </button>
       )}
       
@@ -179,25 +196,27 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
       {connectedCables.length > 0 && (
         <div className="relative">
           <button 
-            className="px-4 py-2 text-sm rounded font-medium transition-colors bg-gray-50 text-gray-700 hover:bg-gray-100"
+            className="ui-menu-item"
+            role="menuitem"
+            aria-expanded={showCableNumberMenu}
             onClick={() => setShowCableNumberMenu(!showCableNumberMenu)}
           >
             ترقيم الكوابل
           </button>
           
           {showCableNumberMenu && (
-            <div className="absolute left-0 top-full mt-1 bg-white shadow-lg rounded-lg p-2 flex flex-col gap-1 border border-gray-200 z-50 min-w-[150px]">
-              <div className="text-xs text-gray-500 px-2 py-1 border-b border-gray-100">
+            <div className="absolute left-0 top-full mt-1 ui-float !rounded-[14px] py-1 flex flex-col z-50 min-w-[180px]">
+              <div className="text-[13px] text-ios-secondary px-4 py-2 border-b border-ios-separator">
                 اختر لون الكابل:
               </div>
               {cableColors.map((color, index) => (
                 <button
                   key={index}
-                  className="px-3 py-2 text-sm rounded font-medium transition-colors hover:bg-gray-100 flex items-center gap-2"
+                  className="ui-menu-item !justify-start"
                   onClick={() => handleAddCableNumber(color)}
                 >
                   <span 
-                    className="w-4 h-4 rounded-full border border-gray-300" 
+                    className="w-4 h-4 rounded-full ring-1 ring-inset ring-black/10" 
                     style={{ backgroundColor: color }}
                   />
                   <span>لون الكابل</span>

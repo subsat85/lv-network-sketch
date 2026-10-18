@@ -87,7 +87,7 @@
 
   /* Floating, lightweight surfaces (rail, floating controls, popovers) */
   .ui-float {
-    @apply rounded-panel border border-ios-separator bg-white/95 shadow-float;
+    @apply rounded-panel border border-ios-separator bg-white shadow-float;
   }
 
   /* Hairline group separators */
