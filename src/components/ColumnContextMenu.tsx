@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useDrawingStore } from '../store/drawingStore';
 import { SymbolElement, CableElement, TextElement } from '../types/drawing';
 
@@ -36,6 +36,25 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [onClose]);
+
+  // Screen position after keeping the menu inside the visible viewport.
+  // Default: centred above the tap point; flips below / slides sideways near edges.
+  const [placed, setPlaced] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const vw = window.visualViewport?.width ?? window.innerWidth;
+    const vh = window.visualViewport?.height ?? window.innerHeight;
+    const margin = 8;
+    const gap = 10;
+    let top = position.y - h - gap;
+    if (top < margin) top = position.y + gap;
+    top = Math.max(margin, Math.min(top, vh - h - margin));
+    const left = Math.max(margin, Math.min(position.x - w / 2, vw - w - margin));
+    setPlaced(prev => (prev && prev.left === left && prev.top === top ? prev : { left, top }));
+  }, [position.x, position.y, showCableNumberMenu, element?.type]);
 
   if (!element || element.type !== 'symbol') return null;
 
@@ -116,8 +135,8 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
   return (
     <div 
       ref={menuRef}
-      className="fixed z-50 bg-white shadow-lg rounded-lg p-2 flex flex-col gap-2 border border-gray-200"
-      style={{ 
+      className="fixed z-[51] bg-white shadow-lg rounded-lg p-2 flex flex-col gap-2 border border-gray-200"
+      style={placed ? { left: placed.left, top: placed.top } : {
         left: position.x, 
         top: position.y,
         transform: 'translate(-50%, -100%) translateY(-10px)' 

@@ -33,7 +33,7 @@ function App() {
   };
 
   return (
-    <div className="w-full h-screen-fix bg-gray-50 flex flex-col overflow-hidden touch-manipulation no-select">
+    <div className="fixed inset-0 w-full bg-gray-50 flex flex-col overflow-hidden touch-manipulation no-select">
       <main className="w-full h-full relative flex flex-col"
         style={{
           paddingTop: "env(safe-area-inset-top)",
@@ -48,7 +48,7 @@ function App() {
           onOpenTransformerInfo={() => setShowTransformerInfo(true)}
         />
         
-        <div className="flex-1 flex overflow-hidden relative">
+        <div className="flex-1 min-h-0 flex overflow-hidden relative">
           <SymbolsPanel />
           <SketchCanvas />
           <FloatingHistoryControls />

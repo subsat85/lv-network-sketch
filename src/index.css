@@ -10,13 +10,24 @@
     height: -moz-available;
     height: stretch;
     overflow: hidden;
-    touch-action: manipulation;
+    /* pan-x pan-y (no pinch-zoom): stops iOS Safari from zooming/shifting the
+       whole page. The drawing canvas has its own pinch-zoom (touch-action: none). */
+    touch-action: pan-x pan-y;
+    overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
     -webkit-touch-callout: none;
     -webkit-user-select: none;
     user-select: none;
   }
   
+  /* iOS Safari auto-zooms the page when focusing a field with font-size < 16px
+     and does not zoom back, leaving the layout shifted/clipped. */
+  @media (pointer: coarse) {
+    input, select, textarea {
+      font-size: 16px !important;
+    }
+  }
+
   /* Support for different viewport height units */
   @supports (height: 100dvh) {
     .h-screen-fix {

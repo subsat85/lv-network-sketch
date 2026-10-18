@@ -63,7 +63,7 @@ export const LoadReportModal: React.FC<LoadReportModalProps> = ({ isOpen, onClos
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] overflow-hidden flex flex-col">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] supports-[height:100dvh]:max-h-[80dvh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="bg-gradient-to-l from-blue-600 to-blue-500 px-6 py-4 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">

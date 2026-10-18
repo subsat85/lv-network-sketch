@@ -103,7 +103,7 @@ export const StylePanel: React.FC = () => {
   };
 
   return (
-    <div className={`bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 transition-all duration-300 ease-in-out ${isCollapsed ? 'pb-2' : 'pb-safe-bottom'}`}>
+    <div className={`bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 transition-all duration-300 ease-in-out ${isCollapsed ? 'pb-2' : ''}`}>
       {/* Drag Handle / Toggle */}
       <div 
         className="flex items-center justify-center py-2 cursor-pointer hover:bg-gray-50 active:bg-gray-100"
@@ -113,7 +113,7 @@ export const StylePanel: React.FC = () => {
       </div>
 
       {!isCollapsed && (
-        <div className="px-4 pb-4 flex flex-col space-y-4 max-w-mobile mx-auto">
+        <div className="px-4 pb-4 flex flex-col space-y-4 max-w-mobile mx-auto max-h-[45vh] [@media(max-height:500px)]:max-h-[30vh] overflow-y-auto overscroll-contain">
         
         {/* Pole Size Control */}
         <div className="flex items-center justify-between">

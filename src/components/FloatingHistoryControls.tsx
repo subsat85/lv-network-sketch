@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { Undo2, Redo2, History, GripHorizontal, Minimize2, Pencil, Square, Circle, Triangle, ArrowRight, Compass, Spline, Shapes } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import { ShapeType } from '../types/drawing';
@@ -21,15 +21,34 @@ export const FloatingHistoryControls: React.FC = () => {
   const [showShapesMenu, setShowShapesMenu] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Keep the whole widget inside the visible viewport (iOS Safari bars,
+  // orientation changes, expand/collapse) using its real rendered size.
+  const clampToViewport = () => {
+    const w = containerRef.current?.offsetWidth || 0;
+    const h = containerRef.current?.offsetHeight || 0;
+    const vw = window.visualViewport?.width ?? window.innerWidth;
+    const vh = window.visualViewport?.height ?? window.innerHeight;
+    const margin = 4;
+    setPosition(prev => {
+      const x = Math.max(margin, Math.min(prev.x, vw - w - margin));
+      const y = Math.max(margin, Math.min(prev.y, vh - h - margin));
+      return x === prev.x && y === prev.y ? prev : { x, y };
+    });
+  };
+
+  useLayoutEffect(() => {
+    clampToViewport();
+  }, [isExpanded]);
+
   useEffect(() => {
-    const handleResize = () => {
-      setPosition(prev => ({
-        x: Math.min(prev.x, window.innerWidth - 60),
-        y: Math.min(prev.y, window.innerHeight - 60)
-      }));
+    window.addEventListener('resize', clampToViewport);
+    window.addEventListener('orientationchange', clampToViewport);
+    window.visualViewport?.addEventListener('resize', clampToViewport);
+    return () => {
+      window.removeEventListener('resize', clampToViewport);
+      window.removeEventListener('orientationchange', clampToViewport);
+      window.visualViewport?.removeEventListener('resize', clampToViewport);
     };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const handlePointerDown = (e: React.PointerEvent) => {
