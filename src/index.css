@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Fix for Android tablet/browser viewport height issues */
+  html, body {
+    height: 100%;
+    height: -webkit-fill-available;
+    height: -moz-available;
+    height: stretch;
+    overflow: hidden;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  
+  /* Support for different viewport height units */
+  @supports (height: 100dvh) {
+    .h-screen-fix {
+      height: 100dvh;
+    }
+  }
+  
+  @supports (height: 100svh) {
+    .h-screen-fix {
+      height: 100svh;
+    }
+  }
+  
+  /* Fallback for browsers without dvh/svh support */
+  @supports not (height: 100dvh) {
+    .h-screen-fix {
+      height: 100vh;
+      height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+    }
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  /* Safe area for mobile browsers - notch, status bar */
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: constant(safe-area-inset-top, 0px);
+  }
+  
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: constant(safe-area-inset-bottom, 0px);
+  }
+  
+  /* Touch-friendly minimum sizes */
+  .touch-manipulation {
+    touch-action: manipulation;
+  }
+  
+  /* Prevent text selection on touch devices */
+  .no-select {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+}

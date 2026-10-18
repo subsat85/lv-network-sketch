@@ -1,0 +1,193 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { useDrawingStore } from '../store/drawingStore';
+import { SymbolElement, CableElement, TextElement } from '../types/drawing';
+
+const generateId = () => Math.random().toString(36).substr(2, 9);
+
+interface ColumnContextMenuProps {
+  elementId: string;
+  position: { x: number; y: number };
+  onClose: () => void;
+}
+
+export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId, position, onClose }) => {
+  const { elements, updateSymbolModifiers, updateElement, addElement, saveHistory } = useDrawingStore();
+  const element = elements.find(el => el.id === elementId) as SymbolElement;
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [showCableNumberMenu, setShowCableNumberMenu] = useState(false);
+  
+  // Find all cables connected to this pole
+  const connectedCables = elements.filter(el => 
+    el.type === 'cable' && (el as CableElement).poleIds.includes(elementId)
+  ) as CableElement[];
+  
+  // Get unique cable colors
+  const cableColors = [...new Set(connectedCables.map(c => c.strokeColor))];
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [onClose]);
+
+  if (!element || element.type !== 'symbol') return null;
+
+  const modifiers = element.modifiers || {};
+
+  const toggleTilted = () => {
+    updateSymbolModifiers(elementId, { isTilted: !modifiers.isTilted });
+  };
+
+  const toggleRusted = () => {
+    updateSymbolModifiers(elementId, { isRusted: !modifiers.isRusted });
+  };
+
+  const toggleProposed = () => {
+    updateElement(elementId, { isProposed: !element.isProposed });
+  };
+
+  const toggleProposedReplacement = () => {
+    updateSymbolModifiers(elementId, { isProposedReplacement: !modifiers.isProposedReplacement });
+  };
+
+  const toggleNote = () => {
+    if (modifiers.note) {
+      // Remove note
+      updateSymbolModifiers(elementId, { note: undefined } as any);
+    } else {
+      // Add note
+      updateSymbolModifiers(elementId, { 
+        note: { 
+          text: 'Note', 
+          x: element.x + 40, 
+          y: element.y - 40,
+          fontSize: 12,
+          color: 'white'
+        } 
+      });
+    }
+  };
+
+  const handleAddCableNumber = (color: string) => {
+    const cableNumber = prompt('أدخل رقم الكابل (ترتيب الكوابل من الأعلى):');
+    if (cableNumber && cableNumber.trim() !== '') {
+      saveHistory();
+      const numberText = cableNumber.trim();
+      
+      // Find existing cable numbers near this pole (same x position, stacked vertically)
+      const existingCableNumbers = elements.filter(el => 
+        el.type === 'text' && 
+        Math.abs(el.x - (element.x + 35)) < 10 &&
+        el.y > element.y - 100 &&
+        el.y < element.y
+      );
+      
+      // Calculate position - each new number is 18px below the previous
+      const cableNumberIndex = existingCableNumbers.length;
+      const yOffset = element.y - 30 - (cableNumberIndex * 18);
+      
+      // Create text element for cable number
+      const textElement: TextElement = {
+        id: generateId(),
+        type: 'text',
+        x: element.x + 35,
+        y: yOffset,
+        text: numberText,
+        fontSize: 14,
+        strokeColor: color,
+        fillColor: color,
+        strokeWidth: 1,
+        rotation: 0
+      };
+      
+      addElement(textElement);
+      setShowCableNumberMenu(false);
+      onClose();
+    }
+  };
+
+  return (
+    <div 
+      ref={menuRef}
+      className="fixed z-50 bg-white shadow-lg rounded-lg p-2 flex flex-col gap-2 border border-gray-200"
+      style={{ 
+        left: position.x, 
+        top: position.y,
+        transform: 'translate(-50%, -100%) translateY(-10px)' 
+      }}
+    >
+      <button 
+        className={`px-4 py-2 text-sm rounded font-medium transition-colors ${element.isProposed ? 'bg-red-100 text-red-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+        onClick={toggleProposed}
+      >
+        Proposed Pole
+      </button>
+      <button 
+        className={`px-4 py-2 text-sm rounded font-medium transition-colors ${modifiers.isProposedReplacement ? 'bg-red-100 text-red-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+        onClick={toggleProposedReplacement}
+      >
+        Proposed Replacement
+      </button>
+      <button 
+        className={`px-4 py-2 text-sm rounded font-medium transition-colors ${modifiers.isTilted ? 'bg-red-100 text-red-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+        onClick={toggleTilted}
+      >
+        Tilted
+      </button>
+      <button 
+        className={`px-4 py-2 text-sm rounded font-medium transition-colors ${modifiers.isRusted ? 'bg-red-100 text-red-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+        onClick={toggleRusted}
+      >
+        Rusted
+      </button>
+      {element.symbolId !== 'transformer' && (
+        <button 
+          className={`px-4 py-2 text-sm rounded font-medium transition-colors ${modifiers.note ? 'bg-blue-100 text-blue-700' : 'bg-gray-50 text-gray-700 hover:bg-gray-100'}`}
+          onClick={toggleNote}
+        >
+          {modifiers.note ? 'Remove Note' : 'Add Note'}
+        </button>
+      )}
+      
+      {/* Cable Numbering Button */}
+      {connectedCables.length > 0 && (
+        <div className="relative">
+          <button 
+            className="px-4 py-2 text-sm rounded font-medium transition-colors bg-gray-50 text-gray-700 hover:bg-gray-100"
+            onClick={() => setShowCableNumberMenu(!showCableNumberMenu)}
+          >
+            ترقيم الكوابل
+          </button>
+          
+          {showCableNumberMenu && (
+            <div className="absolute left-0 top-full mt-1 bg-white shadow-lg rounded-lg p-2 flex flex-col gap-1 border border-gray-200 z-50 min-w-[150px]">
+              <div className="text-xs text-gray-500 px-2 py-1 border-b border-gray-100">
+                اختر لون الكابل:
+              </div>
+              {cableColors.map((color, index) => (
+                <button
+                  key={index}
+                  className="px-3 py-2 text-sm rounded font-medium transition-colors hover:bg-gray-100 flex items-center gap-2"
+                  onClick={() => handleAddCableNumber(color)}
+                >
+                  <span 
+                    className="w-4 h-4 rounded-full border border-gray-300" 
+                    style={{ backgroundColor: color }}
+                  />
+                  <span>لون الكابل</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
