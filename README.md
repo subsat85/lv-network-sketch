@@ -1,72 +1,44 @@
-# AI React Website Template
+# LV Network Sketch
 
-A flexible, feature-rich React template designed for AI-generated websites with modern development tools and libraries.
+A touch-friendly web app for sketching low-voltage electrical networks in the field:
+poles, transformers, cables, subscribers, distances and pole conditions, with
+project save/load, JSON import/export and A4 PDF export.
 
-## ✨ Key Features
+Originally built on YouWare; the untouched original source is kept on the
+`original-youware` branch.
 
-- 🚀 **React 18 + TypeScript** - Modern development experience
-- 🎨 **Tailwind CSS** - Utility-first CSS framework
-- ⚡ **Vite** - Fast build tool
-- 🌐 **i18next** - Complete internationalization solution
-- 🎯 **Zustand** - Lightweight state management
-- ✨ **Framer Motion** - Smooth animation effects
-- 🎭 **Headless UI** - Accessible UI components
-- 📦 **Lucide React** - Beautiful icon library
-- 🛣️ **React Router** - Single-page application routing
+## Tech stack
 
-## 🛠️ Tech Stack
+React 18 · TypeScript · Vite 7 · Tailwind CSS 3 · Zustand · SVG rendering ·
+IndexedDB (`idb-keyval`) · `html2canvas` + `jspdf` for PDF export.
 
-### Core Technologies
-- React 18.3.1 + TypeScript 5.8.3
-- Vite 7.0.0 (Build tool)
-- Tailwind CSS 3.4.17 (CSS framework)
+## Development
 
-### Feature Libraries
-- React Router DOM 6.30.1 (Routing)
-- Zustand 4.4.7 (State management)
-- i18next + react-i18next (Internationalization)
-- Framer Motion 11.0.8 (Animations)
-- Headless UI 1.7.18 (UI components)
-- Lucide React (Icon library)
+Requires Node.js 20+ and npm.
 
-## 🚀 Quick Start
+```bash
+npm ci          # clean install from package-lock.json
+npm run dev     # dev server at http://127.0.0.1:5173
+npm run build   # production build into dist/
+npm run preview # serve the production build
+npx tsc -p tsconfig.app.json --noEmit   # type check
+```
 
-1. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+These commands are meant to run in a cloud environment (e.g. a Claude Code
+session or GitHub Codespaces) — nothing has to be run on a phone.
 
-2. **Start development server**:
-   ```bash
-   npm run dev
-   ```
-   Visit http://localhost:5173 to view the application
-
-3. **Build for production**:
-   ```bash
-   npm run build
-   ```
-
-4. **Preview build**:
-   ```bash
-   npm run preview
-   ```
-
-## 📁 Project Structure
+## Project layout
 
 ```
 src/
-├── api/             # API related code
-├── assets/          # Static assets
-├── components/      # Reusable components
-├── layouts/         # Layout components  
-├── pages/           # Page components
-├── styles/          # Style files
-├── types/           # TypeScript type definitions
-├── App.tsx          # Main application component
-└── main.tsx         # Application entry point
+  components/   UI and canvas (SketchCanvas = editor, PreviewCanvas = A4/print)
+  store/        Zustand drawing store (elements, history, settings)
+  utils/        cable layout, SVG helpers, storage, serialization, file pickers
+  types/        drawing data model
+docs/ARCHITECTURE.md   detailed architecture and rendering notes
 ```
 
-## More Information
+## Notes
 
-For more detailed project structure, tech stack, configuration instructions and development guide, please refer to the [YOUWARE.md](./YOUWARE.md) file.
+- Projects are stored in the browser's IndexedDB; export JSON to back them up.
+- Never commit secrets or `.env` files (they are git-ignored).

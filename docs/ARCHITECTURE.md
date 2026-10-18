@@ -1,4 +1,4 @@
-# YOUWARE.md
+# Architecture — LV Network Sketch
 
 ## Project Overview
 Electrical Network Field Sketch App - A touch-friendly application for sketching electrical networks in the field using React and SVG.
