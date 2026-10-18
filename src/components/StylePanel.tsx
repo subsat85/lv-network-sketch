@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useDrawingStore } from '../store/drawingStore';
-import { Minus, Plus, ChevronDown, ChevronUp, Eye, EyeOff } from 'lucide-react';
+import { Minus, Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import { ICON_SM } from './ui/icons';
 
 const COLORS = [
   '#000000', // Black
@@ -103,164 +104,136 @@ export const StylePanel: React.FC = () => {
   };
 
   return (
-    <div className={`bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-10 transition-all duration-300 ease-in-out ${isCollapsed ? 'pb-2' : ''}`}>
+    <div className={`bg-white rounded-t-panel shadow-sheet z-10 transition-all duration-300 ease-in-out ${isCollapsed ? 'pb-2' : ''}`}>
       {/* Drag Handle / Toggle */}
       <div 
-        className="flex items-center justify-center py-2 cursor-pointer hover:bg-gray-50 active:bg-gray-100"
+        className="flex items-center justify-center h-6 cursor-pointer rounded-t-panel active:bg-ios-fill"
         onClick={() => setIsCollapsed(!isCollapsed)}
+        role="button"
+        aria-label={isCollapsed ? 'Show properties' : 'Hide properties'}
+        aria-expanded={!isCollapsed}
       >
-        <div className="w-12 h-1.5 bg-gray-300 rounded-full mb-1" />
+        <div className="w-9 h-[5px] bg-ios-fill-strong rounded-full" />
       </div>
 
       {!isCollapsed && (
-        <div className="px-4 pb-4 flex flex-col space-y-4 max-w-mobile mx-auto max-h-[45vh] [@media(max-height:500px)]:max-h-[30vh] overflow-y-auto overscroll-contain">
+        <div className="px-4 pb-3 flex flex-col divide-y divide-ios-separator max-w-mobile mx-auto max-h-[45vh] [@media(max-height:500px)]:max-h-[30vh] overflow-y-auto overscroll-contain">
         
         {/* Pole Size Control */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-gray-500 uppercase">Pole Size</span>
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => handleScaleChange(-0.1)}
-              className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-              aria-label="Decrease pole size"
-            >
-              <Minus size={16} />
-            </button>
-            <span className="text-sm font-medium w-8 text-center">{Math.round(poleSizeScale * 100)}%</span>
-            <button
-              onClick={() => handleScaleChange(0.1)}
-              className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-              aria-label="Increase pole size"
-            >
-              <Plus size={16} />
-            </button>
-          </div>
+        <div className="ui-row">
+          <span className="ui-row-label">Pole Size</span>
+          <div className="flex items-center gap-3">
+              <span className="ui-row-value">{Math.round(poleSizeScale * 100)}%</span>
+              <div className="ui-stepper">
+                <button onClick={() => handleScaleChange(-0.1)} className="ui-stepper-btn" aria-label="Decrease pole size">
+                  <Minus {...ICON_SM} />
+                </button>
+                <div className="ui-stepper-div" aria-hidden="true" />
+                <button onClick={() => handleScaleChange(0.1)} className="ui-stepper-btn" aria-label="Increase pole size">
+                  <Plus {...ICON_SM} />
+                </button>
+              </div>
+            </div>
         </div>
 
         {/* Consumer Size Control */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-gray-500 uppercase">Consumer Size</span>
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => handleConsumerScaleChange(-0.1)}
-              className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-              aria-label="Decrease consumer size"
-            >
-              <Minus size={16} />
-            </button>
-            <span className="text-sm font-medium w-8 text-center">{Math.round(consumerSizeScale * 100)}%</span>
-            <button
-              onClick={() => handleConsumerScaleChange(0.1)}
-              className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-              aria-label="Increase consumer size"
-            >
-              <Plus size={16} />
-            </button>
-          </div>
+        <div className="ui-row">
+          <span className="ui-row-label">Consumer Size</span>
+          <div className="flex items-center gap-3">
+              <span className="ui-row-value">{Math.round(consumerSizeScale * 100)}%</span>
+              <div className="ui-stepper">
+                <button onClick={() => handleConsumerScaleChange(-0.1)} className="ui-stepper-btn" aria-label="Decrease consumer size">
+                  <Minus {...ICON_SM} />
+                </button>
+                <div className="ui-stepper-div" aria-hidden="true" />
+                <button onClick={() => handleConsumerScaleChange(0.1)} className="ui-stepper-btn" aria-label="Increase consumer size">
+                  <Plus {...ICON_SM} />
+                </button>
+              </div>
+            </div>
         </div>
 
         {/* Distance Text Size Control */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-gray-500 uppercase">Distance Text</span>
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={() => handleDistanceScaleChange(-0.1)}
-              className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-              aria-label="Decrease text size"
-            >
-              <Minus size={16} />
-            </button>
-            <span className="text-sm font-medium w-8 text-center">
-              {Math.round(distanceTextScale * 100)}%
-            </span>
-            <button
-              onClick={() => handleDistanceScaleChange(0.1)}
-              className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-              aria-label="Increase text size"
-            >
-              <Plus size={16} />
-            </button>
-          </div>
+        <div className="ui-row">
+          <span className="ui-row-label">Distance Text</span>
+          <div className="flex items-center gap-3">
+              <span className="ui-row-value">{Math.round(distanceTextScale * 100)}%</span>
+              <div className="ui-stepper">
+                <button onClick={() => handleDistanceScaleChange(-0.1)} className="ui-stepper-btn" aria-label="Decrease text size">
+                  <Minus {...ICON_SM} />
+                </button>
+                <div className="ui-stepper-div" aria-hidden="true" />
+                <button onClick={() => handleDistanceScaleChange(0.1)} className="ui-stepper-btn" aria-label="Increase text size">
+                  <Plus {...ICON_SM} />
+                </button>
+              </div>
+            </div>
         </div>
 
         {/* Show/Hide Distance Labels */}
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-gray-500 uppercase">Show Distances</span>
+        <div className="ui-row">
+          <span className="ui-row-label">Show Distances</span>
           <button
             onClick={() => setShowDistanceLabels(!showDistanceLabels)}
-            className={`p-2 rounded-lg transition-colors ${
-              showDistanceLabels 
-                ? 'bg-blue-100 text-blue-600 hover:bg-blue-200' 
-                : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
-            }`}
+            className="ui-switch"
+            role="switch"
+            aria-checked={showDistanceLabels}
             aria-label={showDistanceLabels ? 'Hide distance labels' : 'Show distance labels'}
           >
-            {showDistanceLabels ? <Eye size={18} /> : <EyeOff size={18} />}
+            <span className="ui-switch-knob" />
           </button>
         </div>
 
         {/* Text Size Control */}
         {selectedElement?.type === 'text' && (
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-500 uppercase">Text Size</span>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => handleTextSizeChange(-2)}
-                className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-                aria-label="Decrease text size"
-              >
-                <Minus size={16} />
-              </button>
-              <span className="text-sm font-medium w-8 text-center">
-                {(selectedElement as any).fontSize || 16}
-              </span>
-              <button
-                onClick={() => handleTextSizeChange(2)}
-                className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-                aria-label="Increase text size"
-              >
-                <Plus size={16} />
-              </button>
+          <div className="ui-row">
+            <span className="ui-row-label">Text Size</span>
+            <div className="flex items-center gap-3">
+              <span className="ui-row-value">{(selectedElement as any).fontSize || 16}</span>
+              <div className="ui-stepper">
+                <button onClick={() => handleTextSizeChange(-2)} className="ui-stepper-btn" aria-label="Decrease text size">
+                  <Minus {...ICON_SM} />
+                </button>
+                <div className="ui-stepper-div" aria-hidden="true" />
+                <button onClick={() => handleTextSizeChange(2)} className="ui-stepper-btn" aria-label="Increase text size">
+                  <Plus {...ICON_SM} />
+                </button>
+              </div>
             </div>
           </div>
         )}
 
         {/* Note Controls */}
         {selectedElement?.type === 'symbol' && (selectedElement as any).modifiers?.note && (
-          <div className="flex flex-col space-y-3">
+          <div className="flex flex-col">
             {/* Note Font Size (Zoom) */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-500 uppercase">Note Size</span>
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={() => handleNoteFontSizeChange(-2)}
-                  className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-                  aria-label="Decrease note size"
-                >
-                  <Minus size={16} />
+            <div className="ui-row">
+              <span className="ui-row-label">Note Size</span>
+              <div className="flex items-center gap-3">
+              <span className="ui-row-value">{(selectedElement as any).modifiers?.note?.fontSize || 12}px</span>
+              <div className="ui-stepper">
+                <button onClick={() => handleNoteFontSizeChange(-2)} className="ui-stepper-btn" aria-label="Decrease note size">
+                  <Minus {...ICON_SM} />
                 </button>
-                <span className="text-sm font-medium w-8 text-center">{(selectedElement as any).modifiers?.note?.fontSize || 12}px</span>
-                <button
-                  onClick={() => handleNoteFontSizeChange(2)}
-                  className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-                  aria-label="Increase note size"
-                >
-                  <Plus size={16} />
+                <div className="ui-stepper-div" aria-hidden="true" />
+                <button onClick={() => handleNoteFontSizeChange(2)} className="ui-stepper-btn" aria-label="Increase note size">
+                  <Plus {...ICON_SM} />
                 </button>
               </div>
             </div>
+            </div>
 
             {/* Note Color */}
-            <div className="flex flex-col space-y-2">
-              <span className="text-xs font-medium text-gray-500 uppercase">Note Color</span>
-              <div className="flex space-x-2 flex-wrap gap-2">
+            <div className="flex flex-col gap-1 py-2">
+              <span className="ui-row-label">Note Color</span>
+              <div className="flex flex-wrap gap-3 p-1">
                 {['white', '#E0F2FE', '#DCFCE7', '#FEF3C7', '#FEE2E2', '#F3E8FF', '#E0E7FF'].map(color => (
                   <button
                     key={color}
                     onClick={() => handleNoteColorChange(color)}
-                    className={`w-8 h-8 rounded-full border border-gray-200 ${
+                    className={`ui-swatch ${
                       ((selectedElement as any).modifiers?.note?.color === color || (!((selectedElement as any).modifiers?.note?.color) && color === 'white'))
-                        ? 'ring-2 ring-blue-500 ring-offset-2' 
+                        ? 'is-active' 
                         : ''
                     }`}
                     style={{ backgroundColor: color }}
@@ -273,9 +246,9 @@ export const StylePanel: React.FC = () => {
         )}
 
         {/* Colors */}
-        <div className="flex items-center space-x-4 overflow-x-auto pb-2 no-scrollbar">
-          <span className="text-xs font-medium text-gray-500 uppercase">Color</span>
-          <div className="flex space-x-3">
+        <div className="ui-row overflow-x-auto no-scrollbar">
+          <span className="ui-row-label">Color</span>
+          <div className="flex gap-3 p-1">
             {COLORS.map((color) => {
               const activeColor = selectedElement 
                 ? (selectedElement.type === 'text' ? selectedElement.fillColor : selectedElement.strokeColor)
@@ -285,9 +258,7 @@ export const StylePanel: React.FC = () => {
                 <button
                   key={color}
                   onClick={() => handleColorChange(color)}
-                  className={`w-8 h-8 rounded-full border-2 transition-transform ${
-                    activeColor === color ? 'border-blue-500 scale-110' : 'border-transparent'
-                  }`}
+                  className={`ui-swatch ${activeColor === color ? 'is-active' : ''}`}
                   style={{ backgroundColor: color }}
                   aria-label={`Select color ${color}`}
                 />
@@ -298,9 +269,9 @@ export const StylePanel: React.FC = () => {
 
         {/* Fill Color for Shapes */}
         {selectedElement?.type === 'shape' && (
-          <div className="flex items-center space-x-4 overflow-x-auto pb-2 no-scrollbar">
-            <span className="text-xs font-medium text-gray-500 uppercase">Fill</span>
-            <div className="flex space-x-3">
+          <div className="ui-row overflow-x-auto no-scrollbar">
+            <span className="ui-row-label">Fill</span>
+            <div className="flex gap-3 p-1">
               {/* Transparent option */}
               <button
                 onClick={() => {
@@ -308,13 +279,11 @@ export const StylePanel: React.FC = () => {
                     updateElement(selectedId, { fillColor: 'transparent' });
                   }
                 }}
-                className={`w-8 h-8 rounded-full border-2 transition-transform flex items-center justify-center ${
-                  (selectedElement as any).fillColor === 'transparent' ? 'border-blue-500 scale-110' : 'border-gray-300'
-                }`}
+                className={`ui-swatch flex items-center justify-center ${(selectedElement as any).fillColor === 'transparent' ? 'is-active' : ''}`}
                 style={{ backgroundColor: 'white' }}
                 aria-label="Transparent fill"
               >
-                <Minus size={16} className="text-gray-400" />
+                <Minus {...ICON_SM} className="text-ios-tertiary" />
               </button>
               {COLORS.map((color) => {
                 const fillColor = (selectedElement as any).fillColor;
@@ -326,9 +295,7 @@ export const StylePanel: React.FC = () => {
                         updateElement(selectedId, { fillColor: color });
                       }
                     }}
-                    className={`w-8 h-8 rounded-full border-2 transition-transform ${
-                      fillColor === color ? 'border-blue-500 scale-110' : 'border-transparent'
-                    }`}
+                    className={`ui-swatch ${fillColor === color ? 'is-active' : ''}`}
                     style={{ backgroundColor: color }}
                     aria-label={`Fill color ${color}`}
                   />
@@ -340,28 +307,21 @@ export const StylePanel: React.FC = () => {
 
         {/* Widths */}
         {selectedElement?.type !== 'text' && (
-          <div className="flex flex-col space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-500 uppercase">Line Width</span>
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={() => handleWidthChange(Math.max(0.5, (selectedElement ? selectedElement.strokeWidth : style.strokeWidth) - 0.5))}
-                  className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-                  aria-label="Decrease line width"
-                >
-                  <Minus size={16} />
+          <div className="flex flex-col">
+            <div className="ui-row">
+              <span className="ui-row-label">Line Width</span>
+              <div className="flex items-center gap-3">
+              <span className="ui-row-value">{selectedElement ? selectedElement.strokeWidth : style.strokeWidth}</span>
+              <div className="ui-stepper">
+                <button onClick={() => handleWidthChange(Math.max(0.5, (selectedElement ? selectedElement.strokeWidth : style.strokeWidth) - 0.5))} className="ui-stepper-btn" aria-label="Decrease line width">
+                  <Minus {...ICON_SM} />
                 </button>
-                <span className="text-sm font-medium w-8 text-center">
-                  {selectedElement ? selectedElement.strokeWidth : style.strokeWidth}
-                </span>
-                <button
-                  onClick={() => handleWidthChange(Math.min(20, (selectedElement ? selectedElement.strokeWidth : style.strokeWidth) + 0.5))}
-                  className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200"
-                  aria-label="Increase line width"
-                >
-                  <Plus size={16} />
+                <div className="ui-stepper-div" aria-hidden="true" />
+                <button onClick={() => handleWidthChange(Math.min(20, (selectedElement ? selectedElement.strokeWidth : style.strokeWidth) + 0.5))} className="ui-stepper-btn" aria-label="Increase line width">
+                  <Plus {...ICON_SM} />
                 </button>
               </div>
+            </div>
             </div>
             
             {selectedElement?.type === 'cable' && (
@@ -372,7 +332,7 @@ export const StylePanel: React.FC = () => {
                     .map(el => ({ id: el.id, changes: { strokeWidth: selectedElement.strokeWidth } }));
                   updateElements(updates);
                 }}
-                className="w-full py-2 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-100"
+                className="ui-tinted-btn mb-2"
               >
                 Apply Width to All Cables
               </button>
@@ -382,28 +342,20 @@ export const StylePanel: React.FC = () => {
 
         {/* Cable Controls */}
         {selectedElement?.type === 'cable' && (
-          <div className="space-y-4 border-t border-gray-100 pt-4">
+          <div className="flex flex-col divide-y divide-ios-separator">
             {/* Cable Type */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-500 uppercase">Type</span>
-              <div className="flex bg-gray-100 rounded-lg p-1">
+            <div className="ui-row">
+              <span className="ui-row-label">Type</span>
+              <div className="ui-segment">
                 <button
                   onClick={() => handleCableTypeChange('overhead')}
-                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                    (selectedElement as any).cableType !== 'ground'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-900'
-                  }`}
+                  className={`ui-segment-item ${(selectedElement as any).cableType !== 'ground' ? 'is-active' : ''}`}
                 >
                   Overhead
                 </button>
                 <button
                   onClick={() => handleCableTypeChange('ground')}
-                  className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                    (selectedElement as any).cableType === 'ground'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-900'
-                  }`}
+                  className={`ui-segment-item ${(selectedElement as any).cableType === 'ground' ? 'is-active' : ''}`}
                 >
                   Ground
                 </button>
@@ -411,18 +363,14 @@ export const StylePanel: React.FC = () => {
             </div>
 
             {/* Arrow Mode */}
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-gray-500 uppercase">Arrow</span>
-            <div className="flex items-center space-x-2">
+            <div className="ui-row">
+              <span className="ui-row-label">Arrow</span>
+            <div className="ui-segment">
               {(['none', 'start', 'end'] as const).map((mode) => (
                 <button
                   key={mode}
                   onClick={() => handleArrowModeChange(mode)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    ((selectedElement as any).arrowMode === mode || (!(selectedElement as any).arrowMode && mode === 'none'))
-                      ? 'bg-blue-100 text-blue-600'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
+                  className={`ui-segment-item ${((selectedElement as any).arrowMode === mode || (!(selectedElement as any).arrowMode && mode === 'none')) ? 'is-active' : ''}`}
                 >
                   {mode.charAt(0).toUpperCase() + mode.slice(1)}
                 </button>
