@@ -21,6 +21,7 @@ npm ci          # clean install from package-lock.json
 npm run dev     # dev server at http://127.0.0.1:5173
 npm run build   # production build into dist/
 npm run preview # serve the production build
+npm test        # unit tests (Vitest)
 npx tsc -p tsconfig.app.json --noEmit   # type check
 ```
 

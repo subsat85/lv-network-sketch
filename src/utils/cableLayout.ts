@@ -89,21 +89,30 @@ export const calculateCablePath = (cable: CableElement, elements: DrawingElement
 
     // 3. Sort cables by their effective offset in the canonical frame
     // Effective offset: if cable runs Canonical, use offset. If Reverse, use -offset.
+    //
+    // Every cable on the segment must sort in the SAME frame, otherwise a cable
+    // drawn in the opposite direction gets a mirrored rank and is drawn exactly on
+    // top of another cable. Directions are therefore taken relative to the
+    // canonical pair (minId -> maxId), not relative to the cable being drawn.
+    // When all cables share one direction the sort frame is that direction, which
+    // is exactly what the previous per-cable frame produced, so those layouts
+    // (incl. every first segment, where all offsets are 0) are unchanged.
+    const minId = isCanonical ? id1 : id2;
+    const maxId = isCanonical ? id2 : id1;
+    const getDir = (c: CableElement) => {
+      for (let j = 0; j < c.poleIds.length - 1; j++) {
+        if (c.poleIds[j] === minId && c.poleIds[j+1] === maxId) return 1; // Canonical
+        if (c.poleIds[j] === maxId && c.poleIds[j+1] === minId) return -1; // Reverse
+      }
+      return 1;
+    };
+    const firstDir = cablesOnSegment.length > 0 ? getDir(cablesOnSegment[0]) : 1;
+    const sameDirection = cablesOnSegment.every(c => getDir(c) === firstDir);
+    const frameDir = sameDirection ? firstDir : 1;
+
     cablesOnSegment.sort((a, b) => {
-      // Determine direction of a and b on this segment
-      const getDir = (c: CableElement) => {
-        for (let j = 0; j < c.poleIds.length - 1; j++) {
-          if (c.poleIds[j] === id1 && c.poleIds[j+1] === id2) return 1; // Canonical
-          if (c.poleIds[j] === id2 && c.poleIds[j+1] === id1) return -1; // Reverse
-        }
-        return 1;
-      };
-      
-      const dirA = getDir(a);
-      const dirB = getDir(b);
-      
-      const offA = (a.offset || 0) * dirA;
-      const offB = (b.offset || 0) * dirB;
+      const offA = (a.offset || 0) * getDir(a) * frameDir;
+      const offB = (b.offset || 0) * getDir(b) * frameDir;
       
       if (Math.abs(offA - offB) > 1e-6) {
         return offA - offB;
