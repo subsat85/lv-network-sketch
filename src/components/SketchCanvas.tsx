@@ -90,6 +90,7 @@ export const SketchCanvas: React.FC = () => {
     updateConnectionLabelOffset,
     addElement,   
     updateElement, 
+    deleteElement,
     setSelectedId,
     setActiveCableId,
     saveHistory,
@@ -220,11 +221,6 @@ export const SketchCanvas: React.FC = () => {
     const isDoubleTap = now - lastTapRef.current < 300;
     lastTapRef.current = now;
 
-    // Clear connection start if tapping empty space
-    if (tool === 'cable' && connectionStartPoleId) {
-       setConnectionStartPoleId(null);
-    }
-
     if (tool === 'arc') {
       saveHistory();
       const id = generateId();
@@ -285,7 +281,6 @@ export const SketchCanvas: React.FC = () => {
       // If we are here, we clicked on empty space
       if (isDoubleTap) {
         setActiveCableId(null);
-        setConnectionStartPoleId(null);
       }
     } else if (tool === 'select') {
       setSelectedId(null);
@@ -2609,7 +2604,6 @@ export const SketchCanvas: React.FC = () => {
               onClick={() => {
                 setSelectedId(el.id);
                 setActiveCableId(el.id);
-                setConnectionStartPoleId(null);
               }}
               className={`ui-swatch m-0.5 flex items-center justify-center ${selectedId === el.id ? 'is-active' : ''}`}
               style={{ backgroundColor: el.strokeColor }}
