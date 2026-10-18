@@ -3,6 +3,7 @@ import { MousePointer2, Trash2, Activity, Check, ArrowRight, Folder, Share, Minu
 import { useDrawingStore } from '../store/drawingStore';
 import { ToolType, CableElement } from '../types/drawing';
 import { LoadReportModal } from './LoadReportModal';
+import { ICON_LG } from './ui/icons';
 
 interface ToolbarProps {
   onOpenProjects?: () => void;
@@ -31,24 +32,27 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
   // Filter consumers from elements
   const consumers = elements.filter((el): el is ConsumerElement => el.type === 'consumer');
 
-  const tools: { id: string; icon: React.ReactNode; label: string; onClick: () => void; isActive: boolean }[] = [
+  const tools: { id: string; icon: React.ReactNode; label: string; onClick: () => void; isActive: boolean; group: 'file' | 'draw' | 'info' }[] = [
     { 
       id: 'projects', 
-      icon: <Folder size={24} />, 
+      group: 'file',
+      icon: <Folder {...ICON_LG} />, 
       label: 'Projects',
       onClick: () => onOpenProjects?.(),
       isActive: false
     },
     { 
       id: 'share', 
-      icon: <Share size={24} />, 
+      group: 'file',
+      icon: <Share {...ICON_LG} />, 
       label: 'Share',
       onClick: () => onOpenShare?.(),
       isActive: false
     },
     { 
       id: 'select', 
-      icon: <MousePointer2 size={24} />, 
+      group: 'draw',
+      icon: <MousePointer2 {...ICON_LG} />, 
       label: 'Select',
       onClick: () => setTool('select'),
       isActive: tool === 'select'
@@ -56,76 +60,88 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
 
     { 
       id: 'cable', 
-      icon: <Activity size={24} />, 
+      group: 'draw',
+      icon: <Activity {...ICON_LG} />, 
       label: 'Cable',
       onClick: () => setTool('cable'),
       isActive: tool === 'cable'
     },
     { 
       id: 'cable_straight', 
-      icon: <Minus size={24} />, 
+      group: 'draw',
+      icon: <Minus {...ICON_LG} />, 
       label: 'Straight Cable',
       onClick: () => setTool('cable_straight'),
       isActive: tool === 'cable_straight'
     },
     { 
       id: 'transformer', 
-      icon: <Zap size={24} />, 
+      group: 'info',
+      icon: <Zap {...ICON_LG} />, 
       label: 'معلومات المحول',
       onClick: () => onOpenTransformerInfo?.(),
       isActive: false
     },
     { 
       id: 'loadReport', 
-      icon: <BarChart3 size={24} />, 
+      group: 'info',
+      icon: <BarChart3 {...ICON_LG} />, 
       label: 'تقرير الاحمال',
       onClick: () => setShowLoadReport(true),
       isActive: false
     },
   ];
 
+  const renderTool = (t: typeof tools[number]) => (
+    <React.Fragment key={t.id}>
+      <button
+        onClick={t.onClick}
+        className={`ui-icon-btn ${t.isActive ? 'is-active' : ''}`}
+        aria-label={t.label}
+        aria-pressed={t.group === 'draw' ? t.isActive : undefined}
+        title={t.label}
+      >
+        {t.icon}
+      </button>
+      {t.id === tool && activeCableId && (t.id === 'cable' || t.id === 'cable_straight') && (
+        <button
+          onClick={() => setActiveCableId(null)}
+          className="ui-icon-btn is-confirm"
+          aria-label="Finish Cable"
+          title="Finish Cable"
+        >
+          <Check {...ICON_LG} strokeWidth={2.25} />
+        </button>
+      )}
+    </React.Fragment>
+  );
+
+  const group = (g: 'file' | 'draw' | 'info') => tools.filter(t => t.group === g).map(renderTool);
+
   return (
     <>
-      <div className="w-full bg-white border-b border-gray-200 shadow-sm z-10 overflow-x-auto no-scrollbar touch-pan-x">
-        <div className="flex items-center justify-between px-4 py-2 min-w-max gap-4">
-          <div className="flex space-x-2">
-            {tools.map((t) => (
-              <React.Fragment key={t.id}>
-                <button
-                  onClick={t.onClick}
-                  className={`p-3 rounded-xl flex flex-col items-center justify-center transition-colors min-h-[44px] min-w-[44px] flex-shrink-0 ${
-                    t.isActive
-                      ? 'bg-blue-100 text-blue-600'
-                      : 'bg-transparent text-gray-600 hover:bg-gray-50'
-                  }`}
-                  aria-label={t.label}
-                >
-                  {t.icon}
-                </button>
-                {t.id === tool && activeCableId && (t.id === 'cable' || t.id === 'cable_straight') && (
-                  <button
-                    onClick={() => setActiveCableId(null)}
-                    className="p-3 rounded-xl bg-green-100 text-green-600 hover:bg-green-200 min-h-[44px] min-w-[44px] flex-shrink-0"
-                    aria-label="Finish Cable"
-                  >
-                    <Check size={24} />
-                  </button>
-                )}
-              </React.Fragment>
-            ))}
+      <div className="w-full bg-white/95 border-b border-ios-separator z-10 overflow-x-auto no-scrollbar touch-pan-x">
+        <div className="flex items-center justify-between px-2 sm:px-3 py-1.5 min-w-max gap-2">
+          <div className="flex items-center gap-0.5">
+            {group('file')}
+            <div className="ui-sep-v" aria-hidden="true" />
+            {group('draw')}
+            <div className="ui-sep-v" aria-hidden="true" />
+            {group('info')}
           </div>
 
-          <div className="flex items-center px-2">
+          <div className="flex items-center px-1">
             <input
               type="text"
               value={currentProjectName || ''}
               onChange={(e) => setProjectInfo(currentProjectId, e.target.value)}
               placeholder="Project Name"
-              className="px-2 py-1 border border-gray-300 rounded-md text-sm w-32 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Project Name"
+              className="ui-field w-36"
             />
           </div>
           
-          <div className="flex space-x-2">
+          <div className="flex items-center">
             <button
               onClick={() => {
                 if (selectedId) {
@@ -133,12 +149,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
                 }
               }}
               disabled={!selectedId}
-              className={`p-3 rounded-xl min-h-[44px] min-w-[44px] flex-shrink-0 ${
-                selectedId ? 'text-red-500 hover:bg-red-50' : 'text-gray-300'
-              }`}
+              className="ui-icon-btn is-destructive"
               aria-label="Delete Selected"
+              title="Delete Selected"
             >
-              <Trash2 size={24} />
+              <Trash2 {...ICON_LG} />
             </button>
           </div>
         </div>
