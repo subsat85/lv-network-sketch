@@ -3,6 +3,7 @@ import { ColumnContextMenu } from './ColumnContextMenu';
 import { ColumnModifiers } from './ColumnModifiers';
 import { useDrawingStore } from '../store/drawingStore';
 import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerElement, ArcElement, DrawingElement, ShapeElement, ShapeType } from '../types/drawing';
+import { pathSegmentSpans } from '../utils/cableSegments';
 import { calculateCablePath } from '../utils/cableLayout';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
 import { simplifyPath, detectShape, generateSmoothPathData } from '../utils/pathUtils';
@@ -1130,7 +1131,8 @@ export const SketchCanvas: React.FC = () => {
     }
   };
 
-  const handleSegmentClick = (e: React.PointerEvent, cableId: string, segmentIndex: number) => {
+  // `spanKey`: the pole pair of the drawn segment that was tapped (see pathSegmentSpans).
+  const handleSegmentClick = (e: React.PointerEvent, cableId: string, spanKey: string | null) => {
     e.stopPropagation();
     
     if (tool !== 'select' && tool !== 'cable' && tool !== 'cable_straight') return;
@@ -1141,22 +1143,21 @@ export const SketchCanvas: React.FC = () => {
       return;
     }
 
-    const cable = elements.find(el => el.id === cableId) as CableElement;
-    if (!cable || segmentIndex >= cable.poleIds.length - 1) return;
-
-    const id1 = cable.poleIds[segmentIndex];
-    const id2 = cable.poleIds[segmentIndex + 1];
-    const key = [id1, id2].sort().join('_');
+    if (!spanKey) return;
+    const key = spanKey;
 
     const currentDist = connectionDistances[key] ?? '1';
     const newDist = prompt('Enter distance (m):', currentDist);
     
     if (newDist !== null) {
+      // one undo step, closed right away (the prompt may swallow the pointer-up)
+      saveHistory();
       if (newDist.trim() === '') {
         updateConnectionDistance(key, '1');
       } else {
         updateConnectionDistance(key, newDist.trim());
       }
+      saveHistory();
     }
   };
 
@@ -1460,6 +1461,7 @@ export const SketchCanvas: React.FC = () => {
       }
     }
 
+    const segmentSpans = pathSegmentSpans(el, elements, finalPoints);
     const segments = [];
     for (let i = 0; i < finalPoints.length - 1; i++) {
       const p1 = finalPoints[i];
@@ -1483,7 +1485,7 @@ export const SketchCanvas: React.FC = () => {
             stroke="transparent"
             strokeWidth={20}
             className={tool === 'select' || tool === 'cable' || tool === 'cable_straight' ? 'cursor-pointer' : ''}
-            onPointerDown={(e) => handleSegmentClick(e, el.id, i)}
+            onPointerDown={(e) => handleSegmentClick(e, el.id, segmentSpans[i]?.key ?? null)}
             style={{ pointerEvents: tool === 'select' || tool === 'cable' || tool === 'cable_straight' ? 'stroke' : 'none' }}
           />
         </g>
