@@ -1,9 +1,10 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { ColumnContextMenu } from './ColumnContextMenu';
 import { ColumnModifiers } from './ColumnModifiers';
 import { useDrawingStore } from '../store/drawingStore';
-import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerElement, ArcElement, DrawingElement, ShapeElement, ShapeType } from '../types/drawing';
+import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerElement, ArcElement, DrawingElement, ShapeElement, ShapeType, CableArcElement } from '../types/drawing';
 import { pathSegmentSpans } from '../utils/cableSegments';
+import { arcGeometry, arcPick, ArcPickAction, ArcPickState, createArc, listConnectionPoints, sameEnd } from '../utils/cableArcs';
 import { calculateCablePath } from '../utils/cableLayout';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
 import { simplifyPath, detectShape, generateSmoothPathData } from '../utils/pathUtils';
@@ -118,6 +119,33 @@ export const SketchCanvas: React.FC = () => {
   const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; elementId: string | null }>({
     visible: false, x: 0, y: 0, elementId: null
   });
+  // Cable arc tool: pick two connection points at one pole; each pair becomes an arc.
+  const [arcPickState, setArcPickState] = useState<ArcPickState>(null);
+  const arcRadius = POLE_RADIUS * poleSizeScale;
+  const arcPoints = useMemo(
+    () => (arcPickState ? listConnectionPoints(elements, arcPickState.poleId, arcRadius) : []),
+    [arcPickState, elements, arcRadius]
+  );
+  const dispatchArcPick = (action: ArcPickAction) => {
+    const res = arcPick(arcPickState, action);
+    if (res.create && arcPickState) {
+      const r = createArc(elements, arcPickState.poleId, res.create.from, res.create.to, generateId());
+      if (r.ok) addElement(r.arc);
+    }
+    setArcPickState(res.state);
+  };
+  // leave the arc tool when the tool changes or its pole disappears; Escape cancels
+  useEffect(() => { setArcPickState(null); }, [tool]);
+  useEffect(() => {
+    if (arcPickState && !elements.some(e => e.id === arcPickState.poleId && e.type === 'symbol')) setArcPickState(null);
+  }, [elements, arcPickState]);
+  useEffect(() => {
+    if (!arcPickState) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setArcPickState(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [arcPickState]);
+
   const [draggingNote, setDraggingNote] = useState<{ elementId: string; startX: number; startY: number; startNoteX: number; startNoteY: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPosition, setLastPanPosition] = useState<{ x: number; y: number } | null>(null);
@@ -1790,6 +1818,68 @@ export const SketchCanvas: React.FC = () => {
     });
   };
 
+  const renderCableArc = (el: CableArcElement, isSelected: boolean) => {
+    const g = arcGeometry(elements, el, arcRadius);
+    if (!g) return null;
+    return (
+      <g key={el.id}>
+        <path d={g.d} stroke={el.strokeColor} strokeWidth={el.strokeWidth} fill="none" strokeLinecap="round" style={{ pointerEvents: 'none' }} />
+        <path
+          d={g.d}
+          stroke="transparent"
+          strokeWidth={14}
+          fill="none"
+          data-cable-arc={el.id}
+          className={tool === 'select' ? 'cursor-pointer' : ''}
+          onPointerDown={(e) => { if (tool !== 'select' || arcPickState) return; e.stopPropagation(); setSelectedId(el.id); }}
+          style={{ pointerEvents: tool === 'select' && !arcPickState ? 'stroke' : 'none' }}
+        />
+        {isSelected && <path d={g.d} stroke="#3B82F6" strokeWidth={1} strokeDasharray="4 4" fill="none" className="pointer-events-none" />}
+      </g>
+    );
+  };
+
+  // Numbered connection points of the pole being linked (arc tool).
+  const renderArcPicker = () => {
+    if (!arcPickState) return null;
+    const pole = elements.find(e => e.id === arcPickState.poleId);
+    if (!pole) return null;
+    const k = 1 / transform.scale;
+    const r = 11 * k;
+    const ring = arcRadius + 22 * k;
+    // badges sit on a ring around the pole, spread so they never overlap
+    const minGap = (2 * r + 4 * k) / ring;
+    const angles = arcPoints.map(p => p.angle);
+    for (let pass = 0; pass < 4; pass++) {
+      for (let i = 1; i < angles.length; i++) if (angles[i] - angles[i - 1] < minGap) angles[i] = angles[i - 1] + minGap;
+    }
+    return (
+      <g data-arc-picker={arcPickState.poleId}>
+        {arcPoints.map((p, i) => {
+          const bx = pole.x + Math.sin(angles[i]) * ring;
+          const by = pole.y - Math.cos(angles[i]) * ring;
+          const isFirst = !!arcPickState.first && sameEnd(arcPickState.first, p.end);
+          return (
+            <g key={`${p.end.cableId}:${p.end.side}:${p.end.occurrence}`}>
+              <line x1={p.position.x} y1={p.position.y} x2={bx} y2={by} stroke={p.color} strokeWidth={1.5 * k} className="pointer-events-none" />
+              <circle cx={p.position.x} cy={p.position.y} r={3.5 * k} fill={p.color} className="pointer-events-none" />
+              <g
+                role="button"
+                aria-label={`نقطة اتصال ${p.number}`}
+                aria-pressed={isFirst}
+                style={{ cursor: 'pointer' }}
+                onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); dispatchArcPick({ type: 'pick', end: p.end }); }}
+              >
+                <circle cx={bx} cy={by} r={r * (isFirst ? 1.2 : 1)} fill={isFirst ? p.color : '#FFFFFF'} stroke={p.color} strokeWidth={2 * k} />
+                <text x={bx} y={by} dy="0.35em" textAnchor="middle" fontSize={12 * k} fontWeight={700} fill={isFirst ? '#FFFFFF' : '#1C1C1E'} className="pointer-events-none select-none">{p.number}</text>
+              </g>
+            </g>
+          );
+        })}
+      </g>
+    );
+  };
+
   const renderArc = (el: ArcElement, isSelected: boolean) => {
     const path = generateHighQualityArcPath(el.x, el.y, el.controlX, el.controlY, el.x2, el.y2);
     
@@ -2383,6 +2473,8 @@ export const SketchCanvas: React.FC = () => {
       return renderConsumer(el as ConsumerElement);
     } else if (el.type === 'arc') {
       return renderArc(el as ArcElement, isSelected);
+    } else if (el.type === 'cable_arc') {
+      return renderCableArc(el as CableArcElement, isSelected);
     } else if (el.type === 'shape') {
       return renderShape(el as ShapeElement, isSelected);
     } else if (el.type === 'transformer_table') {
@@ -2410,6 +2502,8 @@ export const SketchCanvas: React.FC = () => {
           {elements.filter(el => el.type !== 'cable').map(el => renderElement(el))}
 
           {showDistanceLabels && renderConnectionLabels()}
+
+          {renderArcPicker()}
 
           {/* Pending Consumer UI */}
           {pendingConsumer && (
@@ -2621,7 +2715,39 @@ export const SketchCanvas: React.FC = () => {
           elementId={contextMenu.elementId}
           position={{ x: contextMenu.x, y: contextMenu.y }}
           onClose={() => setContextMenu({ ...contextMenu, visible: false })}
+          onStartArc={(poleId) => dispatchArcPick({ type: 'start', poleId })}
         />
+      )}
+
+      {arcPickState && (
+        <div dir="rtl" role="toolbar" aria-label="أداة القوس" className="ui-float absolute left-1/2 bottom-16 z-40 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-2 overflow-x-auto no-scrollbar whitespace-nowrap px-3 py-2 text-[13px]">
+          <span className="flex-shrink-0 font-semibold text-ios-label">قوس</span>
+          <span className="flex-shrink-0 text-ios-secondary">
+            {arcPickState.first
+              ? `النقطة الثانية (الأولى: ${arcPoints.find(p => sameEnd(p.end, arcPickState.first!))?.number ?? '—'})`
+              : 'اختر النقطة الأولى'}
+          </span>
+          <div className="flex flex-shrink-0 gap-1">
+            {arcPoints.map(p => {
+              const isFirst = !!arcPickState.first && sameEnd(arcPickState.first, p.end);
+              return (
+                <button
+                  key={`${p.end.cableId}:${p.end.side}:${p.end.occurrence}`}
+                  type="button"
+                  aria-label={`اختيار النقطة ${p.number}`}
+                  aria-pressed={isFirst}
+                  onClick={() => dispatchArcPick({ type: 'pick', end: p.end })}
+                  className={`flex h-8 min-w-8 items-center justify-center gap-1 rounded-full px-2 font-semibold ring-1 ring-inset ring-ios-separator ${isFirst ? 'text-white' : 'text-ios-label bg-white'}`}
+                  style={isFirst ? { backgroundColor: p.color } : undefined}
+                >
+                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: p.color }} />
+                  {p.number}
+                </button>
+              );
+            })}
+          </div>
+          <button type="button" aria-label="إنهاء القوس" onClick={() => dispatchArcPick({ type: 'cancel' })} className="ui-tinted-btn !w-auto !min-h-[32px] flex-shrink-0 !px-3">تم</button>
+        </div>
       )}
 
       {editingDistance && (

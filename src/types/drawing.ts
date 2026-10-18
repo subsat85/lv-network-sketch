@@ -1,6 +1,6 @@
 export type Point = { x: number; y: number };
 
-export type ElementType = 'path' | 'text' | 'symbol' | 'cable' | 'consumer' | 'arc' | 'shape' | 'transformer_table';
+export type ElementType = 'path' | 'text' | 'symbol' | 'cable' | 'consumer' | 'arc' | 'shape' | 'transformer_table' | 'cable_arc';
 
 export type ShapeType = 'rectangle' | 'circle' | 'triangle' | 'arrow' | 'compass' | 'curved_arrow';
 
@@ -108,7 +108,30 @@ export interface ShapeElement extends BaseElement {
   arrowHeadSize?: number;
 }
 
-export type DrawingElement = PathElement | TextElement | SymbolElement | CableElement | ConsumerElement | ArcElement | ShapeElement | TransformerTableElement;
+/**
+ * One end of a cable arc: where a cable is connected at the arc's pole.
+ * Identified by the cable and by which side of the pole it leaves on, in the
+ * cable's own pole order ('prev' = towards the pole before it, 'next' = towards
+ * the pole after it). `occurrence` is which visit of the pole (0 unless the
+ * cable passes the same pole more than once). This stays the same when poles
+ * move, cable offsets change, a pole is inserted into a span or an interior
+ * pole is removed (the cable continues on the same side).
+ */
+export interface CableArcEnd {
+  cableId: string;
+  side: 'prev' | 'next';
+  occurrence: number;
+}
+
+/** A link drawn at one pole between two cable connection points. */
+export interface CableArcElement extends BaseElement {
+  type: 'cable_arc';
+  poleId: string;
+  from: CableArcEnd;
+  to: CableArcEnd;
+}
+
+export type DrawingElement = PathElement | TextElement | SymbolElement | CableElement | ConsumerElement | ArcElement | ShapeElement | TransformerTableElement | CableArcElement;
 
 export type ToolType = 'select' | 'draw' | 'text' | 'symbol' | 'cable' | 'cable_straight' | 'consumer' | 'arc' | 'shape';
 

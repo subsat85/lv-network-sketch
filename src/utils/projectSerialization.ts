@@ -1,4 +1,5 @@
 import { DrawingElement, DrawingStyle } from '../types/drawing';
+import { isArcValid } from './cableArcs';
 
 export interface ProjectExportData {
   version: number;
@@ -116,6 +117,11 @@ export const validateProjectFile = (raw: unknown): ValidateProjectResult => {
       case 'transformer_table':
         if (!isObj(el.transformerInfo)) err(`${label}: بدون بيانات المحوّل.`);
         break;
+      case 'cable_arc': {
+        const isEnd = (v: unknown) => isObj(v) && isStr(v.cableId) && (v.side === 'prev' || v.side === 'next') && Number.isInteger(v.occurrence) && (v.occurrence as number) >= 0;
+        if (!isStr(el.poleId) || !isEnd(el.from) || !isEnd(el.to)) err(`${label}: بيانات القوس ناقصة.`);
+        break;
+      }
       default:
         err(`${label}: نوع عنصر غير معروف.`);
         return;
@@ -131,6 +137,15 @@ export const validateProjectFile = (raw: unknown): ValidateProjectResult => {
       const target = byId.get(ref);
       if (!target) err(`${el.type === 'cable' ? 'الكيبل' : 'المشترك'} "${String(el.id)}" يشير إلى عمود غير موجود "${ref}".`);
       else if (target.type !== 'symbol') err(`${el.type === 'cable' ? 'الكيبل' : 'المشترك'} "${String(el.id)}" يشير إلى "${ref}" وهو ليس عمودًا.`);
+    }
+  }
+
+  // cable arcs: both ends must still be real connection points of that pole (never guessed)
+  if (!errors.length) {
+    const els = elements as DrawingElement[];
+    for (const el of els) {
+      if (el.type !== 'cable_arc') continue;
+      if (!isArcValid(els, el)) err(`القوس "${el.id}" يشير إلى نقطة اتصال غير موجودة عند العمود "${el.poleId}".`);
     }
   }
 

@@ -9,9 +9,10 @@ interface ColumnContextMenuProps {
   elementId: string;
   position: { x: number; y: number };
   onClose: () => void;
+  onStartArc?: (poleId: string) => void;
 }
 
-export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId, position, onClose }) => {
+export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId, position, onClose, onStartArc }) => {
   const { elements, updateSymbolModifiers, updateElement, addElement, saveHistory } = useDrawingStore();
   const element = elements.find(el => el.id === elementId) as SymbolElement;
   const menuRef = useRef<HTMLDivElement>(null);
@@ -21,6 +22,9 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
   const connectedCables = elements.filter(el => 
     el.type === 'cable' && (el as CableElement).poleIds.includes(elementId)
   ) as CableElement[];
+  // connection points = each side of each visit of this pole by a cable
+  const connectionPointCount = connectedCables.reduce((n, c) =>
+    n + c.poleIds.reduce((m, id, i) => m + (id === elementId ? (i > 0 ? 1 : 0) + (i < c.poleIds.length - 1 ? 1 : 0) : 0), 0), 0);
   
   // Get unique cable colors
   const cableColors = [...new Set(connectedCables.map(c => c.strokeColor))];
@@ -192,6 +196,17 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
         </button>
       )}
       
+      {/* Cable arc: link two cable connection points at this pole */}
+      {onStartArc && connectionPointCount >= 2 && (
+        <button
+          className="ui-menu-item"
+          role="menuitem"
+          onClick={() => { onStartArc(elementId); onClose(); }}
+        >
+          قوس
+        </button>
+      )}
+
       {/* Cable Numbering Button */}
       {connectedCables.length > 0 && (
         <div className="relative">

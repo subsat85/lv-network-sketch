@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { DrawingElement, ToolType, DrawingStyle } from '../types/drawing';
 import { deletePoleCascade, DeletePoleFailure } from '../utils/deletePole';
+import { pruneInvalidArcs } from '../utils/cableArcs';
 
 // ---------------------------------------------------------------------------
 // Undo / redo
@@ -146,6 +147,8 @@ export const useDrawingStore = create<DrawingState>((set, get) => {
   const mutate = (changes: Partial<DrawingState> | ((s: DrawingState) => Partial<DrawingState>)) => {
     const s = get();
     const patch = typeof changes === 'function' ? changes(s) : changes;
+    // cable arcs whose pole / cable / connection side is gone are removed with the change
+    if (patch.elements) patch.elements = pruneInvalidArcs(patch.elements);
     if (s.pendingStep) { set(patch); return; }
     set({ ...patch, pendingStep: docOf(s) });
     scheduleCommit();
@@ -182,7 +185,7 @@ export const useDrawingStore = create<DrawingState>((set, get) => {
   setAttachedImage: (image) => set({ attachedImage: image }),
 
   loadProject: (data) => set({
-    elements: data.elements,
+    elements: pruneInvalidArcs(data.elements),
     style: data.style,
     poleSizeScale: data.poleSizeScale,
     distanceTextScale: (data as any).distanceTextScale || 1,

@@ -2,6 +2,7 @@ import React from 'react';
 import { ColumnModifiers } from './ColumnModifiers';
 import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerElement, ArcElement, DrawingElement, ShapeElement } from '../types/drawing';
 import { calculateCablePath } from '../utils/cableLayout';
+import { arcGeometry } from '../utils/cableArcs';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
 
 const POLE_RADIUS = 20;
@@ -452,6 +453,12 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
             </text>
           )}
         </g>
+      );
+    } else if (el.type === 'cable_arc') {
+      const g = arcGeometry(elements, el, POLE_RADIUS * poleSizeScale);
+      if (!g) return null;
+      return (
+        <path key={el.id} d={g.d} stroke={el.strokeColor} strokeWidth={el.strokeWidth} fill="none" strokeLinecap="round" />
       );
     } else if (el.type === 'arc') {
       const arc = el as ArcElement;

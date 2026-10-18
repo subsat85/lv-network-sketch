@@ -100,7 +100,7 @@ export const buildDraft = (s: StoreState, now = Date.now()): Draft => ({
 const isBlank = (s: StoreState) => s.elements.length === 0 && !s.currentProjectId && !s.currentProjectName;
 
 // ---------- validation (never throws) ----------
-const ELEMENT_TYPES = new Set(['path', 'text', 'symbol', 'cable', 'consumer', 'arc', 'shape', 'transformer_table']);
+const ELEMENT_TYPES = new Set(['path', 'text', 'symbol', 'cable', 'consumer', 'arc', 'shape', 'transformer_table', 'cable_arc']);
 const DEFAULT_STYLE: DrawingStyle = { strokeColor: '#000000', fillColor: 'transparent', strokeWidth: 2, fontSize: 16 };
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
