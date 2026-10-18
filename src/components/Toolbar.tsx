@@ -145,7 +145,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
             <button
               onClick={() => {
                 if (selectedId) {
-                  deleteElement(selectedId);
+                  const res = deleteElement(selectedId);
+                  if (!res.ok && res.reason) alert(res.reason);
                 }
               }}
               disabled={!selectedId}

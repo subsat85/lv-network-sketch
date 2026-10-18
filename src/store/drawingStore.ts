@@ -1,5 +1,15 @@
 import { create } from 'zustand';
 import { DrawingElement, ToolType, DrawingStyle } from '../types/drawing';
+import { deletePoleCascade, applyPatch, MapPatch, DeletePoleFailure } from '../utils/deletePole';
+
+// Undo/redo for "delete pole" must also restore distances and label offsets,
+// which are not part of the elements history. The delete step registers what it
+// changed in those maps, keyed by the exact history snapshot arrays it created:
+// popping the pre-delete snapshot (undo) applies `before`, popping the
+// post-delete snapshot from the redo stack applies `after`.
+type MapsPatch = { distances: MapPatch; labelOffsets: MapPatch };
+const undoPatches = new WeakMap<DrawingElement[], MapsPatch>();
+const redoPatches = new WeakMap<DrawingElement[], MapsPatch>();
 
 interface DrawingState {
   elements: DrawingElement[];
@@ -38,7 +48,7 @@ interface DrawingState {
   updateSymbolModifiers: (id: string, modifiers: Partial<import('../types/drawing').SymbolModifiers>) => void;
   updateConnectionDistance: (key: string, distance: string) => void;
   updateConnectionLabelOffset: (key: string, offset: { x: number, y: number }) => void;
-  deleteElement: (id: string) => void;
+  deleteElement: (id: string) => { ok: boolean; reason?: string };
   setSelectedId: (id: string | null) => void;
   setActiveSymbolId: (id: string | null) => void;
   setActiveCableId: (id: string | null) => void;
@@ -49,7 +59,7 @@ interface DrawingState {
   loadProject: (data: { elements: DrawingElement[], style: DrawingStyle, poleSizeScale: number, consumerVariant: 'circle' | 'square', connectionDistances?: Record<string, string>, connectionLabelOffsets?: Record<string, { x: number, y: number }> }) => void;
 }
 
-export const useDrawingStore = create<DrawingState>((set) => ({
+export const useDrawingStore = create<DrawingState>((set, get) => ({
   elements: [],
   history: [],
   redoStack: [],
@@ -178,12 +188,36 @@ export const useDrawingStore = create<DrawingState>((set) => ({
     redoStack: [] 
   })),
 
-  deleteElement: (id) => set((state) => ({
-    history: [...state.history, state.elements],
-    redoStack: [],
-    elements: state.elements.filter((el) => el.id !== id),
-    selectedId: state.selectedId === id ? null : state.selectedId,
-  })),
+  deleteElement: (id) => {
+    const state = get();
+    const target = state.elements.find((el) => el.id === id);
+    if (target && target.type === 'symbol') {
+      // Pole: remove it together with its subscribers, and continue/trim every
+      // cable through it, as one atomic, single-undo-step change.
+      const res = deletePoleCascade(state.elements, state.connectionDistances, state.connectionLabelOffsets, id);
+      if (!res.ok) return { ok: false, reason: (res as DeletePoleFailure).reason };
+      const patch: MapsPatch = { distances: res.distancePatch, labelOffsets: res.labelOffsetPatch };
+      undoPatches.set(state.elements, patch);
+      const gone = new Set(res.removedElementIds);
+      set({
+        history: [...state.history, state.elements],
+        redoStack: [],
+        elements: res.elements,
+        connectionDistances: res.connectionDistances,
+        connectionLabelOffsets: res.connectionLabelOffsets,
+        selectedId: state.selectedId && gone.has(state.selectedId) ? null : state.selectedId,
+        activeCableId: state.activeCableId && gone.has(state.activeCableId) ? null : state.activeCableId,
+      });
+      return { ok: true };
+    }
+    set({
+      history: [...state.history, state.elements],
+      redoStack: [],
+      elements: state.elements.filter((el) => el.id !== id),
+      selectedId: state.selectedId === id ? null : state.selectedId,
+    });
+    return { ok: true };
+  },
 
   setSelectedId: (id) => set({ selectedId: id }),
   setActiveSymbolId: (id) => set({ activeSymbolId: id, tool: 'symbol', selectedId: null, activeCableId: null }),
@@ -203,7 +237,17 @@ export const useDrawingStore = create<DrawingState>((set) => ({
     if (state.history.length === 0) return {};
     const previous = state.history[state.history.length - 1];
     const newHistory = state.history.slice(0, -1);
+    const patch = undoPatches.get(previous);
+    if (patch) {
+      // hand the patch over to the redo side (whatever array is current now)
+      undoPatches.delete(previous);
+      redoPatches.set(state.elements, patch);
+    }
     return { 
+      ...(patch ? {
+        connectionDistances: applyPatch(state.connectionDistances, patch.distances, 'before'),
+        connectionLabelOffsets: applyPatch(state.connectionLabelOffsets, patch.labelOffsets, 'before'),
+      } : {}),
       elements: previous, 
       history: newHistory, 
       redoStack: [state.elements, ...state.redoStack],
@@ -216,7 +260,16 @@ export const useDrawingStore = create<DrawingState>((set) => ({
     if (state.redoStack.length === 0) return {};
     const next = state.redoStack[0];
     const newRedoStack = state.redoStack.slice(1);
+    const patch = redoPatches.get(next);
+    if (patch) {
+      redoPatches.delete(next);
+      undoPatches.set(state.elements, patch);
+    }
     return {
+      ...(patch ? {
+        connectionDistances: applyPatch(state.connectionDistances, patch.distances, 'after'),
+        connectionLabelOffsets: applyPatch(state.connectionLabelOffsets, patch.labelOffsets, 'after'),
+      } : {}),
       elements: next,
       history: [...state.history, state.elements],
       redoStack: newRedoStack,
