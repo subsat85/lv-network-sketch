@@ -458,7 +458,11 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
       const g = arcGeometry(elements, el, POLE_RADIUS * poleSizeScale);
       if (!g) return null;
       return (
-        <path key={el.id} d={g.d} stroke={el.strokeColor} strokeWidth={el.strokeWidth} fill="none" strokeLinecap="round" />
+        <g key={el.id}>
+          <path d={g.d} stroke={el.strokeColor} strokeWidth={el.strokeWidth} fill="none" strokeLinecap="round" />
+          <circle cx={g.start.x} cy={g.start.y} r={g.dotRadius} fill={el.strokeColor} />
+          <circle cx={g.end.x} cy={g.end.y} r={g.dotRadius} fill={el.strokeColor} />
+        </g>
       );
     } else if (el.type === 'arc') {
       const arc = el as ArcElement;

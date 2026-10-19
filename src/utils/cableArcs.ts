@@ -146,58 +146,124 @@ export const createArc = (elements: DrawingElement[], poleId: string, from: Cabl
 };
 
 /**
- * SVG path of a jumper (cable arc).
+ * Jumper (cable_arc) geometry.
  *
- * The curve is built in polar coordinates around the pole centre: its angle
- * runs from one connection point to the other (the short way round), and its
- * distance from the centre is the pole radius plus a positive bump that is
- * zero only at the two ends. So every point between the ends lies strictly
- * outside the pole circle, for any angle between the ends and for either end
- * order. (The previous quadratic curve dipped inside the circle whenever the
- * ends were far apart, e.g. both sides of a cable passing through.)
- * Jumpers on the same pole get increasing heights so they stay apart; ends
- * that are almost opposite go round one side, alternating per jumper, chosen
- * independently of which end was picked first.
+ * Each end of a jumper sits ON its cable's drawn run, outside the pole: where
+ * the run crosses a circle concentric with the pole whose radius is the pole
+ * radius plus a clearance (JUMPER_CLEARANCE × pole radius). Both ends are on
+ * that circle, and the jumper is the arc of that circle between them, so it
+ * runs parallel to the pole outline and keeps a visible gap from it everywhere,
+ * including at the ends. A dot marks each end. The cable connection points on
+ * the pole circle are not moved.
+ *
+ * The arc goes the short way round. Ends that are almost opposite go round the
+ * side that needs the lower ring (ties: a side fixed by the end identities, not
+ * by which end was picked first). Jumpers on the same pole whose arcs would
+ * overlap go on successive rings, JUMPER_RING_STEP × pole radius apart; jumpers
+ * that do not overlap share the innermost ring, so outer arcs do not keep growing.
  */
-export const ARC_SAMPLES = 24;
-export const arcGeometry = (elements: DrawingElement[], arc: CableArcElement, radius: number): { d: string; a: Point; b: Point; apex: Point; points: Point[] } | null => {
+export const JUMPER_CLEARANCE = 0.5;    // gap between pole outline and jumper ring, × pole radius
+export const JUMPER_RING_STEP = 0.3;    // spacing between rings of overlapping jumpers, × pole radius
+export const JUMPER_DOT = 0.16;         // end-dot radius, × pole radius
+export const ARC_SAMPLES = 48;
+
+interface JumperLayout { delta: number; ring: number; swapped: boolean }
+
+const TAU = 2 * Math.PI;
+const mod = (v: number) => ((v % TAU) + TAU) % TAU;
+const wrap = (v: number) => { let d = v; while (d <= -Math.PI) d += TAU; while (d > Math.PI) d -= TAU; return d; };
+const endKey = (e: CableArcEnd) => `${e.cableId}|${e.side}|${e.occurrence}`;
+/** Angular ranges on a circle as (start, length ≥ 0); true if they overlap or nearly touch. */
+const rangesOverlap = (s1: number, l1: number, s2: number, l2: number, margin = 0.08) =>
+  mod(s2 - s1) < l1 + margin || mod(s1 - s2) < l2 + margin;
+
+export const jumperRadius = (radius: number, ring: number) => radius * (1 + JUMPER_CLEARANCE + JUMPER_RING_STEP * ring);
+
+/** Canonical (pick-order independent) ends of a jumper at a given ring radius. */
+const canonicalEnds = (elements: DrawingElement[], arc: CableArcElement, rr: number) => {
+  const swapped = endKey(arc.from) > endKey(arc.to);
+  const pa = endPosition(elements, arc.poleId, arc.from, rr);
+  const pb = endPosition(elements, arc.poleId, arc.to, rr);
+  if (!pa || !pb) return null;
+  return { swapped, p: swapped ? pb : pa, q: swapped ? pa : pb };
+};
+
+/** Ring and turning direction for every jumper of a pole (in element order). */
+const layoutJumpers = (elements: DrawingElement[], poleId: string, radius: number): Map<string, JumperLayout> => {
+  const out = new Map<string, JumperLayout>();
+  const pole = elements.find((e) => e.id === poleId);
+  if (!pole) return out;
+  const rings: [number, number][][] = [];
+  const ringFor = (st: number, len: number) => {
+    let k = 0;
+    while (rings[k] && rings[k].some(([s2, l2]) => rangesOverlap(st, len, s2, l2))) k++;
+    return k;
+  };
+  const r0 = jumperRadius(radius, 0);
+  for (const arc of elements) {
+    if (!isArc(arc) || arc.poleId !== poleId) continue;
+    const ends = canonicalEnds(elements, arc, r0);
+    if (!ends) continue;
+    const thP = Math.atan2(ends.p.y - pole.y, ends.p.x - pole.x);
+    const delta = wrap(Math.atan2(ends.q.y - pole.y, ends.q.x - pole.x) - thP);
+    const candidates = Math.abs(delta) > Math.PI - 0.15 ? [Math.abs(delta), -Math.abs(delta)] : [delta];
+    let best: { d: number; ring: number } | null = null;
+    for (const d of candidates) {
+      const ring = ringFor(d >= 0 ? thP : thP + d, Math.abs(d));
+      if (!best || ring < best.ring) best = { d, ring };
+    }
+    const { d, ring } = best!;
+    (rings[ring] ??= []).push([d >= 0 ? thP : thP + d, Math.abs(d)]);
+    out.set(arc.id, { delta: d, ring, swapped: ends.swapped });
+  }
+  return out;
+};
+
+export interface JumperGeometry {
+  d: string;          // SVG path (one circular arc)
+  a: Point; b: Point; // cable connection points of `from` / `to` (on the pole circle)
+  start: Point;       // drawn end at `from` (on that cable, outside the pole)
+  end: Point;         // drawn end at `to`
+  apex: Point;        // middle of the arc
+  points: Point[];    // samples along the arc, from `start` to `end`
+  ringRadius: number;
+  center: Point;      // pole centre (centre of the arc)
+  dotRadius: number;  // end dots
+}
+
+/** Drawn geometry of a jumper — used by the canvas, the share preview and the PDF. */
+export const arcGeometry = (elements: DrawingElement[], arc: CableArcElement, radius: number): JumperGeometry | null => {
   const pole = elements.find((e) => e.id === arc.poleId);
   if (!pole) return null;
   const a = endPosition(elements, arc.poleId, arc.from, radius);
   const b = endPosition(elements, arc.poleId, arc.to, radius);
   if (!a || !b) return null;
-  const P = { x: pole.x, y: pole.y };
-  const siblings = elements.filter((e): e is CableArcElement => isArc(e) && e.poleId === arc.poleId);
-  const index = Math.max(0, siblings.findIndex((e) => e.id === arc.id));
-
-  const thA = Math.atan2(a.y - P.y, a.x - P.x);
-  const thB = Math.atan2(b.y - P.y, b.x - P.x);
-  let delta = thB - thA;
-  while (delta <= -Math.PI) delta += 2 * Math.PI;
-  while (delta > Math.PI) delta -= 2 * Math.PI;
-  if (Math.abs(delta) > Math.PI - 0.15) {
-    // (almost) opposite ends: pick a side that does not depend on the end order
-    const key = (e: CableArcEnd) => `${e.cableId}|${e.side}|${e.occurrence}`;
-    const swapped = key(arc.from) > key(arc.to);
-    const side = (index % 2 === 0 ? 1 : -1) * (swapped ? -1 : 1);
-    delta = side * Math.abs(delta);
-  }
-  const rA = Math.hypot(a.x - P.x, a.y - P.y);
-  const rB = Math.hypot(b.x - P.x, b.y - P.y);
-  const height = radius * (0.6 + 0.45 * index);
-  const points: Point[] = [];
+  // a jumper that is not (yet) in the drawing is laid out as if it were the last one
+  const all = elements.some((e) => e.id === arc.id) ? elements : [...elements, arc];
+  const lay = layoutJumpers(all, arc.poleId, radius).get(arc.id);
+  if (!lay) return null;
+  const C = { x: pole.x, y: pole.y };
+  const rr = jumperRadius(radius, lay.ring);
+  const ends = canonicalEnds(all, arc, rr)!;
+  const thP = Math.atan2(ends.p.y - C.y, ends.p.x - C.x);
+  let delta = wrap(Math.atan2(ends.q.y - C.y, ends.q.x - C.x) - thP);
+  // keep the side chosen by the layout (matters only for almost-opposite ends)
+  if (Math.sign(delta) !== Math.sign(lay.delta) && Math.abs(delta) > Math.PI / 2) delta += delta > 0 ? -TAU : TAU;
+  let points: Point[] = [];
   for (let i = 0; i <= ARC_SAMPLES; i++) {
-    const t = i / ARC_SAMPLES;
-    if (i === 0) { points.push(a); continue; }
-    if (i === ARC_SAMPLES) { points.push(b); continue; }
-    const base = Math.max(radius, rA + (rB - rA) * t); // never below the circle
-    const r = base + height * Math.sin(Math.PI * t);
-    const th = thA + delta * t;
-    points.push({ x: P.x + r * Math.cos(th), y: P.y + r * Math.sin(th) });
+    const th = thP + (delta * i) / ARC_SAMPLES;
+    points.push(i === 0 ? ends.p : i === ARC_SAMPLES ? ends.q : { x: C.x + rr * Math.cos(th), y: C.y + rr * Math.sin(th) });
   }
+  if (lay.swapped) points = points.reverse(); // draw from `from` to `to`
+  const start = points[0], end = points[ARC_SAMPLES];
+  // two arc commands meeting at the middle: each half is under a half circle, so the
+  // SVG arc is well defined even when the ends are exactly opposite
+  const apex = points[ARC_SAMPLES / 2];
+  const sweep = (delta >= 0) !== lay.swapped ? 1 : 0;
   const f = (v: number) => Math.round(v * 100) / 100;
-  const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${f(p.x)} ${f(p.y)}`).join(' ');
-  return { d, a, b, apex: points[ARC_SAMPLES / 2], points };
+  const arcTo = (p: Point) => `A ${f(rr)} ${f(rr)} 0 0 ${sweep} ${f(p.x)} ${f(p.y)}`;
+  const d = `M ${f(start.x)} ${f(start.y)} ${arcTo(apex)} ${arcTo(end)}`;
+  return { d, a, b, start, end, apex, points, ringRadius: rr, center: C, dotRadius: radius * JUMPER_DOT };
 };
 
 // ---- picking two points (pure state machine used by the canvas) ----

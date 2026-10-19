@@ -1824,10 +1824,12 @@ export const SketchCanvas: React.FC = () => {
     return (
       <g key={el.id}>
         <path d={g.d} stroke={el.strokeColor} strokeWidth={el.strokeWidth} fill="none" strokeLinecap="round" style={{ pointerEvents: 'none' }} />
+        <circle cx={g.start.x} cy={g.start.y} r={g.dotRadius} fill={el.strokeColor} style={{ pointerEvents: 'none' }} data-jumper-dot={el.id} />
+        <circle cx={g.end.x} cy={g.end.y} r={g.dotRadius} fill={el.strokeColor} style={{ pointerEvents: 'none' }} data-jumper-dot={el.id} />
         <path
           d={g.d}
           stroke="transparent"
-          strokeWidth={14}
+          strokeWidth={22}
           fill="none"
           data-cable-arc={el.id}
           className={tool === 'select' ? 'cursor-pointer' : ''}

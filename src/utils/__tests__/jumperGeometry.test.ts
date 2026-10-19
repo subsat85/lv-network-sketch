@@ -3,57 +3,65 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { arcGeometry, createArc, endPosition, listConnectionPoints } from '../cableArcs';
+import { calculateCablePath } from '../cableLayout';
 import { parseProjectFile, serializeProject } from '../projectSerialization';
 import { useDrawingStore } from '../../store/drawingStore';
 import type { CableArcElement, CableArcEnd, CableElement, DrawingElement, Point, SymbolElement } from '../../types/drawing';
 
-// Stage 6.2: jumper (cable_arc) geometry must stay outside the pole circle.
+// Jumper (cable_arc) geometry — Stage 6.3 reference: the jumper's ends sit on the
+// cables away from the pole (visible gap), and the jumper runs round the pole
+// parallel to its outline, never touching it.
+//
+// Every check reads the DRAWN SVG path back (M / L / Q / C / A) and measures it,
+// independently of how arcGeometry builds it. The thresholds are requirements,
+// not the implementation's constants, so the Stage 6.1 / 6.2 shapes (which start
+// on the pole circle and bulge in and out) fail them.
 
 const R = 20;
+const MIN_GAP = 0.2 * R;        // required visible gap between jumper and pole outline
+const C0 = { x: 300, y: 300 };
 const pole = (id: string, x: number, y: number): SymbolElement => ({ id, type: 'symbol', symbolId: 'lv-pole', x, y, width: 24, height: 24, strokeColor: '#000000', fillColor: '#FFFFFF', strokeWidth: 2 });
 const cable = (id: string, poleIds: string[], color: string): CableElement => ({ id, type: 'cable', x: 0, y: 0, poleIds, cableIndex: 0, offset: 0, lineStyle: 'zigzag', strokeColor: color, fillColor: 'transparent', strokeWidth: 2 });
+const end = (cableId: string, side: 'prev' | 'next', occurrence = 0): CableArcEnd => ({ cableId, side, occurrence });
 const key = (e: CableArcEnd) => `${e.cableId}:${e.side}:${e.occurrence}`;
+const dist = (p: Point, q: Point) => Math.hypot(p.x - q.x, p.y - q.y);
 
-// ---- reading a drawn SVG path back (M / L / Q / C), so the test checks what is drawn ----
-const pathPoints = (d: string): Point[][] => {
-  const t = d.trim().split(/\s+/);
-  const segs: Point[][] = [];
-  let cur: Point | null = null; let i = 0;
-  const num = () => parseFloat(t[i++]);
+// ---- read a drawn SVG path back into a dense polyline --------------------------
+const samplePath = (d: string): Point[] => {
+  const t = d.trim().replace(/,/g, ' ').split(/\s+/);
+  const out: Point[] = []; let cur: Point = { x: 0, y: 0 }; let i = 0;
+  const n = () => parseFloat(t[i++]);
   while (i < t.length) {
     const cmd = t[i++];
-    if (cmd === 'M') { cur = { x: num(), y: num() }; }
-    else if (cmd === 'L') { const p = { x: num(), y: num() }; segs.push([cur!, p]); cur = p; }
-    else if (cmd === 'Q') { const c = { x: num(), y: num() }, p = { x: num(), y: num() }; const s: Point[] = []; for (let k = 0; k <= 200; k++) { const u = k / 200; s.push({ x: (1 - u) ** 2 * cur!.x + 2 * (1 - u) * u * c.x + u * u * p.x, y: (1 - u) ** 2 * cur!.y + 2 * (1 - u) * u * c.y + u * u * p.y }); } for (let k = 1; k < s.length; k++) segs.push([s[k - 1], s[k]]); cur = p; }
-    else if (cmd === 'C') { const c1 = { x: num(), y: num() }, c2 = { x: num(), y: num() }, p = { x: num(), y: num() }; const s: Point[] = []; for (let k = 0; k <= 200; k++) { const u = k / 200, v = 1 - u; s.push({ x: v ** 3 * cur!.x + 3 * v * v * u * c1.x + 3 * v * u * u * c2.x + u ** 3 * p.x, y: v ** 3 * cur!.y + 3 * v * v * u * c1.y + 3 * v * u * u * c2.y + u ** 3 * p.y }); } for (let k = 1; k < s.length; k++) segs.push([s[k - 1], s[k]]); cur = p; }
-    else throw new Error(`unexpected path command ${cmd}`);
+    if (cmd === 'M') { cur = { x: n(), y: n() }; out.push(cur); }
+    else if (cmd === 'L') { cur = { x: n(), y: n() }; out.push(cur); }
+    else if (cmd === 'Q') { const c = { x: n(), y: n() }, p = { x: n(), y: n() }; for (let k = 1; k <= 200; k++) { const u = k / 200; out.push({ x: (1 - u) ** 2 * cur.x + 2 * (1 - u) * u * c.x + u * u * p.x, y: (1 - u) ** 2 * cur.y + 2 * (1 - u) * u * c.y + u * u * p.y }); } cur = p; }
+    else if (cmd === 'C') { const c1 = { x: n(), y: n() }, c2 = { x: n(), y: n() }, p = { x: n(), y: n() }; for (let k = 1; k <= 200; k++) { const u = k / 200, v = 1 - u; out.push({ x: v ** 3 * cur.x + 3 * v * v * u * c1.x + 3 * v * u * u * c2.x + u ** 3 * p.x, y: v ** 3 * cur.y + 3 * v * v * u * c1.y + 3 * v * u * u * c2.y + u ** 3 * p.y }); } cur = p; }
+    else if (cmd === 'A') {
+      // SVG elliptical arc, endpoint → centre parameterisation (rx = ry, no rotation)
+      let r = n(); n(); n(); const large = n(), sweep = n(); const p = { x: n(), y: n() };
+      const mx = (cur.x - p.x) / 2, my = (cur.y - p.y) / 2;
+      const lam = (mx * mx + my * my) / (r * r); if (lam > 1) r *= Math.sqrt(lam);
+      const sign = large === sweep ? -1 : 1;
+      const co = sign * Math.sqrt(Math.max(0, (r * r - mx * mx - my * my) / (mx * mx + my * my)));
+      const cx = co * my + (cur.x + p.x) / 2, cy = -co * mx + (cur.y + p.y) / 2;
+      const a1 = Math.atan2(cur.y - cy, cur.x - cx); let da = Math.atan2(p.y - cy, p.x - cx) - a1;
+      if (sweep && da < 0) da += 2 * Math.PI; if (!sweep && da > 0) da -= 2 * Math.PI;
+      for (let k = 1; k <= 400; k++) { const a = a1 + (da * k) / 400; out.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }); }
+      cur = p;
+    } else throw new Error(`unexpected path command ${cmd}`);
   }
-  return segs;
+  return out;
 };
-const distToSeg = (p: Point, a: Point, b: Point) => {
-  const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
-  const u = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
-  return Math.hypot(p.x - a.x - u * dx, p.y - a.y - u * dy);
-};
-/** Closest approach of the drawn path to the pole centre (exact per drawn segment). */
-const closest = (d: string, c: Point) => Math.min(...pathPoints(d).map(([a, b]) => distToSeg(c, a, b)));
-/** Same, leaving out the first and last tenth of the path (the parts that start at the circle). */
-const closestAwayFromEnds = (d: string, c: Point) => { const s = pathPoints(d); const n = Math.ceil(s.length / 10); return Math.min(...s.slice(n, s.length - n).map(([a, b]) => distToSeg(c, a, b))); };
-// the path's coordinates are rounded to 0.01, so an end on the circle may read up to ~0.01 inside
-const ON_CIRCLE = R - 0.015;
-/** Closest approach between two drawn paths. */
-const gap = (d1: string, d2: string) => {
-  const p1 = pathPoints(d1).map((s) => s[0]), p2 = pathPoints(d2);
-  return Math.min(...p1.map((p) => Math.min(...p2.map(([a, b]) => distToSeg(p, a, b)))));
-};
+const radii = (d: string, c: Point) => samplePath(d).map((p) => dist(p, c));
 
-// Pole P with a cable passing through (t), a parallel one (t2), a branch north (br),
-// a cable arriving from the south (in) and one leaving diagonally (dg).
-const network = (P = { x: 300, y: 300 }): DrawingElement[] => [
+// Pole P (at C0): through-cable t, a parallel through-cable t2, branch br north,
+// cable `in` arriving from the south, cable dg leaving diagonally.
+const network = (P = C0): DrawingElement[] => [
   pole('A', P.x - 200, P.y), pole('P', P.x, P.y), pole('B', P.x + 200, P.y), pole('C', P.x, P.y - 200), pole('D', P.x, P.y + 200), pole('E', P.x + 150, P.y + 150),
   cable('t', ['A', 'P', 'B'], '#FF0000'), cable('t2', ['A', 'P', 'B'], '#0000FF'), cable('br', ['P', 'C'], '#00AA00'), cable('in', ['D', 'P'], '#AA00AA'), cable('dg', ['P', 'E'], '#999999'),
 ];
-const withArc = (els: DrawingElement[], a: CableArcEnd, b: CableArcEnd, id = 'j'): [DrawingElement[], CableArcElement] => {
+const withJumper = (els: DrawingElement[], a: CableArcEnd, b: CableArcEnd, id = 'j'): [DrawingElement[], CableArcElement] => {
   const r = createArc(els, 'P', a, b, id);
   if (!r.ok) throw new Error((r as { reason: string }).reason);
   return [[...els, r.arc], r.arc];
@@ -64,80 +72,131 @@ const allPairs = (els: DrawingElement[]) => {
   for (let i = 0; i < pts.length; i++) for (let j = 0; j < pts.length; j++) if (i !== j) out.push([pts[i].end, pts[j].end]);
   return out;
 };
+/** distance from a point to a cable's drawn path (polyline) */
+const distToCable = (p: Point, c: CableElement, els: DrawingElement[]) => {
+  const path = calculateCablePath(c, els);
+  let m = Infinity;
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i], b = path[i + 1], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy;
+    const u = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+    m = Math.min(m, Math.hypot(p.x - a.x - u * dx, p.y - a.y - u * dy));
+  }
+  return m;
+};
+const firstPoint = (d: string) => samplePath(d)[0];
+const lastPoint = (d: string) => { const s = samplePath(d); return s[s.length - 1]; };
 
-describe('jumper path stays outside the pole circle', () => {
-  it('1. for every pair of connection points (incl. opposite, adjacent, parallel), the whole drawn path keeps out of the circle', () => {
+describe('jumper ends keep clear of the pole', () => {
+  it('1–2. start and end of the drawn path are a visible gap away from the pole outline, for every pair of points', () => {
     const els = network();
     const pairs = allPairs(els);
-    expect(pairs.length).toBe(42); // 7 points → 42 ordered pairs
+    expect(pairs.length).toBe(42);
     for (const [a, b] of pairs) {
-      const [e2, arc] = withArc(els, a, b);
-      const g = arcGeometry(e2, arc, R)!;
-      expect(closest(g.d, { x: 300, y: 300 }), `${key(a)} → ${key(b)}`).toBeGreaterThanOrEqual(ON_CIRCLE);
-      // and away from the ends it is clearly outside, not grazing the circle
-      expect(closestAwayFromEnds(g.d, { x: 300, y: 300 }), `${key(a)} → ${key(b)}`).toBeGreaterThan(R + 1);
-      expect(Math.hypot(g.apex.x - 300, g.apex.y - 300)).toBeGreaterThan(R * 1.5);
+      const [e2, j] = withJumper(els, a, b);
+      const g = arcGeometry(e2, j, R)!;
+      expect(dist(firstPoint(g.d), C0) - R, `start ${key(a)}→${key(b)}`).toBeGreaterThan(MIN_GAP);
+      expect(dist(lastPoint(g.d), C0) - R, `end ${key(a)}→${key(b)}`).toBeGreaterThan(MIN_GAP);
+      // and they sit on their own cables — including the offset parallel cables t / t2
+      expect(distToCable(firstPoint(g.d), els.find((x) => x.id === a.cableId) as CableElement, els), `start on ${a.cableId}`).toBeLessThan(0.05);
+      expect(distToCable(lastPoint(g.d), els.find((x) => x.id === b.cableId) as CableElement, els), `end on ${b.cableId}`).toBeLessThan(0.05);
     }
   });
-  it('the shape of Stage 6.1 (quadratic through a far control point) is caught by this check', () => {
-    // both sides of a cable passing through: ends at (280,300) and (320,300)
-    const old = 'M 280 300 Q 300 260 320 300';
-    expect(closest(old, { x: 300, y: 300 })).toBeLessThan(R * 0.95);
-  });
-  it('2. swapping the order of the two points never puts it inside, and draws the same curve', () => {
+  it('3. the whole drawn path stays outside the pole circle with that gap (the cable connection points are not moved)', () => {
     const els = network();
+    const before = listConnectionPoints(els, 'P', R).map((p) => p.position);
     for (const [a, b] of allPairs(els)) {
-      const [e1, j1] = withArc(els, a, b);
-      const [e2, j2] = withArc(els, b, a);
-      const g1 = arcGeometry(e1, j1, R)!, g2 = arcGeometry(e2, j2, R)!;
-      expect(closest(g2.d, { x: 300, y: 300 })).toBeGreaterThanOrEqual(ON_CIRCLE);
-      const p1 = g1.points.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`);
-      const p2 = [...g2.points].reverse().map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`);
-      expect(p2, `${key(a)} ↔ ${key(b)}`).toEqual(p1);
+      const [e2, j] = withJumper(els, a, b);
+      expect(Math.min(...radii(arcGeometry(e2, j, R)!.d, C0)) - R, `${key(a)}→${key(b)}`).toBeGreaterThan(MIN_GAP);
+      expect(listConnectionPoints(e2, 'P', R).map((p) => p.position)).toEqual(before);
     }
   });
-  it('3. same side (two parallel cables towards A) and opposite sides (through-cable) both work', () => {
-    const els = network();
-    const [e1, same] = withArc(els, { cableId: 't', side: 'prev', occurrence: 0 }, { cableId: 't2', side: 'prev', occurrence: 0 });
-    const g1 = arcGeometry(e1, same, R)!;
-    expect(closest(g1.d, { x: 300, y: 300 })).toBeGreaterThanOrEqual(ON_CIRCLE);
-    expect(g1.apex.x).toBeLessThan(300 - R); // stays on the A side
-    const [e2, opp] = withArc(els, { cableId: 't', side: 'prev', occurrence: 0 }, { cableId: 't', side: 'next', occurrence: 0 });
-    const g2 = arcGeometry(e2, opp, R)!;
-    expect(closest(g2.d, { x: 300, y: 300 })).toBeGreaterThanOrEqual(ON_CIRCLE);
-    expect(Math.abs(g2.apex.x - 300)).toBeLessThan(R * 0.5);     // goes round over the top/bottom
-    expect(Math.abs(g2.apex.y - 300)).toBeGreaterThan(R * 1.5);
-  });
-  it('holds wherever the pole is and whatever the cable directions (rotated networks)', () => {
+  it('4. the ends lie on their own cables (not on the circle), whatever the angles — rotated networks', () => {
     for (let k = 0; k < 12; k++) {
       const ang = (k / 12) * 2 * Math.PI, P = { x: 500, y: 400 };
       const rot = (dx: number, dy: number) => ({ x: P.x + dx * Math.cos(ang) - dy * Math.sin(ang), y: P.y + dx * Math.sin(ang) + dy * Math.cos(ang) });
-      const pts = [rot(-200, 0), rot(200, 0), rot(0, -200), rot(130, 160)];
-      const els: DrawingElement[] = [pole('A', pts[0].x, pts[0].y), pole('P', P.x, P.y), pole('B', pts[1].x, pts[1].y), pole('C', pts[2].x, pts[2].y), pole('E', pts[3].x, pts[3].y),
+      const q = [rot(-200, 0), rot(200, 0), rot(0, -200), rot(130, 160)];
+      const els: DrawingElement[] = [pole('A', q[0].x, q[0].y), pole('P', P.x, P.y), pole('B', q[1].x, q[1].y), pole('C', q[2].x, q[2].y), pole('E', q[3].x, q[3].y),
         cable('t', ['A', 'P', 'B'], '#f00'), cable('br', ['C', 'P'], '#0f0'), cable('dg', ['P', 'E'], '#00f')];
       for (const [a, b] of allPairs(els)) {
-        const [e2, arc] = withArc(els, a, b);
-        expect(closest(arcGeometry(e2, arc, R)!.d, P)).toBeGreaterThanOrEqual(ON_CIRCLE);
+        const [e2, j] = withJumper(els, a, b);
+        const g = arcGeometry(e2, j, R)!;
+        const s = firstPoint(g.d), e = lastPoint(g.d);
+        expect(dist(s, P) - R).toBeGreaterThan(MIN_GAP);
+        expect(dist(e, P) - R).toBeGreaterThan(MIN_GAP);
+        expect(distToCable(s, els.find((x) => x.id === a.cableId) as CableElement, els), `start on ${a.cableId}`).toBeLessThan(0.05);
+        expect(distToCable(e, els.find((x) => x.id === b.cableId) as CableElement, els), `end on ${b.cableId}`).toBeLessThan(0.05);
+        expect(Math.min(...radii(g.d, P)) - R).toBeGreaterThan(MIN_GAP);
       }
     }
   });
 });
 
-describe('several jumpers and their ends', () => {
-  it('4. several jumpers on one pole stay apart from each other and outside the circle', () => {
-    let els = network();
-    const ends: [string, 'prev' | 'next', string, 'prev' | 'next'][] = [['t', 'prev', 'br', 'next'], ['t2', 'prev', 'br', 'next'], ['t', 'prev', 't', 'next'], ['in', 'prev', 'dg', 'next']];
-    ends.forEach(([c1, s1, c2, s2], i) => { els = withArc(els, { cableId: c1, side: s1, occurrence: 0 }, { cableId: c2, side: s2, occurrence: 0 }, `j${i}`)[0]; });
-    const geos = els.filter((e): e is CableArcElement => e.type === 'cable_arc').map((j) => arcGeometry(els, j, R)!);
-    for (const g of geos) expect(closest(g.d, { x: 300, y: 300 })).toBeGreaterThanOrEqual(ON_CIRCLE);
-    // the two jumpers from the parallel cables to the same branch are nested, not on top of each other
-    const midGap = Math.hypot(geos[0].apex.x - geos[1].apex.x, geos[0].apex.y - geos[1].apex.y);
-    expect(midGap).toBeGreaterThan(R * 0.4);
-    expect(gap(geos[0].d, geos[1].d)).toBeGreaterThan(0); // they only meet where they share the br end
+describe('jumper follows the pole outline', () => {
+  it('5. every point of the drawn path is at the same distance from the pole centre (parallel to the outline), and the curve is smooth', () => {
+    const els = network();
+    for (const [a, b] of allPairs(els)) {
+      const [e2, j] = withJumper(els, a, b);
+      const r = radii(arcGeometry(e2, j, R)!.d, C0);
+      const spread = Math.max(...r) - Math.min(...r);
+      expect(spread, `${key(a)}→${key(b)}`).toBeLessThan(0.05);         // a concentric arc, not a bulge
+      expect(Math.max(...r)).toBeLessThan(R * 2.2);                        // close to the pole, not a big loop
+      // smoothness: direction changes evenly (no corners)
+      const s = samplePath(arcGeometry(e2, j, R)!.d);
+      let maxTurn = 0;
+      for (let i = 2; i < s.length; i++) {
+        const t1 = Math.atan2(s[i - 1].y - s[i - 2].y, s[i - 1].x - s[i - 2].x), t2 = Math.atan2(s[i].y - s[i - 1].y, s[i].x - s[i - 1].x);
+        let dt = Math.abs(t2 - t1); if (dt > Math.PI) dt = 2 * Math.PI - dt;
+        maxTurn = Math.max(maxTurn, dt);
+      }
+      expect(maxTurn).toBeLessThan(0.05);
+    }
   });
-  it('5. the ends are exactly the connection points of the chosen identities, after moves and re-layout', () => {
+  it('6. swapping the two points draws the same curve, just in the other direction', () => {
+    const els = network();
+    for (const [a, b] of allPairs(els)) {
+      const [e1, j1] = withJumper(els, a, b), [e2, j2] = withJumper(els, b, a);
+      const s1 = samplePath(arcGeometry(e1, j1, R)!.d), s2 = samplePath(arcGeometry(e2, j2, R)!.d).reverse();
+      expect(s1.length).toBe(s2.length);
+      s1.forEach((p, i) => expect(dist(p, s2[i]), `${key(a)}↔${key(b)} #${i}`).toBeLessThan(0.05));
+    }
+  });
+  it('7. same side (parallel cables towards A) goes the short way on that side; opposite sides go round one side', () => {
+    const els = network();
+    const [e1, same] = withJumper(els, end('t', 'prev'), end('t2', 'prev'));
+    const s1 = samplePath(arcGeometry(e1, same, R)!.d);
+    expect(s1.every((p) => p.x < C0.x - R)).toBe(true);                    // stays on the A side
+    const [e2, opp] = withJumper(els, end('t', 'prev'), end('t', 'next'));
+    const s2 = samplePath(arcGeometry(e2, opp, R)!.d);
+    // away from the ends (which sit on the slightly offset cables) it is all on one side
+    const ys = s2.slice(Math.floor(s2.length * 0.1), Math.ceil(s2.length * 0.9)).map((p) => p.y - C0.y);
+    expect(ys.every((y) => y < 0) || ys.every((y) => y > 0)).toBe(true);
+    expect(Math.min(...radii(arcGeometry(e2, opp, R)!.d, C0)) - R).toBeGreaterThan(MIN_GAP);
+  });
+});
+
+describe('several jumpers on one pole', () => {
+  it('8. overlapping jumpers are on separate rings a clear distance apart; non-overlapping ones stay close to the pole', () => {
     let els = network();
-    els = withArc(els, { cableId: 't2', side: 'prev', occurrence: 0 }, { cableId: 'dg', side: 'next', occurrence: 0 })[0];
+    const defs: [CableArcEnd, CableArcEnd][] = [[end('t', 'prev'), end('br', 'next')], [end('t2', 'prev'), end('br', 'next')], [end('t', 'prev'), end('t', 'next')], [end('in', 'prev'), end('dg', 'next')]];
+    defs.forEach(([a, b], i) => { els = withJumper(els, a, b, `j${i}`)[0]; });
+    const js = els.filter((e): e is CableArcElement => e.type === 'cable_arc');
+    const ringR = js.map((j) => { const r = radii(arcGeometry(els, j, R)!.d, C0); return (Math.max(...r) + Math.min(...r)) / 2; });
+    // j0 (W→N) and j1 (W→N, parallel cable) overlap → different rings, ≥ 0.2R apart
+    expect(Math.abs(ringR[0] - ringR[1])).toBeGreaterThan(0.2 * R);
+    // every jumper keeps the gap; none is blown up
+    js.forEach((j) => expect(Math.min(...radii(arcGeometry(els, j, R)!.d, C0)) - R).toBeGreaterThan(MIN_GAP));
+    expect(Math.max(...ringR)).toBeLessThan(R * 2.6);
+    // a jumper that overlaps nothing stays on the innermost ring
+    const lone = network();
+    const [e1, j1] = withJumper(lone, end('in', 'prev'), end('dg', 'next'));
+    expect(Math.abs(ringR[3] - (() => { const r = radii(arcGeometry(e1, j1, R)!.d, C0); return (Math.max(...r) + Math.min(...r)) / 2; })())).toBeLessThan(0.05);
+    // drawn paths of different-ring jumpers never touch
+    const p0 = samplePath(arcGeometry(els, js[0], R)!.d), p1 = samplePath(arcGeometry(els, js[1], R)!.d);
+    expect(Math.min(...p0.map((p) => Math.min(...p1.map((q) => dist(p, q)))))).toBeGreaterThan(0.2 * R);
+  });
+  it('ends stay bound to their connection identities after the pole moves and the cables re-layout', () => {
+    let els = network();
+    els = withJumper(els, end('t2', 'prev'), end('dg', 'next'))[0];
     useDrawingStore.setState({ ...useDrawingStore.getState(), elements: els, history: [], redoStack: [], pendingStep: null }, true);
     const S = () => useDrawingStore.getState();
     S().updateElement('P', { x: 340, y: 270 }); S().commitHistory();
@@ -146,31 +205,38 @@ describe('several jumpers and their ends', () => {
     const g = arcGeometry(now, j, R)!;
     expect(g.a).toEqual(endPosition(now, 'P', j.from, R));
     expect(g.b).toEqual(endPosition(now, 'P', j.to, R));
-    expect(closest(g.d, { x: 340, y: 270 })).toBeGreaterThanOrEqual(ON_CIRCLE);
+    expect(distToCable(firstPoint(g.d), now.find((e) => e.id === 't2') as CableElement, now)).toBeLessThan(0.05);
+    expect(distToCable(lastPoint(g.d), now.find((e) => e.id === 'dg') as CableElement, now)).toBeLessThan(0.05);
+    expect(Math.min(...radii(g.d, { x: 340, y: 270 })) - R).toBeGreaterThan(MIN_GAP);
   });
 });
 
-describe('one geometry everywhere, naming, compatibility', () => {
+describe('cables, renderers, naming, compatibility', () => {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
   const src = (f: string) => readFileSync(path.join(root, f), 'utf8');
-  it('6. canvas and share/PDF preview draw jumpers with the same function and the same pole radius', () => {
+  it('9. cable paths are identical with and without jumpers', () => {
+    const plain = network();
+    let withJ = plain;
+    withJ = withJumper(withJ, end('t', 'prev'), end('br', 'next'), 'j1')[0];
+    withJ = withJumper(withJ, end('t', 'prev'), end('t', 'next'), 'j2')[0];
+    for (const c of plain.filter((e): e is CableElement => e.type === 'cable')) expect(calculateCablePath(c, withJ)).toEqual(calculateCablePath(c, plain));
+  });
+  it('10. canvas and share/PDF preview draw the same path and the same end dots from one function, same pole radius', () => {
     const canvas = src('src/components/SketchCanvas.tsx'), preview = src('src/components/PreviewCanvas.tsx');
     expect(canvas).toMatch(/const arcRadius = POLE_RADIUS \* poleSizeScale;/);
     expect(canvas).toMatch(/arcGeometry\(elements, el, arcRadius\)/);
     expect(preview).toMatch(/arcGeometry\(elements, el, POLE_RADIUS \* poleSizeScale\)/);
-    expect(canvas).toMatch(/const POLE_RADIUS = 20;/);
-    expect(preview).toMatch(/const POLE_RADIUS = 20;/);
+    for (const f of [canvas, preview]) {
+      expect(f).toMatch(/const POLE_RADIUS = 20;/);
+      expect(f).toMatch(/cx=\{g\.start\.x\} cy=\{g\.start\.y\} r=\{g\.dotRadius\}/);
+      expect(f).toMatch(/cx=\{g\.end\.x\} cy=\{g\.end\.y\} r=\{g\.dotRadius\}/);
+    }
   });
-  it('7. the tool is named «Jumper — وصلة ربط» in the pole menu and the tool bar; no "قوس" left for it', () => {
-    const menu = src('src/components/ColumnContextMenu.tsx'), canvas = src('src/components/SketchCanvas.tsx');
-    expect(menu).toContain('Jumper — وصلة ربط');
-    expect(canvas).toContain('aria-label="أداة وصلة الربط"');
-    expect(canvas).toContain('aria-label="إنهاء وصلة الربط"');
-    expect(menu).not.toMatch(/>\s*قوس\s*</);
-    expect(canvas).not.toMatch(/القوس|>\s*قوس\s*</);
+  it('the tool is still named «Jumper — وصلة ربط»', () => {
+    expect(src('src/components/ColumnContextMenu.tsx')).toContain('Jumper — وصلة ربط');
+    expect(src('src/components/SketchCanvas.tsx')).toContain('aria-label="أداة وصلة الربط"');
   });
-  it('8. a project saved with Stage 6.1 jumpers (type cable_arc) opens and saves again without loss', () => {
-    // element exactly as Stage 6.1 wrote it
+  it('a project saved with earlier jumpers (type cable_arc) opens, saves again without loss, and draws with the new clearance', () => {
     const legacyJumper = { id: 'old1', type: 'cable_arc', poleId: 'P', from: { cableId: 't', side: 'prev', occurrence: 0 }, to: { cableId: 'br', side: 'next', occurrence: 0 }, x: 0, y: 0, strokeColor: '#123456', fillColor: 'none', strokeWidth: 3 };
     const file = { version: 1, elements: [...network(), legacyJumper], style: { strokeColor: '#000000', fillColor: 'transparent', strokeWidth: 2, fontSize: 16 }, poleSizeScale: 1, consumerVariant: 'circle', connectionDistances: {}, connectionLabelOffsets: {}, metadata: { id: null, name: 'Old', exportedAt: 1 } };
     const r = parseProjectFile(JSON.stringify(file));
@@ -181,8 +247,7 @@ describe('one geometry everywhere, naming, compatibility', () => {
     expect(s.elements.find((e) => e.id === 'old1')).toEqual(legacyJumper);
     const again = parseProjectFile(serializeProject(s.elements, s.style, s.poleSizeScale, s.consumerVariant, s.connectionDistances, s.connectionLabelOffsets, null, 'Old', 1, 1));
     expect(again.ok && again.data.elements.find((e) => e.id === 'old1')).toEqual(legacyJumper);
-    // and it is now drawn outside the circle
     const g = arcGeometry(s.elements, legacyJumper as CableArcElement, R)!;
-    expect(closest(g.d, { x: 300, y: 300 })).toBeGreaterThanOrEqual(ON_CIRCLE);
+    expect(dist(firstPoint(g.d), C0) - R).toBeGreaterThan(MIN_GAP);
   });
 });
