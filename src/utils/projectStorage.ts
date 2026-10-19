@@ -1,5 +1,5 @@
 import { get, set, del, keys, many } from 'idb-keyval';
-import { DrawingElement, DrawingStyle } from '../types/drawing';
+import { DrawingElement, DrawingStyle, SpanProps } from '../types/drawing';
 
 export interface ProjectData {
   elements: DrawingElement[];
@@ -10,6 +10,10 @@ export interface ProjectData {
   consumerVariant: 'circle' | 'square';
   connectionDistances?: Record<string, string>;
   connectionLabelOffsets?: Record<string, { x: number, y: number }>;
+  /** Per-segment electrical properties — absent in projects saved before Phase 7.1 */
+  spanProps?: Record<string, SpanProps>;
+  /** Distance keys flagged as suspect (value "1" in v1 projects, never user-confirmed) */
+  suspectDistanceKeys?: string[];
 }
 
 export interface Project {

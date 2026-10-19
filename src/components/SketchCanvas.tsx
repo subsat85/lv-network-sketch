@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { ColumnContextMenu } from './ColumnContextMenu';
 import { ColumnModifiers } from './ColumnModifiers';
-import { useDrawingStore } from '../store/drawingStore';
+import { useDrawingStore, ensureSpanIds } from '../store/drawingStore';
 import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerElement, ArcElement, DrawingElement, ShapeElement, ShapeType } from '../types/drawing';
 import { calculateCablePath } from '../utils/cableLayout';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
@@ -864,10 +864,35 @@ export const SketchCanvas: React.FC = () => {
                     (c.poleIds[j] === id1 && c.poleIds[j + 1] === id2) ||
                     (c.poleIds[j] === id2 && c.poleIds[j + 1] === id1)
                   ) {
-                    const updated = [...c.poleIds];
-                    // Insert newId between j and j+1 (maintaining direction)
-                    updated.splice(j + 1, 0, newId);
-                    parallelUpdates.push({ id: c.id, changes: { poleIds: updated } });
+                    // Update poleIds: insert newId between j and j+1 (maintaining direction)
+                    const updatedPoleIds = [...c.poleIds];
+                    updatedPoleIds.splice(j + 1, 0, newId);
+
+                    // Update spanIds: keep surviving spans, assign fresh IDs to the two new sub-spans.
+                    // The old span at index j (covering id1↔id2) is replaced by two new spans.
+                    // All other spans are preserved with their original IDs so downstream spanProps
+                    // entries remain valid.
+                    const existingSpanIds = ensureSpanIds(c);
+                    const updatedSpanIds: string[] = [];
+                    for (let k = 0; k < updatedPoleIds.length - 1; k++) {
+                      if (k === j) {
+                        // New sub-span A↔M — fresh ID (no inherited electrical props)
+                        updatedSpanIds.push(generateId());
+                      } else if (k === j + 1) {
+                        // New sub-span M↔B — fresh ID (no inherited electrical props)
+                        updatedSpanIds.push(generateId());
+                      } else {
+                        // k maps to existingSpanIds: indices before j are unchanged;
+                        // indices after j shift up by one because we inserted a pole.
+                        const srcIdx = k < j ? k : k - 1;
+                        updatedSpanIds.push(existingSpanIds[srcIdx] ?? generateId());
+                      }
+                    }
+
+                    parallelUpdates.push({
+                      id: c.id,
+                      changes: { poleIds: updatedPoleIds, spanIds: updatedSpanIds },
+                    });
                     break; // each cable has at most one direct id1↔id2 segment
                   }
                 }
@@ -1201,6 +1226,8 @@ export const SketchCanvas: React.FC = () => {
     const newDist = prompt('Enter distance (m):', promptDefault);
 
     if (newDist !== null) {
+      // Save history before standalone distance edit so Undo restores all fields.
+      saveHistory();
       if (newDist.trim() === '' || newDist.trim() === '?') {
         updateConnectionDistance(key, '?');
       } else {
@@ -2687,6 +2714,7 @@ export const SketchCanvas: React.FC = () => {
               autoFocus
               onKeyDown={e => {
                 if (e.key === 'Enter') {
+                  saveHistory();
                   updateConnectionDistance(editingDistance.key, editingDistance.value || '1');
                   setEditingDistance(null);
                 }
@@ -2702,6 +2730,7 @@ export const SketchCanvas: React.FC = () => {
               <button
                 className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg"
                 onClick={() => {
+                  saveHistory();
                   updateConnectionDistance(editingDistance.key, editingDistance.value || '1');
                   setEditingDistance(null);
                 }}

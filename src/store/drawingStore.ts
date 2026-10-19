@@ -20,10 +20,22 @@ export const ensureSpanIds = (cable: CableElement): string[] => {
   return result.slice(0, needed);
 };
 
+// ─── History snapshot ─────────────────────────────────────────────────────────
+/** A full snapshot of all state fields that participates in Undo/Redo.
+ *  Stored in history[] and redoStack[] so every undo/redo restores a
+ *  consistent view of the canvas AND its associated distance/span data. */
+interface HistoryEntry {
+  elements: DrawingElement[];
+  connectionDistances: Record<string, string>;
+  connectionLabelOffsets: Record<string, { x: number; y: number }>;
+  spanProps: Record<string, SpanProps>;
+  suspectDistanceKeys: string[];
+}
+
 interface DrawingState {
   elements: DrawingElement[];
-  history: DrawingElement[][];
-  redoStack: DrawingElement[][];
+  history: HistoryEntry[];
+  redoStack: HistoryEntry[];
   tool: ToolType;
   style: DrawingStyle;
   selectedId: string | null;
@@ -97,6 +109,25 @@ interface DrawingState {
   }) => void;
 }
 
+// ─── Helper: build a HistoryEntry from current state ─────────────────────────
+/** Captures the five undo-able fields from the current state into one entry. */
+const snap = (state: DrawingState): HistoryEntry => ({
+  elements: state.elements,
+  connectionDistances: state.connectionDistances,
+  connectionLabelOffsets: state.connectionLabelOffsets,
+  spanProps: state.spanProps,
+  suspectDistanceKeys: state.suspectDistanceKeys,
+});
+
+/** Apply a HistoryEntry back to the store (used by undo/redo). */
+const applyEntry = (entry: HistoryEntry) => ({
+  elements: entry.elements,
+  connectionDistances: entry.connectionDistances,
+  connectionLabelOffsets: entry.connectionLabelOffsets,
+  spanProps: entry.spanProps,
+  suspectDistanceKeys: entry.suspectDistanceKeys,
+});
+
 export const useDrawingStore = create<DrawingState>((set) => ({
   elements: [],
   history: [],
@@ -161,18 +192,22 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   setShowDistanceLabels: (show) => set({ showDistanceLabels: show }),
   setStyle: (updates) => set((state) => ({ style: { ...state.style, ...updates } })),
   
-  addElement: (element) => set((state) => ({ 
-    history: [...state.history, state.elements],
+  addElement: (element) => set((state) => ({
+    history: [...state.history, snap(state)],
     redoStack: [],
-    elements: [...state.elements, element] 
+    elements: [...state.elements, element]
   })),
-  
+
   updateElement: (id, updates) => set((state) => {
     return {
       elements: state.elements.map((el) => (el.id === id ? { ...el, ...updates } : el)),
     };
   }),
 
+  // Note: updateElements does NOT save its own history entry — it is only called
+  // from the split handler in SketchCanvas.tsx, where addElement() has already
+  // saved the pre-split snapshot.  Saving here would create a spurious extra
+  // undo step (parallel-cable split = 2 undos instead of 1).
   updateElements: (updates) => set((state) => {
     const newElements = state.elements.map((el) => {
       const update = updates.find(u => u.id === el.id);
@@ -180,13 +215,11 @@ export const useDrawingStore = create<DrawingState>((set) => ({
     });
     return {
       elements: newElements,
-      history: [...state.history, state.elements],
-      redoStack: [],
     };
   }),
 
   updateSymbolModifiers: (id, modifiers) => set((state) => ({
-    history: [...state.history, state.elements],
+    history: [...state.history, snap(state)],
     redoStack: [],
     elements: state.elements.map((el) => {
       if (el.id === id && el.type === 'symbol') {
@@ -255,7 +288,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   }),
 
   deletePole: (poleId: string) => set((state) => {
-    const newHistory = [...state.history, state.elements];
+    const newHistory = [...state.history, snap(state)];
 
     // Collect spans and distance keys that will be destroyed
     const spanIdsToRemove = new Set<string>();
@@ -369,12 +402,12 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   }),
 
   saveHistory: () => set((state) => ({
-    history: [...state.history, state.elements],
-    redoStack: [] 
+    history: [...state.history, snap(state)],
+    redoStack: []
   })),
 
   deleteElement: (id) => set((state) => ({
-    history: [...state.history, state.elements],
+    history: [...state.history, snap(state)],
     redoStack: [],
     elements: state.elements.filter((el) => el.id !== id),
     selectedId: state.selectedId === id ? null : state.selectedId,
@@ -386,7 +419,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   setActiveShapeType: (type) => set({ activeShapeType: type, tool: 'shape', selectedId: null, activeCableId: null }),
   
   clearCanvas: () => set((state) => ({
-    history: [...state.history, state.elements],
+    history: [...state.history, snap(state)],
     redoStack: [],
     elements: [],
     connectionDistances: {},
@@ -401,12 +434,12 @@ export const useDrawingStore = create<DrawingState>((set) => ({
     if (state.history.length === 0) return {};
     const previous = state.history[state.history.length - 1];
     const newHistory = state.history.slice(0, -1);
-    return { 
-      elements: previous, 
-      history: newHistory, 
-      redoStack: [state.elements, ...state.redoStack],
-      selectedId: null, 
-      activeCableId: null 
+    return {
+      ...applyEntry(previous),
+      history: newHistory,
+      redoStack: [snap(state), ...state.redoStack],
+      selectedId: null,
+      activeCableId: null,
     };
   }),
 
@@ -415,11 +448,11 @@ export const useDrawingStore = create<DrawingState>((set) => ({
     const next = state.redoStack[0];
     const newRedoStack = state.redoStack.slice(1);
     return {
-      elements: next,
-      history: [...state.history, state.elements],
+      ...applyEntry(next),
+      history: [...state.history, snap(state)],
       redoStack: newRedoStack,
       selectedId: null,
-      activeCableId: null
+      activeCableId: null,
     };
   }),
 }));

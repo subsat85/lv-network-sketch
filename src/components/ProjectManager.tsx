@@ -35,6 +35,7 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
     connectionDistances,
     connectionLabelOffsets,
     spanProps,
+    suspectDistanceKeys,
     loadProject: loadProjectToStore,
     setSuspectDistanceKeys,
     setProjectInfo,
@@ -95,7 +96,9 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
           consumerSizeScale,
           consumerVariant,
           connectionDistances,
-          connectionLabelOffsets
+          connectionLabelOffsets,
+          spanProps,
+          suspectDistanceKeys,
         }
       };
 
