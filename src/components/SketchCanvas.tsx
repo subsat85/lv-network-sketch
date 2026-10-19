@@ -2720,8 +2720,8 @@ export const SketchCanvas: React.FC = () => {
       )}
 
       {arcPickState && (
-        <div dir="rtl" role="toolbar" aria-label="أداة القوس" className="ui-float absolute left-1/2 bottom-16 z-40 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-2 overflow-x-auto no-scrollbar whitespace-nowrap px-3 py-2 text-[13px]">
-          <span className="flex-shrink-0 font-semibold text-ios-label">قوس</span>
+        <div dir="rtl" role="toolbar" aria-label="أداة وصلة الربط" className="ui-float absolute left-1/2 bottom-16 z-40 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-2 overflow-x-auto no-scrollbar whitespace-nowrap px-3 py-2 text-[13px]">
+          <span className="flex-shrink-0 font-semibold text-ios-label">Jumper — وصلة ربط</span>
           <span className="flex-shrink-0 text-ios-secondary">
             {arcPickState.first
               ? `النقطة الثانية (الأولى: ${arcPoints.find(p => sameEnd(p.end, arcPickState.first!))?.number ?? '—'})`
@@ -2746,7 +2746,7 @@ export const SketchCanvas: React.FC = () => {
               );
             })}
           </div>
-          <button type="button" aria-label="إنهاء القوس" onClick={() => dispatchArcPick({ type: 'cancel' })} className="ui-tinted-btn !w-auto !min-h-[32px] flex-shrink-0 !px-3">تم</button>
+          <button type="button" aria-label="إنهاء وصلة الربط" onClick={() => dispatchArcPick({ type: 'cancel' })} className="ui-tinted-btn !w-auto !min-h-[32px] flex-shrink-0 !px-3">تم</button>
         </div>
       )}
 

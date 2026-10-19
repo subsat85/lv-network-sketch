@@ -196,14 +196,14 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
         </button>
       )}
       
-      {/* Cable arc: link two cable connection points at this pole */}
+      {/* Jumper (cable_arc): link two cable connection points at this pole */}
       {onStartArc && connectionPointCount >= 2 && (
         <button
           className="ui-menu-item"
           role="menuitem"
           onClick={() => { onStartArc(elementId); onClose(); }}
         >
-          قوس
+          Jumper — وصلة ربط
         </button>
       )}
 

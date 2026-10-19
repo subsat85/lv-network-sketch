@@ -146,10 +146,21 @@ export const createArc = (elements: DrawingElement[], poleId: string, from: Cabl
 };
 
 /**
- * SVG path of an arc: a curve between the two connection points that bulges away
- * from the pole. Arcs at the same pole get increasing bulge so they stay apart.
+ * SVG path of a jumper (cable arc).
+ *
+ * The curve is built in polar coordinates around the pole centre: its angle
+ * runs from one connection point to the other (the short way round), and its
+ * distance from the centre is the pole radius plus a positive bump that is
+ * zero only at the two ends. So every point between the ends lies strictly
+ * outside the pole circle, for any angle between the ends and for either end
+ * order. (The previous quadratic curve dipped inside the circle whenever the
+ * ends were far apart, e.g. both sides of a cable passing through.)
+ * Jumpers on the same pole get increasing heights so they stay apart; ends
+ * that are almost opposite go round one side, alternating per jumper, chosen
+ * independently of which end was picked first.
  */
-export const arcGeometry = (elements: DrawingElement[], arc: CableArcElement, radius: number): { d: string; a: Point; b: Point; c: Point } | null => {
+export const ARC_SAMPLES = 24;
+export const arcGeometry = (elements: DrawingElement[], arc: CableArcElement, radius: number): { d: string; a: Point; b: Point; apex: Point; points: Point[] } | null => {
   const pole = elements.find((e) => e.id === arc.poleId);
   if (!pole) return null;
   const a = endPosition(elements, arc.poleId, arc.from, radius);
@@ -158,18 +169,35 @@ export const arcGeometry = (elements: DrawingElement[], arc: CableArcElement, ra
   const P = { x: pole.x, y: pole.y };
   const siblings = elements.filter((e): e is CableArcElement => isArc(e) && e.poleId === arc.poleId);
   const index = Math.max(0, siblings.findIndex((e) => e.id === arc.id));
-  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-  let dir = { x: mid.x - P.x, y: mid.y - P.y };
-  if (Math.hypot(dir.x, dir.y) < radius * 0.35) {
-    // nearly opposite points: go round one side (alternating for successive arcs)
-    const t = norm({ x: b.x - a.x, y: b.y - a.y });
-    dir = index % 2 === 0 ? { x: -t.y, y: t.x } : { x: t.y, y: -t.x };
+
+  const thA = Math.atan2(a.y - P.y, a.x - P.x);
+  const thB = Math.atan2(b.y - P.y, b.x - P.x);
+  let delta = thB - thA;
+  while (delta <= -Math.PI) delta += 2 * Math.PI;
+  while (delta > Math.PI) delta -= 2 * Math.PI;
+  if (Math.abs(delta) > Math.PI - 0.15) {
+    // (almost) opposite ends: pick a side that does not depend on the end order
+    const key = (e: CableArcEnd) => `${e.cableId}|${e.side}|${e.occurrence}`;
+    const swapped = key(arc.from) > key(arc.to);
+    const side = (index % 2 === 0 ? 1 : -1) * (swapped ? -1 : 1);
+    delta = side * Math.abs(delta);
   }
-  const n = norm(dir);
-  const bulge = radius * (1.25 + 0.45 * index);
-  const c = { x: P.x + n.x * bulge * 1.6, y: P.y + n.y * bulge * 1.6 };
+  const rA = Math.hypot(a.x - P.x, a.y - P.y);
+  const rB = Math.hypot(b.x - P.x, b.y - P.y);
+  const height = radius * (0.6 + 0.45 * index);
+  const points: Point[] = [];
+  for (let i = 0; i <= ARC_SAMPLES; i++) {
+    const t = i / ARC_SAMPLES;
+    if (i === 0) { points.push(a); continue; }
+    if (i === ARC_SAMPLES) { points.push(b); continue; }
+    const base = Math.max(radius, rA + (rB - rA) * t); // never below the circle
+    const r = base + height * Math.sin(Math.PI * t);
+    const th = thA + delta * t;
+    points.push({ x: P.x + r * Math.cos(th), y: P.y + r * Math.sin(th) });
+  }
   const f = (v: number) => Math.round(v * 100) / 100;
-  return { d: `M ${f(a.x)} ${f(a.y)} Q ${f(c.x)} ${f(c.y)} ${f(b.x)} ${f(b.y)}`, a, b, c };
+  const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${f(p.x)} ${f(p.y)}`).join(' ');
+  return { d, a, b, apex: points[ARC_SAMPLES / 2], points };
 };
 
 // ---- picking two points (pure state machine used by the canvas) ----

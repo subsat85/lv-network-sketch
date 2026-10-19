@@ -119,7 +119,7 @@ export const validateProjectFile = (raw: unknown): ValidateProjectResult => {
         break;
       case 'cable_arc': {
         const isEnd = (v: unknown) => isObj(v) && isStr(v.cableId) && (v.side === 'prev' || v.side === 'next') && Number.isInteger(v.occurrence) && (v.occurrence as number) >= 0;
-        if (!isStr(el.poleId) || !isEnd(el.from) || !isEnd(el.to)) err(`${label}: بيانات القوس ناقصة.`);
+        if (!isStr(el.poleId) || !isEnd(el.from) || !isEnd(el.to)) err(`وصلة الربط (Jumper) "${String(el.id)}": بيانات ناقصة.`);
         break;
       }
       default:
@@ -140,12 +140,12 @@ export const validateProjectFile = (raw: unknown): ValidateProjectResult => {
     }
   }
 
-  // cable arcs: both ends must still be real connection points of that pole (never guessed)
+  // jumpers (cable_arc): both ends must still be real connection points of that pole (never guessed)
   if (!errors.length) {
     const els = elements as DrawingElement[];
     for (const el of els) {
       if (el.type !== 'cable_arc') continue;
-      if (!isArcValid(els, el)) err(`القوس "${el.id}" يشير إلى نقطة اتصال غير موجودة عند العمود "${el.poleId}".`);
+      if (!isArcValid(els, el)) err(`وصلة الربط (Jumper) "${el.id}" تشير إلى نقطة اتصال غير موجودة عند العمود "${el.poleId}".`);
     }
   }
 

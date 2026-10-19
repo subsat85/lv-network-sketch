@@ -85,7 +85,7 @@ describe('creating arcs', () => {
     const g = arcGeometry(S().elements, arc, R)!;
     expect(g.a.x).toBeLessThan(300); expect(g.b.x).toBeGreaterThan(300);
     // goes round the pole instead of through it
-    expect(dist(g.c, { x: 300, y: 300 })).toBeGreaterThan(R);
+    expect(dist(g.apex, { x: 300, y: 300 })).toBeGreaterThan(R);
   });
   it('5. two different cables (incoming end and branch)', () => {
     expect(isArcValid(S().elements, mk(S().elements, end('in', 'prev'), end('br', 'next')))).toBe(true);
@@ -99,12 +99,12 @@ describe('creating arcs', () => {
     const geos = arcs.map((a) => arcGeometry(S().elements, a, R)!);
     expect(new Set(geos.map((g) => g.d)).size).toBe(3);
     // two arcs sharing the br point bulge differently
-    expect(dist(geos[0].c, geos[1].c)).toBeGreaterThan(1);
+    expect(dist(geos[0].apex, geos[1].apex)).toBeGreaterThan(1);
     // two arcs in (almost) the same direction — parallel cables to the same branch — are pushed apart
     add(end('t2', 'prev'), end('br', 'next'), 'a4');
     const g1 = arcGeometry(S().elements, arcsOf(S().elements).find((a) => a.id === 'a1')!, R)!;
     const g4 = arcGeometry(S().elements, arcsOf(S().elements).find((a) => a.id === 'a4')!, R)!;
-    expect(dist(g1.c, g4.c)).toBeGreaterThan(R * 0.5);
+    expect(dist(g1.apex, g4.apex)).toBeGreaterThan(R * 0.5);
     expect(createArc(S().elements, 'P', end('br', 'next'), end('t', 'prev'), 'dup')).toEqual({ ok: false, reason: 'duplicate' });
   });
   it('7. parallel cables have distinct, separately addressable points', () => {
