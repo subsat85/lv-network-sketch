@@ -68,6 +68,9 @@ interface DrawingState {
   setSuspectDistanceKeys: (keys: string[]) => void;
   /** Mark a previously-suspect distance key as confirmed by the user */
   confirmDistanceKey: (key: string) => void;
+  /** Remove a distance key (and its label offset, spanProps entry, suspect flag) after a
+   *  segment is split or deleted.  spanId is optional — pass it when known. */
+  deleteConnectionSegment: (key: string, spanId?: string) => void;
   deleteElement: (id: string) => void;
   /** Delete a pole (symbol) element with full cascade cleanup.
    *  Removes the poleId from all CableElement.poleIds; cables that become
@@ -234,6 +237,22 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   confirmDistanceKey: (key) => set((state) => ({
     suspectDistanceKeys: state.suspectDistanceKeys.filter(k => k !== key),
   })),
+
+  deleteConnectionSegment: (key, spanId) => set((state) => {
+    const newConnectionDistances = { ...state.connectionDistances };
+    delete newConnectionDistances[key];
+    const newConnectionLabelOffsets = { ...state.connectionLabelOffsets };
+    delete newConnectionLabelOffsets[key];
+    const newSuspectDistanceKeys = state.suspectDistanceKeys.filter(k => k !== key);
+    const newSpanProps = { ...state.spanProps };
+    if (spanId) delete newSpanProps[spanId];
+    return {
+      connectionDistances: newConnectionDistances,
+      connectionLabelOffsets: newConnectionLabelOffsets,
+      suspectDistanceKeys: newSuspectDistanceKeys,
+      spanProps: newSpanProps,
+    };
+  }),
 
   deletePole: (poleId: string) => set((state) => {
     const newHistory = [...state.history, state.elements];

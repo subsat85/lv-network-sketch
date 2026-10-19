@@ -96,7 +96,9 @@ export const SketchCanvas: React.FC = () => {
     consumerVariant,
     connectionDistances,
     updateConnectionDistance,
-    updateSymbolModifiers
+    updateSymbolModifiers,
+    deleteConnectionSegment,
+    updateElements,
   } = useDrawingStore();
 
   const [isDragging, setIsDragging] = useState(false);
@@ -848,13 +850,37 @@ export const SketchCanvas: React.FC = () => {
             addElement(newSymbol);
 
             if (splitInfo) {
-              // Split the cable
+              // ── Fix #1: insert newId into ALL cables on this segment ──────────
+              // This keeps parallel cable spacing unchanged after the split.
               const { cable, index, id1, id2 } = splitInfo;
-              const newPoleIds = [...cable.poleIds];
-              newPoleIds.splice(index + 1, 0, newId);
-              updateElement(cable.id, { poleIds: newPoleIds });
-              
-              // Update distances — split known distance in half; propagate '?' for unknown
+
+              // Collect all cables that have id1 and id2 as adjacent poles
+              const parallelUpdates: { id: string; changes: Partial<CableElement> }[] = [];
+              for (const el of elements) {
+                if (el.type !== 'cable') continue;
+                const c = el as CableElement;
+                for (let j = 0; j < c.poleIds.length - 1; j++) {
+                  if (
+                    (c.poleIds[j] === id1 && c.poleIds[j + 1] === id2) ||
+                    (c.poleIds[j] === id2 && c.poleIds[j + 1] === id1)
+                  ) {
+                    const updated = [...c.poleIds];
+                    // Insert newId between j and j+1 (maintaining direction)
+                    updated.splice(j + 1, 0, newId);
+                    parallelUpdates.push({ id: c.id, changes: { poleIds: updated } });
+                    break; // each cable has at most one direct id1↔id2 segment
+                  }
+                }
+              }
+
+              if (parallelUpdates.length === 1) {
+                // Only the original cable — use the lighter single-element path
+                updateElement(parallelUpdates[0].id, parallelUpdates[0].changes);
+              } else if (parallelUpdates.length > 1) {
+                updateElements(parallelUpdates);
+              }
+
+              // ── Fix #2: delete old key; set new keys; propagate distance ─────
               const key = [id1, id2].sort().join('_');
               const oldDistStr = connectionDistances[key];
               const isUnknown = !oldDistStr || oldDistStr === '?';
@@ -877,6 +903,10 @@ export const SketchCanvas: React.FC = () => {
                   updateConnectionDistance(key2, halfStr);
                 }
               }
+
+              // Remove the original distance key (and its label offset / spanId)
+              const oldSpanId = cable.spanIds?.[index];
+              deleteConnectionSegment(key, oldSpanId);
             }
           } else if (tool === 'consumer') {
             if (pendingConsumer) {
