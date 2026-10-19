@@ -1,6 +1,22 @@
 export type Point = { x: number; y: number };
 
-export type ElementType = 'path' | 'text' | 'symbol' | 'cable' | 'consumer' | 'arc' | 'shape' | 'transformer_table';
+export type ElementType = 'path' | 'text' | 'symbol' | 'cable' | 'consumer' | 'arc' | 'shape' | 'transformer_table' | 'jumper';
+
+// ─── Electrical calculation types ────────────────────────────────────────────
+
+/** Status of a single data field in span/segment properties */
+export type DataStatus = 'confirmed' | 'estimated' | 'unknown' | 'needs_review';
+
+/** Per-segment electrical properties, keyed by spanId in the store */
+export interface SpanProps {
+  /** Cable type reference (from cableTypes.ts) — undefined means unknown */
+  cableTypeId?: string;
+  /** Operating temperature in °C — undefined means unknown, blocks calculation */
+  temperature?: number;
+  tempStatus: DataStatus;
+  /** true if user explicitly overrode the inherited cable type */
+  isUserModified?: boolean;
+}
 
 export type ShapeType = 'rectangle' | 'circle' | 'triangle' | 'arrow' | 'compass' | 'curved_arrow';
 
@@ -65,7 +81,21 @@ export interface CableElement extends BaseElement {
   arrowMode?: 'none' | 'start' | 'end';
   cableType?: 'overhead' | 'ground';
   lineStyle?: 'zigzag' | 'straight';
-  distances?: Record<number, string>; // Key: index of start pole in poleIds
+  /** @deprecated Legacy field — kept for backward compatibility only, not used in electrical calculations */
+  distances?: Record<number, string>;
+  /** Stable UUIDs per segment: spanIds[i] identifies the segment between poleIds[i] and poleIds[i+1].
+   *  Generated on cable creation. Missing on old projects — migrated on load. */
+  spanIds?: string[];
+}
+
+/** Represents a documented electrical jumper between two real poles.
+ *  Used to model: cross-cable connections, transitions between cable specs,
+ *  or branch tap-offs not expressed through shared poleIds.
+ *  No length, no R/X — treated as a zero-impedance connection. */
+export interface JumperElement extends BaseElement {
+  type: 'jumper';
+  fromPoleId: string;
+  toPoleId: string;
 }
 
 export interface ConsumerElement extends BaseElement {
@@ -108,7 +138,7 @@ export interface ShapeElement extends BaseElement {
   arrowHeadSize?: number;
 }
 
-export type DrawingElement = PathElement | TextElement | SymbolElement | CableElement | ConsumerElement | ArcElement | ShapeElement | TransformerTableElement;
+export type DrawingElement = PathElement | TextElement | SymbolElement | CableElement | ConsumerElement | ArcElement | ShapeElement | TransformerTableElement | JumperElement;
 
 export type ToolType = 'select' | 'draw' | 'text' | 'symbol' | 'cable' | 'cable_straight' | 'consumer' | 'arc' | 'shape';
 

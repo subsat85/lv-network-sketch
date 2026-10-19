@@ -23,18 +23,20 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
   const [projectName, setProjectName] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const { 
-    elements, 
-    style, 
-    poleSizeScale, 
+  const {
+    elements,
+    style,
+    poleSizeScale,
     distanceTextScale,
     consumerSizeScale,
-    consumerVariant, 
-    currentProjectId, 
+    consumerVariant,
+    currentProjectId,
     currentProjectName,
     connectionDistances,
     connectionLabelOffsets,
+    spanProps,
     loadProject: loadProjectToStore,
+    setSuspectDistanceKeys,
     setProjectInfo,
     clearCanvas
   } = useDrawingStore();
@@ -118,16 +120,29 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
     try {
       const project = await loadProject(id);
       if (project) {
+        // project.data may be a raw v1 payload — run through deserializeProject for migration
+        const migratedLoad = (() => {
+          try {
+            const { deserializeProject: ds } = require('../utils/projectSerialization');
+            // Re-serialize to string then deserialize to trigger v1 migration
+            return ds(JSON.stringify(project.data));
+          } catch {
+            return { ...project.data, suspectDistanceKeys: [], spanProps: {} };
+          }
+        })();
         loadProjectToStore({
-          elements: project.data.elements,
-          style: project.data.style,
-          poleSizeScale: project.data.poleSizeScale,
-          consumerVariant: project.data.consumerVariant,
-          connectionDistances: project.data.connectionDistances,
-          connectionLabelOffsets: project.data.connectionLabelOffsets,
-          distanceTextScale: project.data.distanceTextScale,
-          consumerSizeScale: project.data.consumerSizeScale
-        } as any);
+          elements: migratedLoad.elements,
+          style: migratedLoad.style,
+          poleSizeScale: migratedLoad.poleSizeScale,
+          consumerVariant: migratedLoad.consumerVariant,
+          connectionDistances: migratedLoad.connectionDistances,
+          connectionLabelOffsets: migratedLoad.connectionLabelOffsets,
+          distanceTextScale: (migratedLoad as any).distanceTextScale,
+          consumerSizeScale: (migratedLoad as any).consumerSizeScale,
+          spanProps: migratedLoad.spanProps,
+          suspectDistanceKeys: migratedLoad.suspectDistanceKeys,
+        });
+        setSuspectDistanceKeys(migratedLoad.suspectDistanceKeys ?? []);
         setProjectInfo(project.id, project.name);
         onClose();
       }
@@ -169,7 +184,8 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
         currentProjectId,
         currentProjectName,
         distanceTextScale,
-        consumerSizeScale
+        consumerSizeScale,
+        spanProps
       );
       const safeName = (currentProjectName || 'Project').trim();
       // Replace only invalid filesystem characters, preserving Unicode (Arabic, etc.)
@@ -200,10 +216,13 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
         consumerVariant: data.consumerVariant,
         connectionDistances: data.connectionDistances,
         connectionLabelOffsets: data.connectionLabelOffsets,
-        distanceTextScale: data.distanceTextScale,
-        consumerSizeScale: data.consumerSizeScale
-      } as any);
-      
+        distanceTextScale: (data as any).distanceTextScale,
+        consumerSizeScale: (data as any).consumerSizeScale,
+        spanProps: data.spanProps,
+        suspectDistanceKeys: data.suspectDistanceKeys,
+      });
+      setSuspectDistanceKeys(data.suspectDistanceKeys ?? []);
+
       // Update metadata if present
       if (data.metadata) {
         setProjectInfo(data.metadata.id, data.metadata.name);

@@ -745,7 +745,8 @@ export const SketchCanvas: React.FC = () => {
        
        if (dist < 5) {
           // It was a click, trigger edit
-          const currentDist = connectionDistances[draggingLabel.key] ?? '1';
+          const rawDist = connectionDistances[draggingLabel.key];
+          const currentDist = (!rawDist || rawDist === '?') ? '' : rawDist;
           setEditingDistance({ key: draggingLabel.key, value: currentDist });
        }
        
@@ -853,18 +854,29 @@ export const SketchCanvas: React.FC = () => {
               newPoleIds.splice(index + 1, 0, newId);
               updateElement(cable.id, { poleIds: newPoleIds });
               
-              // Update distances
+              // Update distances — split known distance in half; propagate '?' for unknown
               const key = [id1, id2].sort().join('_');
-              const oldDistStr = connectionDistances[key] || "1";
-              const oldDist = parseFloat(oldDistStr);
-              const newDistVal = isNaN(oldDist) ? 1 : oldDist / 2;
-              const newDistStr = Number.isInteger(newDistVal) ? newDistVal.toString() : newDistVal.toFixed(1);
-              
+              const oldDistStr = connectionDistances[key];
+              const isUnknown = !oldDistStr || oldDistStr === '?';
+
               const key1 = [id1, newId].sort().join('_');
               const key2 = [newId, id2].sort().join('_');
-              
-              updateConnectionDistance(key1, newDistStr);
-              updateConnectionDistance(key2, newDistStr);
+
+              if (isUnknown) {
+                updateConnectionDistance(key1, '?');
+                updateConnectionDistance(key2, '?');
+              } else {
+                const oldDist = parseFloat(oldDistStr);
+                const half = isNaN(oldDist) || oldDist <= 0 ? null : oldDist / 2;
+                if (half === null) {
+                  updateConnectionDistance(key1, '?');
+                  updateConnectionDistance(key2, '?');
+                } else {
+                  const halfStr = Number.isInteger(half) ? half.toString() : half.toFixed(1);
+                  updateConnectionDistance(key1, halfStr);
+                  updateConnectionDistance(key2, halfStr);
+                }
+              }
             }
           } else if (tool === 'consumer') {
             if (pendingConsumer) {
@@ -1154,12 +1166,13 @@ export const SketchCanvas: React.FC = () => {
     const id2 = cable.poleIds[segmentIndex + 1];
     const key = [id1, id2].sort().join('_');
 
-    const currentDist = connectionDistances[key] ?? '1';
-    const newDist = prompt('Enter distance (m):', currentDist);
-    
+    const rawDist = connectionDistances[key];
+    const promptDefault = (!rawDist || rawDist === '?') ? '' : rawDist;
+    const newDist = prompt('Enter distance (m):', promptDefault);
+
     if (newDist !== null) {
-      if (newDist.trim() === '') {
-        updateConnectionDistance(key, '1');
+      if (newDist.trim() === '' || newDist.trim() === '?') {
+        updateConnectionDistance(key, '?');
       } else {
         updateConnectionDistance(key, newDist.trim());
       }
@@ -1765,7 +1778,7 @@ export const SketchCanvas: React.FC = () => {
       const lx = mx + nx * labelOffset + storedOffset.x;
       const ly = my + ny * labelOffset + storedOffset.y;
       
-      const distance = connectionDistances[key] ?? "1";
+      const distance = connectionDistances[key] ?? "?";
 
       return (
         <g 

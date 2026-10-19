@@ -1,5 +1,24 @@
 import { create } from 'zustand';
-import { DrawingElement, ToolType, DrawingStyle } from '../types/drawing';
+import { DrawingElement, ToolType, DrawingStyle, CableElement, JumperElement, SpanProps } from '../types/drawing';
+
+// ─── Span ID utilities ────────────────────────────────────────────────────────
+
+/** Generate a stable UUID for a cable segment */
+const generateSpanId = (): string =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+/** Ensure every segment in a cable has a stable spanId.
+ *  Returns a new array; does not mutate the cable. */
+export const ensureSpanIds = (cable: CableElement): string[] => {
+  const needed = Math.max(0, cable.poleIds.length - 1);
+  const existing = cable.spanIds ?? [];
+  if (existing.length === needed) return existing;
+  const result = [...existing];
+  while (result.length < needed) result.push(generateSpanId());
+  return result.slice(0, needed);
+};
 
 interface DrawingState {
   elements: DrawingElement[];
@@ -21,7 +40,14 @@ interface DrawingState {
   connectionDistances: Record<string, string>;
   connectionLabelOffsets: Record<string, { x: number, y: number }>;
   showDistanceLabels: boolean;
-  
+
+  // ─── Electrical calculation state ─────────────────────────────────────────
+  /** Per-segment electrical properties, keyed by spanId */
+  spanProps: Record<string, SpanProps>;
+  /** Keys in connectionDistances whose value is "1" and was never confirmed by the user.
+   *  Populated when loading version-1 projects. Treated as 'unknown' in calculations. */
+  suspectDistanceKeys: string[];
+
   saveHistory: () => void;
   setTool: (tool: ToolType) => void;
   setProjectInfo: (id: string | null, name: string | null) => void;
@@ -38,7 +64,17 @@ interface DrawingState {
   updateSymbolModifiers: (id: string, modifiers: Partial<import('../types/drawing').SymbolModifiers>) => void;
   updateConnectionDistance: (key: string, distance: string) => void;
   updateConnectionLabelOffset: (key: string, offset: { x: number, y: number }) => void;
+  updateSpanProps: (spanId: string, props: Partial<SpanProps>) => void;
+  setSuspectDistanceKeys: (keys: string[]) => void;
+  /** Mark a previously-suspect distance key as confirmed by the user */
+  confirmDistanceKey: (key: string) => void;
   deleteElement: (id: string) => void;
+  /** Delete a pole (symbol) element with full cascade cleanup.
+   *  Removes the poleId from all CableElement.poleIds; cables that become
+   *  degenerate (< 2 poles) are also removed.
+   *  Also cleans up connectionDistances and spanProps for affected segments.
+   *  IMPORTANT: The UI must show a confirmation dialog BEFORE calling this action. */
+  deletePole: (poleId: string) => void;
   setSelectedId: (id: string | null) => void;
   setActiveSymbolId: (id: string | null) => void;
   setActiveCableId: (id: string | null) => void;
@@ -46,7 +82,16 @@ interface DrawingState {
   clearCanvas: () => void;
   undo: () => void;
   redo: () => void;
-  loadProject: (data: { elements: DrawingElement[], style: DrawingStyle, poleSizeScale: number, consumerVariant: 'circle' | 'square', connectionDistances?: Record<string, string>, connectionLabelOffsets?: Record<string, { x: number, y: number }> }) => void;
+  loadProject: (data: {
+    elements: DrawingElement[];
+    style: DrawingStyle;
+    poleSizeScale: number;
+    consumerVariant: 'circle' | 'square';
+    connectionDistances?: Record<string, string>;
+    connectionLabelOffsets?: Record<string, { x: number, y: number }>;
+    spanProps?: Record<string, SpanProps>;
+    suspectDistanceKeys?: string[];
+  }) => void;
 }
 
 export const useDrawingStore = create<DrawingState>((set) => ({
@@ -74,6 +119,8 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   connectionDistances: {},
   connectionLabelOffsets: {},
   showDistanceLabels: true,
+  spanProps: {},
+  suspectDistanceKeys: [],
 
   setProjectInfo: (id, name) => set({ currentProjectId: id, currentProjectName: name }),
   setAttachedImage: (image) => set({ attachedImage: image }),
@@ -88,8 +135,10 @@ export const useDrawingStore = create<DrawingState>((set) => ({
     attachedImage: (data as any).attachedImage || null,
     connectionDistances: data.connectionDistances || {},
     connectionLabelOffsets: data.connectionLabelOffsets || {},
-    history: [], // Clear history on load
-    redoStack: [], // Clear redo stack on load
+    spanProps: data.spanProps || {},
+    suspectDistanceKeys: data.suspectDistanceKeys || [],
+    history: [],
+    redoStack: [],
     selectedId: null,
     activeSymbolId: null,
     activeCableId: null,
@@ -173,7 +222,134 @@ export const useDrawingStore = create<DrawingState>((set) => ({
     connectionLabelOffsets: { ...state.connectionLabelOffsets, [key]: offset }
   })),
 
-  saveHistory: () => set((state) => ({ 
+  updateSpanProps: (spanId, props) => set((state) => ({
+    spanProps: {
+      ...state.spanProps,
+      [spanId]: { ...state.spanProps[spanId], ...props },
+    },
+  })),
+
+  setSuspectDistanceKeys: (keys) => set({ suspectDistanceKeys: keys }),
+
+  confirmDistanceKey: (key) => set((state) => ({
+    suspectDistanceKeys: state.suspectDistanceKeys.filter(k => k !== key),
+  })),
+
+  deletePole: (poleId: string) => set((state) => {
+    const newHistory = [...state.history, state.elements];
+
+    // Collect spans and distance keys that will be destroyed
+    const spanIdsToRemove = new Set<string>();
+    const distanceKeysToRemove = new Set<string>();
+
+    // Build a lookup of original consecutive pairs → spanId for each cable
+    // so we can reuse surviving spanIds after the pole is removed
+    const newElements = state.elements.reduce<DrawingElement[]>((acc, el) => {
+      // Remove the pole itself
+      if (el.id === poleId) return acc;
+
+      // Remove any jumper that references this pole
+      if (el.type === 'jumper') {
+        const j = el as JumperElement;
+        if (j.fromPoleId === poleId || j.toPoleId === poleId) return acc;
+      }
+
+      if (el.type !== 'cable') {
+        acc.push(el);
+        return acc;
+      }
+
+      const cable = el as CableElement;
+
+      // If this cable doesn't reference the deleted pole, keep as-is
+      if (!cable.poleIds.includes(poleId)) {
+        acc.push(cable);
+        return acc;
+      }
+
+      const existingSpanIds = cable.spanIds ?? [];
+
+      // Collect distance keys and spanIds for all segments touching this pole
+      cable.poleIds.forEach((pid, j) => {
+        if (pid !== poleId) return;
+        // Segment j-1: poleIds[j-1] → poleIds[j]
+        if (j > 0) {
+          const k = [cable.poleIds[j - 1], cable.poleIds[j]].sort().join('_');
+          distanceKeysToRemove.add(k);
+          if (existingSpanIds[j - 1]) spanIdsToRemove.add(existingSpanIds[j - 1]);
+        }
+        // Segment j: poleIds[j] → poleIds[j+1]
+        if (j < cable.poleIds.length - 1) {
+          const k = [cable.poleIds[j], cable.poleIds[j + 1]].sort().join('_');
+          distanceKeysToRemove.add(k);
+          if (existingSpanIds[j]) spanIdsToRemove.add(existingSpanIds[j]);
+        }
+      });
+
+      const newPoleIds = cable.poleIds.filter(id => id !== poleId);
+
+      if (newPoleIds.length < 2) {
+        // Cable becomes degenerate — remove it and mark all its spans for cleanup
+        existingSpanIds.forEach(sid => spanIdsToRemove.add(sid));
+        return acc;
+      }
+
+      // Rebuild spanIds: reuse original spanId where the same consecutive pair survives,
+      // generate a fresh one for any new pair (e.g., the bridged gap where the pole was).
+      const originalPairToSpanId = new Map<string, string>();
+      cable.poleIds.forEach((pid, i) => {
+        if (i < cable.poleIds.length - 1 && existingSpanIds[i]) {
+          const key = [pid, cable.poleIds[i + 1]].sort().join('_');
+          originalPairToSpanId.set(key, existingSpanIds[i]);
+        }
+      });
+
+      const newSpanIds: string[] = [];
+      for (let i = 0; i < newPoleIds.length - 1; i++) {
+        const key = [newPoleIds[i], newPoleIds[i + 1]].sort().join('_');
+        const reusable = originalPairToSpanId.get(key);
+        // Reuse only if it wasn't already collected for removal (i.e., it didn't touch the deleted pole)
+        if (reusable && !spanIdsToRemove.has(reusable)) {
+          newSpanIds.push(reusable);
+        } else {
+          newSpanIds.push(generateSpanId());
+        }
+      }
+
+      acc.push({ ...cable, poleIds: newPoleIds, spanIds: newSpanIds });
+      return acc;
+    }, []);
+
+    // Clean up connectionDistances
+    const newConnectionDistances = { ...state.connectionDistances };
+    distanceKeysToRemove.forEach(key => delete newConnectionDistances[key]);
+
+    // Clean up connectionLabelOffsets
+    const newConnectionLabelOffsets = { ...state.connectionLabelOffsets };
+    distanceKeysToRemove.forEach(key => delete newConnectionLabelOffsets[key]);
+
+    // Clean up spanProps
+    const newSpanProps = { ...state.spanProps };
+    spanIdsToRemove.forEach(sid => delete newSpanProps[sid]);
+
+    // Clean up suspectDistanceKeys
+    const newSuspectDistanceKeys = state.suspectDistanceKeys.filter(
+      key => !distanceKeysToRemove.has(key)
+    );
+
+    return {
+      history: newHistory,
+      redoStack: [],
+      elements: newElements,
+      connectionDistances: newConnectionDistances,
+      connectionLabelOffsets: newConnectionLabelOffsets,
+      spanProps: newSpanProps,
+      suspectDistanceKeys: newSuspectDistanceKeys,
+      selectedId: state.selectedId === poleId ? null : state.selectedId,
+    };
+  }),
+
+  saveHistory: () => set((state) => ({
     history: [...state.history, state.elements],
     redoStack: [] 
   })),
@@ -190,13 +366,16 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   setActiveCableId: (id) => set({ activeCableId: id }),
   setActiveShapeType: (type) => set({ activeShapeType: type, tool: 'shape', selectedId: null, activeCableId: null }),
   
-  clearCanvas: () => set((state) => ({ 
+  clearCanvas: () => set((state) => ({
     history: [...state.history, state.elements],
     redoStack: [],
-    elements: [], 
+    elements: [],
     connectionDistances: {},
-    selectedId: null, 
-    activeCableId: null 
+    connectionLabelOffsets: {},
+    spanProps: {},
+    suspectDistanceKeys: [],
+    selectedId: null,
+    activeCableId: null
   })),
 
   undo: () => set((state) => {

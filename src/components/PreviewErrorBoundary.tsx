@@ -14,7 +14,7 @@ interface State {
 }
 
 const RecoveryActions: React.FC<{ error: Error | null, onReset: () => void, onClose: () => void }> = ({ error, onReset, onClose }) => {
-  const { elements, style, poleSizeScale, consumerVariant, connectionDistances, connectionLabelOffsets, currentProjectId, currentProjectName } = useDrawingStore();
+  const { elements, style, poleSizeScale, consumerVariant, connectionDistances, connectionLabelOffsets, currentProjectId, currentProjectName, spanProps } = useDrawingStore();
 
   const handleDownloadBackup = () => {
     try {
@@ -26,7 +26,10 @@ const RecoveryActions: React.FC<{ error: Error | null, onReset: () => void, onCl
         connectionDistances,
         connectionLabelOffsets,
         currentProjectId,
-        currentProjectName
+        currentProjectName,
+        undefined,
+        undefined,
+        spanProps
       );
       
       const blob = new Blob([json], { type: 'application/json' });
