@@ -1,5 +1,5 @@
 import { get, set, del, setMany } from 'idb-keyval';
-import { DrawingElement, DrawingStyle } from '../types/drawing';
+import { DistanceFlag, DrawingElement, DrawingStyle, ElectricalSettings } from '../types/drawing';
 
 export interface ProjectData {
   elements: DrawingElement[];
@@ -10,6 +10,12 @@ export interface ProjectData {
   consumerVariant: 'circle' | 'square';
   connectionDistances?: Record<string, string>;
   connectionLabelOffsets?: Record<string, { x: number, y: number }>;
+  /** voltage-drop settings (Stage 7) */
+  electrical?: ElectricalSettings;
+  /** estimated / split markers of distances (Stage 7.8) */
+  distanceFlags?: Record<string, DistanceFlag>;
+  /** span properties of a project saved by branch feature/vd (version 2); read once on load */
+  spanProps?: unknown;
 }
 
 export interface Project {

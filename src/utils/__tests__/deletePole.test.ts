@@ -4,6 +4,9 @@ import { deletePoleCascade, pairKey, type DeletePoleFailure, type DeletePoleSucc
 import { calculateCablePath } from '../cableLayout';
 import { useDrawingStore } from '../../store/drawingStore';
 import { serializeProject, deserializeProject } from '../projectSerialization';
+// Stage 7: loading / importing gives every cable span ids (fixtures here are put
+// into the store directly, without them), so compare without that field.
+const noSpanIds = <T,>(els: T[]): T[] => els.map((e) => { const { spanIds: _s, ...rest } = e as { spanIds?: unknown }; return rest as T; });
 
 // ---------- fixtures ----------
 const pole = (id: string, x: number, y: number, symbolId = 'lv-pole'): SymbolElement => ({
@@ -251,7 +254,7 @@ describe('store.deleteElement for poles', () => {
     const st = useDrawingStore.getState();
     const json = serializeProject(st.elements, st.style, st.poleSizeScale, st.consumerVariant, st.connectionDistances, st.connectionLabelOffsets, null, 'x');
     const back = deserializeProject(json);
-    expect(back.elements).toEqual(st.elements);
+    expect(noSpanIds(back.elements)).toEqual(noSpanIds(st.elements));
     expect(back.connectionDistances).toEqual(st.connectionDistances);
     expect(back.connectionLabelOffsets).toEqual(st.connectionLabelOffsets);
     noDanglingRefs(back.elements);

@@ -1,6 +1,6 @@
 export type Point = { x: number; y: number };
 
-export type ElementType = 'path' | 'text' | 'symbol' | 'cable' | 'consumer' | 'arc' | 'shape' | 'transformer_table' | 'cable_arc';
+export type ElementType = 'path' | 'text' | 'symbol' | 'cable' | 'consumer' | 'arc' | 'shape' | 'transformer_table' | 'cable_arc' | 'jumper';
 
 export type ShapeType = 'rectangle' | 'circle' | 'triangle' | 'arrow' | 'compass' | 'curved_arrow';
 
@@ -40,6 +40,8 @@ export interface SymbolModifiers {
   isTilted?: boolean;
   isRusted?: boolean;
   isProposedReplacement?: boolean;
+  /** chosen by the user as the supply point for the voltage-drop calculation */
+  vdSource?: boolean;
   note?: {
     text: string;
     x: number;
@@ -66,6 +68,126 @@ export interface CableElement extends BaseElement {
   cableType?: 'overhead' | 'ground';
   lineStyle?: 'zigzag' | 'straight';
   distances?: Record<number, string>; // Key: index of start pole in poleIds
+  /**
+   * Stable id of every span: spanIds[i] is the span poleIds[i] → poleIds[i+1].
+   * Kept consistent by reconcileElements (src/utils/spanModel.ts) whenever the
+   * pole list changes. Missing on projects made before Stage 7 (created on load).
+   */
+  spanIds?: string[];
+  /** Electrical properties per span, keyed by span id (only spans that have any). */
+  spanProps?: Record<string, SpanProps>;
+  /**
+   * How each end of the cable connects at its pole (Stage 7.9). Missing = 'auto'
+   * (the drawing's rule: joined to same-colour cables at that pole). 'connected'
+   * confirms that junction; 'isolated' says this end is not connected there.
+   * Cleared automatically when that end moves to another pole.
+   */
+  endLinks?: { start?: CableEndLink; end?: CableEndLink };
+}
+
+export type CableEndLink = 'connected' | 'isolated';
+
+export type ConductorMaterial = 'al' | 'cu';
+export type SupplySystem = '3ph4w' | '1ph2w';
+export type CableKind = 'abc' | 'bare' | 'underground' | 'other';
+
+/**
+ * Electrical properties of one span of one cable. Every field is optional: a
+ * field that is missing is reported as missing by the calculation, never guessed.
+ * The span length is the distance written on the drawing for the pole pair
+ * (connectionDistances), so it is not stored here.
+ */
+export interface SpanProps {
+  /** pole pair (in the cable's order) these properties were written for */
+  poles: [string, string];
+  cableKind?: CableKind;
+  material?: ConductorMaterial;
+  /** phase conductor cross-section, mm² */
+  crossSectionMm2?: number;
+  /** neutral conductor cross-section, mm² */
+  neutralCrossSectionMm2?: number;
+  /** neutral conductor material ('alloy' = aluminium alloy, e.g. the AAAC messenger of ABC);
+   *  not taken from the phase material — the conductor table is used for it only when
+   *  it is plain 'al' or 'cu' */
+  neutralMaterial?: ConductorMaterial | 'alloy';
+  /** conductors per phase connected in parallel (1 = a single conductor) */
+  parallel?: number;
+  system?: SupplySystem;
+  /** phase resistance at operating temperature, Ω/km (overrides the conductor table) */
+  rOhmPerKm?: number;
+  /** phase reactance, Ω/km */
+  xOhmPerKm?: number;
+  /** neutral resistance at operating temperature, Ω/km (overrides the conductor table) */
+  rNeutralOhmPerKm?: number;
+  /** where the values come from (catalogue, report, measurement…) */
+  dataSource?: string;
+  /** copied from the previous span while drawing and not yet reviewed */
+  inherited?: boolean;
+  /** reasons the values should be checked (span split / merged / moved) */
+  review?: SpanReview[];
+  /** properties read from a feature/vd (version 2) file, kept unchanged */
+  legacyV2?: unknown;
+  /** after merging spans whose properties differed (or existed on one side only):
+   *  every original record (null = that span had none), kept for review */
+  mergedFrom?: (Omit<SpanProps, 'poles' | 'mergedFrom'> | null)[];
+}
+export type SpanReview = 'split' | 'merge' | 'merge-different' | 'merge-partial' | 'moved' | 'v2';
+
+/**
+ * Status of a span distance (connectionDistances[key]) that was not typed by the user.
+ * Written when a pole is placed on a span; removed as soon as the user enters
+ * that distance (it is then a measured value).
+ */
+export interface DistanceFlag {
+  /** the value is an estimate (half of the split span), not a measurement */
+  estimated?: boolean;
+  /** the span this one was split from, with its distance (and label offset) at the time,
+   *  so deleting the new pole again restores it exactly */
+  splitFrom?: { key: string; value: string; offset?: { x: number; y: number }; flag?: DistanceFlag };
+}
+
+/** Project-wide settings of the voltage-drop calculation (saved with the drawing). */
+export interface ElectricalSettings {
+  /** nominal phase-to-neutral voltage, V */
+  phaseVoltage: number;
+  /** nominal phase-to-phase voltage, V */
+  lineVoltage: number;
+  /** voltage-drop limit, % of nominal */
+  limitPercent: number;
+  /** a result at or above this fraction of the limit is shown as a warning */
+  nearLimitFraction: number;
+  /** lowest acceptable phase-to-neutral voltage, V */
+  minPhaseVoltage: number;
+  /** lowest acceptable phase-to-phase voltage, V */
+  minLineVoltage: number;
+  /** load power factor (cos φ) — required, no default */
+  powerFactor?: number;
+  /** conductor operating temperature, °C — required when the conductor table is used */
+  conductorTempC?: number;
+  /**
+   * How single-phase loads with an unknown phase are handled:
+   * 'worst'    — all of them on the phase being checked (an upper bound);
+   * 'balanced' — split equally over the three phases (an assumption the user chose).
+   */
+  singlePhaseMode: 'worst' | 'balanced';
+  /**
+   * How loads respond to the voltage (Stage 7.9). 'constant-current' (default, and
+   * the value of every project saved before): the rule currents as they are.
+   * 'constant-power': each subscriber draws the power of its rule current at the
+   * nominal voltage, so its current is scaled by V_nominal / V at its pole (iterated).
+   */
+  loadModel?: 'constant-current' | 'constant-power';
+}
+
+/**
+ * A pole-to-pole link read from a feature/vd (version 2) file. It is kept and
+ * drawn so no data is lost, but its electrical meaning is not defined in this
+ * app, so the calculation does not use it (and says so).
+ */
+export interface LegacyJumperElement extends BaseElement {
+  type: 'jumper';
+  fromPoleId: string;
+  toPoleId: string;
 }
 
 export interface ConsumerElement extends BaseElement {
@@ -131,7 +253,7 @@ export interface CableArcElement extends BaseElement {
   to: CableArcEnd;
 }
 
-export type DrawingElement = PathElement | TextElement | SymbolElement | CableElement | ConsumerElement | ArcElement | ShapeElement | TransformerTableElement | CableArcElement;
+export type DrawingElement = PathElement | TextElement | SymbolElement | CableElement | ConsumerElement | ArcElement | ShapeElement | TransformerTableElement | CableArcElement | LegacyJumperElement;
 
 export type ToolType = 'select' | 'draw' | 'text' | 'symbol' | 'cable' | 'cable_straight' | 'consumer' | 'arc' | 'shape';
 

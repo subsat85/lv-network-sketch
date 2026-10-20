@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Zap, Circle } from 'lucide-react';
 import { ConsumerElement } from '../types/drawing';
+import { invalidLoads, loadsByColor, SINGLE_PHASE_AMPS, THREE_PHASE_DEFAULT_AMPS } from '../utils/loads';
 
 interface LoadReportModalProps {
   isOpen: boolean;
@@ -8,61 +9,18 @@ interface LoadReportModalProps {
   consumers: ConsumerElement[];
 }
 
-interface CableLoad {
-  color: string;
-  singlePhaseCount: number;
-  singlePhaseLoad: number;
-  threePhaseCount: number;
-  threePhaseLoad: number;
-  totalLoad: number;
-}
-
 export const LoadReportModal: React.FC<LoadReportModalProps> = ({ isOpen, onClose, consumers }) => {
   if (!isOpen) return null;
 
-  // Calculate load grouped by cable color
-  const calculateLoadByCable = (): CableLoad[] => {
-    const cableMap = new Map<string, CableLoad>();
-
-    consumers.forEach(consumer => {
-      const color = consumer.color || '#000000';
-      const count = consumer.count || 1;
-      
-      if (!cableMap.has(color)) {
-        cableMap.set(color, {
-          color,
-          singlePhaseCount: 0,
-          singlePhaseLoad: 0,
-          threePhaseCount: 0,
-          threePhaseLoad: 0,
-          totalLoad: 0
-        });
-      }
-
-      const cable = cableMap.get(color)!;
-      
-      if (consumer.variant === 'circle') {
-        // Single-phase (واحد فاز) = 4 amps per consumer
-        cable.singlePhaseCount += count;
-        cable.singlePhaseLoad += count * 4;
-      } else {
-        // Three-phase (ثلاث فاز) = label as amps, default 32 if no label
-        const amps = consumer.label ? parseFloat(consumer.label) : 32;
-        cable.threePhaseCount += count;
-        cable.threePhaseLoad += count * (isNaN(amps) ? 32 : amps);
-      }
-      
-      cable.totalLoad = cable.singlePhaseLoad + cable.threePhaseLoad;
-    });
-
-    return Array.from(cableMap.values()).sort((a, b) => b.totalLoad - a.totalLoad);
-  };
-
-  const cableLoads = calculateLoadByCable();
+  // Load grouped by cable colour — rules in utils/loads.ts (shared with the voltage-drop calculation)
+  const cableLoads = loadsByColor(consumers);
   const totalLoad = cableLoads.reduce((sum, cable) => sum + cable.totalLoad, 0);
+  // totals are kept exactly as before; values that cannot be a current are pointed out
+  const invalid = invalidLoads(consumers);
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    // z-[60]: above FloatingHistoryControls (z-50, rendered later), like the other dialogs (VoltageDropPanel, SpanPropertiesSheet)
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[80vh] supports-[height:100dvh]:max-h-[80dvh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="bg-gradient-to-l from-blue-600 to-blue-500 px-6 py-4 flex items-center justify-between flex-shrink-0">
@@ -140,10 +98,16 @@ export const LoadReportModal: React.FC<LoadReportModalProps> = ({ isOpen, onClos
           </div>
         )}
 
+        {invalid.length > 0 && (
+          <div role="alert" className="px-6 py-2 bg-amber-50 border-t border-amber-200 text-xs text-amber-900 text-right flex-shrink-0" dir="rtl">
+            ⚠ {invalid.length} مشترك قيمة حمله غير صالحة (صفر أو سالب أو عدد غير صحيح): {invalid.map(c => `«${c.label ?? ''}»${c.count !== 1 ? ` ×${c.count}` : ''}`).join('، ')} — صحّحها؛ لا تُستعمل في حساب هبوط الفولتية.
+          </div>
+        )}
+
         {/* Note */}
         <div className="px-6 py-2 bg-gray-50 border-t border-gray-100 flex-shrink-0">
           <div className="text-xs text-gray-500 text-center">
-            * واحد فاز = 4 امبير | ثلاث فاز = الرقم المكتوب او 32 امبير الافتراضي
+            * واحد فاز = {SINGLE_PHASE_AMPS} امبير | ثلاث فاز = الرقم المكتوب او {THREE_PHASE_DEFAULT_AMPS} امبير الافتراضي
           </div>
         </div>
       </div>

@@ -4,6 +4,9 @@ import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerE
 import { calculateCablePath } from '../utils/cableLayout';
 import { arcGeometry } from '../utils/cableArcs';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
+import { VoltageDropOverlay } from './VoltageDropOverlay';
+import type { VoltageDropResult } from '../utils/voltageDrop';
+import type { DistanceFlag } from '../types/drawing';
 
 const POLE_RADIUS = 20;
 const CABLE_SPACING = 8;
@@ -17,6 +20,10 @@ interface PreviewCanvasProps {
   consumerSizeScale?: number;
   consumerVariant: 'circle' | 'square';
   showDistanceLabels?: boolean;
+  /** voltage-drop results to draw (when shown on the drawing) */
+  voltageDrop?: VoltageDropResult | null;
+  /** estimated distances are written "≈…" */
+  distanceFlags?: Record<string, DistanceFlag>;
 }
 
 const getCircleSegmentIntersection = (p1: Point, p2: Point, center: Point, r: number): Point | null => {
@@ -115,7 +122,9 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   distanceTextScale = 1,
   consumerSizeScale = 1,
   consumerVariant,
-  showDistanceLabels = true
+  showDistanceLabels = true,
+  voltageDrop = null,
+  distanceFlags
 }) => {
 
   const getTransformerIntersection = (pole: SymbolElement, externalPoint: Point): Point => {
@@ -464,6 +473,10 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
           <circle cx={g.end.x} cy={g.end.y} r={g.dotRadius} fill={el.strokeColor} />
         </g>
       );
+    } else if (el.type === 'jumper') {
+      const a = elements.find(p => p.id === el.fromPoleId), b = elements.find(p => p.id === el.toPoleId);
+      if (!a || !b) return null;
+      return <line key={el.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={el.strokeColor || '#64748b'} strokeWidth={2} strokeDasharray="6 4" />;
     } else if (el.type === 'arc') {
       const arc = el as ArcElement;
       const path = generateHighQualityArcPath(arc.x, arc.y, arc.controlX, arc.controlY, arc.x2, arc.y2);
@@ -833,7 +846,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
       return (
         <g key={key} transform={`translate(${lx}, ${ly}) rotate(${angle})`}>
           <text x={0} y={0} dy=".3em" textAnchor="middle" fontSize={10 * distanceTextScale} fill="red" fontWeight="bold" stroke="white" strokeWidth={3} paintOrder="stroke">
-            {distance}
+            {distanceFlags?.[key]?.estimated ? `≈${distance}` : distance}
           </text>
         </g>
       );
@@ -845,6 +858,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
       {elements.filter(el => el.type === 'cable').map(el => renderElement(el))}
       {elements.filter(el => el.type !== 'cable').map(el => renderElement(el))}
       {showDistanceLabels && renderConnectionLabels()}
+      {voltageDrop && <VoltageDropOverlay elements={elements} result={voltageDrop} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} />}
     </>
   );
 };

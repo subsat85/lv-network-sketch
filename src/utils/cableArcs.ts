@@ -27,7 +27,7 @@ const isCable = (e: DrawingElement | undefined): e is CableElement => !!e && e.t
 const isArc = (e: DrawingElement): e is CableArcElement => e.type === 'cable_arc';
 
 /** Index in poleIds of the given visit of the pole, or -1. */
-const occurrenceIndex = (cable: CableElement, poleId: string, occurrence: number) => {
+export const occurrenceIndex = (cable: CableElement, poleId: string, occurrence: number) => {
   let seen = 0;
   for (let i = 0; i < cable.poleIds.length; i++) {
     if (cable.poleIds[i] !== poleId) continue;

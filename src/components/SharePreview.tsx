@@ -3,6 +3,8 @@ import { X, Share2, FileDown, RotateCcw, RotateCw, ZoomIn, ZoomOut, Maximize, Im
 import { useDrawingStore } from '../store/drawingStore';
 import { PreviewCanvas } from './PreviewCanvas';
 import html2canvas from 'html2canvas';
+import { useVoltageDrop } from '../utils/useVoltageDrop';
+import { LOAD_MODEL_LABEL } from '../utils/vdLabels';
 import jsPDF from 'jspdf';
 
 interface SharePreviewProps {
@@ -15,6 +17,11 @@ const A4_HEIGHT = 1754;
 
 export const SharePreview: React.FC<SharePreviewProps> = ({ onClose }) => {
   const { elements, connectionDistances, connectionLabelOffsets, poleSizeScale, consumerVariant, currentProjectName, attachedImage, setAttachedImage, distanceTextScale, consumerSizeScale, showDistanceLabels } = useDrawingStore();
+  // voltage-drop badges go into the shared image / PDF when they are shown on the drawing
+  const showVoltageDrop = useDrawingStore((st) => st.showVoltageDrop);
+  const voltageDrop = useVoltageDrop(showVoltageDrop);
+  const distanceFlags = useDrawingStore((st) => st.distanceFlags);
+  const electrical = useDrawingStore((st) => st.electrical);
   const [transform, setTransform] = useState({ x: A4_WIDTH / 2, y: A4_HEIGHT / 2, scale: 1, rotation: 0 });
   const [isGesturing, setIsGesturing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -391,8 +398,16 @@ export const SharePreview: React.FC<SharePreviewProps> = ({ onClose }) => {
                   distanceTextScale={distanceTextScale}
                   consumerSizeScale={consumerSizeScale}
                   showDistanceLabels={showDistanceLabels}
+                  voltageDrop={voltageDrop}
+                  distanceFlags={distanceFlags}
                 />
               </g>
+              {voltageDrop && (
+                // what the badges mean, on the page itself (and so in the PDF / image)
+                <text x={A4_WIDTH - 40} y={A4_HEIGHT - 40} textAnchor="end" fontSize={22} fill="#374151" fontFamily="sans-serif" direction="rtl" data-vd-legend>
+                  {`هبوط الفولتية — نموذج الحمل: ${LOAD_MODEL_LABEL[electrical.loadModel ?? 'constant-current']} — cos φ ${electrical.powerFactor ?? '؟'} — الحد ${electrical.limitPercent}% — ≈ تقديري، ؟ غير قابل للحساب`}
+                </text>
+              )}
             </svg>
           </div>
         </div>

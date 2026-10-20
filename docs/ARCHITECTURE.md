@@ -110,7 +110,7 @@ Electrical Network Field Sketch App - A touch-friendly application for sketching
   - **Placement**: Midpoint of the connection, offset perpendicularly to the right (relative to sorted IDs).
   - **Offset Logic**: Automatically increases based on the maximum cable offset on that connection to avoid overlap.
   - **Style**: Red text with white halo.
-  - **Interaction**: Tap label or segment to edit. Default "1".
+  - **Interaction**: Tap the label to edit the distance; tap a segment of the selected cable to open that span's properties (length + electrical data). An unset distance is shown as "1" and is treated as missing by the voltage-drop calculation.
 - **Symbol Modifiers**:
   - **Tilted/Rusted/Proposed Replacement/Notes**:
     - **Storage**: `modifiers` field in `SymbolElement`.
@@ -128,11 +128,40 @@ Electrical Network Field Sketch App - A touch-friendly application for sketching
   - **Rendering**: Changes the stroke (LV) or fill (MV) color to Red.
   - **Interaction**: Toggle via "Proposed Pole" in context menu.
 - **Midpoint Insertion**:
-  - **Logic**: Placing a new symbol on an existing cable segment automatically splits the cable.
-  - **Distance**: The existing distance value is split in half (e.g., 50 -> 25, 25) and assigned to the new connections.
+  - **Logic**: Placing a new symbol on an existing cable segment splits every cable that runs directly between those two poles (parallel cables share the route).
+  - **Distance**: A recorded distance is split in half (e.g., 50 -> 25, 25) and assigned to the new connections; an unrecorded one stays unrecorded.
 - **Subscriber Symbols (Consumers)**:
   - **Style Override**: MUST be hollow (outline-only, `fill="none"`).
   - **Color**: Outline and internal number must match `el.color`.
   - **Selection**: Highlights outline in blue, number also turns blue.
   - **Touch Interaction**: Includes a larger transparent hit area (44x44px) behind the visible shape to improve touch selection accuracy.
 - **Color Palette**: Added Light Blue (`#38BDF8`) to the standard color options.
+
+## Cable span properties and voltage drop (Stage 7)
+
+Calculation code is independent of the UI and covered by unit tests (`src/utils/__tests__/`).
+
+- **Span identity** (`src/utils/spanModel.ts`): every cable keeps `spanIds` aligned with `poleIds` and `spanProps` (keyed by span id) on the cable element itself, so parallel cables never share properties and the data travels through save / export / autosave / undo with the elements. `reconcileElements` runs inside the store's `mutate` and keeps ids / properties right when a pole list changes: unchanged spans keep their id, a split span copies its properties to both parts (marked `split`), merged spans keep identical properties (or the first span's, marked `merge-different`), and a span added while drawing copies the previous span's properties (marked `inherited`, a copy not a link). The span length is the drawing's distance for the pole pair.
+- **Settings** (`ElectricalSettings`, `src/utils/electricalSettings.ts`): part of the document (`electrical` in the store, history, autosave, saved projects and exported files). 230/400 V, 5 %, 218/380 V are editable reference values; power factor and conductor temperature have no default.
+- **Loads** (`src/utils/loads.ts`): the load-report rules in one place (single-phase 4 A; three-phase = label or 32 A); `LoadReportModal` and the calculation both use them.
+- **Topology** (`src/utils/network.ts`): connection points per cable visit; same-colour cables are joined at a pole, Jumpers join the two ends they link, a supply pole (transformer or the pole marked `modifiers.vdSource`) joins everything at it. Each connected network gets a source (marked pole, else its only transformer), and must be a tree from it; loops, same-colour parallel spans, several sources / transformers are reported, not computed.
+- **Voltage drop** (`src/utils/voltageDrop.ts`, `src/data/conductors.ts`): constant-current loads, ΔV = I(R cos φ + X sin φ)L per conductor, worst-case (or user-chosen balanced) handling of single-phase loads of unknown phase, R from IEC 60228 class 2 (max DC at 20 °C, temperature corrected) or entered per span, X entered per span. Missing data make the span and everything fed through it "not computable", with the missing items listed.
+- **UI**: `SpanPropertiesSheet` (span editor with live check, plus the non-blocking hint while drawing), `VoltageDropPanel` (settings, results per network, report text), `VoltageDropOverlay` (badges at poles in the cable colour, status as a symbol; also drawn in the share / PDF preview when shown).
+- **File format**: still written as version 1 (only optional fields were added). Version 2 files from branch `feature/vd` are read by `src/utils/projectMigration.ts`: span ids kept, its span records kept unchanged under `legacyV2` (not used), "?" distances → unset, its pole-to-pole `jumper` elements kept and drawn but not used by the calculation.
+
+### Stage 7.8 corrections (after the Stage 7 audit)
+
+- **Connections need structure, not only colour**: at an ordinary pole two same-colour cables are joined only if at least one of them starts or ends there (branch / continuation); two through-cables cross unjoined (warning); an end meeting several same-colour through-cables is "ambiguous" (not computed). A cable that only runs through a transformer pole is not taken as fed by it ("ambiguous" until the transformer is marked as the source, or the cable is drawn ending there). A pole marked as source feeds every cable at it.
+- **Invalid loads**: a label number ≤ 0 or a count that is not a whole number ≥ 1 is invalid; the load report keeps its totals and lists them, the voltage-drop calculation does not compute the spans that carry them.
+- **Provisional results**: a value that depends on a span under review, unconfirmed copied properties, an estimated length or impedances without a stated source is shown "≈… ⚑ تقديري — يحتاج مراجعة", never as a plain "within the limit".
+- **Distances when a pole is placed on a span** (`src/utils/distances.ts`, store `splitConnectionDistance`, `distanceFlags`): the recorded distance is split into two exact decimal halves (33.3 → 16.65 + 16.65) marked *estimated* (shown "≈" on the drawing) whatever the cables' properties; text that is not a plain number is never turned into a distance; the old pair key is moved into the markers so it cannot come back stale. Typing a distance makes it measured (and removes the span's `split` mark). Deleting the pole restores the original value exactly when neither part was measured, otherwise sets the exact sum (estimated if a part was).
+- **Merges** keep every original record in `mergedFrom` (`merge-different` / `merge-partial`) until the user reviews and saves the span.
+- **Conductor data**: the IEC 60228 table is used only for ABC / underground cables and for a neutral whose material is given as plain aluminium or copper; bare conductors, unknown kinds and alloy neutrals need R / Rn entered. Values typed per span without a source make the result provisional.
+- **Saved projects**: a saved version-2 project whose span records cannot be placed is not opened (message; nothing written).
+- **Load model (not changed)**: loads are constant currents. With constant-power loads the current rises as the voltage falls; for one lumped load the drop becomes d' with v = (1 + √(1 − 4d))/2: 3 % → 3.10 %, 5 % → 5.28 %, 8 % → 8.77 %, 10 % → 11.27 %. Constant current therefore under-states the drop of constant-power loads by roughly the drop itself (relative), and over-states it for constant-impedance loads. Which model applies depends on the load mix — an engineering choice not recorded in the project data.
+
+### Stage 7.9
+
+- **Cable end links** (`CableElement.endLinks`, `network.ts`, `CableEndsDialog`): each cable end is `auto` (no field — the Stage 7.8 rule, so older projects give exactly the same results), `connected` (junction confirmed, not listed for review) or `isolated` (joined to nothing at that pole, transformers included; a network left without supply shows "no source"). An ambiguous junction stays ambiguous even when confirmed (no target is invented; use a Jumper). Junctions made by the auto rule are listed per network in the voltage-drop panel (with a link to the pole's dialog) and marked "⋈" on the drawing. The setting of an end is removed when that end moves to another pole (`adjustEndLinks`). Opened from the pole menu («ربط الكوابل عند هذا العمود»). Stored on the cable: saved, exported (still version 1), autosaved and undone with it.
+- **Load model** (`ElectricalSettings.loadModel`): `constant-current` (default; absent in older projects = constant current) or `constant-power`. Constant power rescales each subscriber's current by Vph / V at its pole and recomputes the whole radial network until no pole voltage moves by more than 1 mV (at most 50 passes); otherwise "غير قابل للحساب: لم يتقارب". Spans that carry loads behind missing data are not computed under constant power (their voltage is unknown). The model is named in the panel, the text report and on the share / PDF page.
+- **Proof that existing results did not change**: `src/utils/__tests__/vdGolden.test.ts` compares 240 generated networks (random networks with every kind of problem, and radial trees with complete data; 515 computed spans) against `fixtures/vd-golden-7_8.json`, recorded from the Stage 7.8 code before the 7.9 changes.

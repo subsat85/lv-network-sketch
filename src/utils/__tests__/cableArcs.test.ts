@@ -6,6 +6,9 @@ import { pathSegmentSpans } from '../cableSegments';
 import { parseProjectFile, serializeProject } from '../projectSerialization';
 import { initAutosave, DraftStorage } from '../autosave';
 import type { CableArcElement, CableArcEnd, CableElement, DrawingElement, SymbolElement } from '../../types/drawing';
+// Stage 7: loading / importing gives every cable span ids (fixtures here are put
+// into the store directly, without them), so compare without that field.
+const noSpanIds = <T,>(els: T[]): T[] => els.map((e) => { const { spanIds: _s, ...rest } = e as { spanIds?: unknown }; return rest as T; });
 
 // ---- fixtures -------------------------------------------------------------------------
 const R = 20; // pole radius used by the canvas at scale 1
@@ -246,11 +249,11 @@ describe('saving, restoring, importing', () => {
     add(end('t', 'prev'), end('br', 'next'), 'a1');
     S().updateElement('a1', { strokeColor: '#123456' });
     await vi.advanceTimersByTimeAsync(100); await h.idle(); h.stop();
-    const saved = JSON.stringify(S().elements);
+    const saved = JSON.stringify(noSpanIds(S().elements));
     load([]);
     const h2 = await initAutosave({ storage, guard, rendered: async () => true, lifecycle: null }); h2.stop();
     vi.useRealTimers();
-    expect(JSON.stringify(S().elements)).toBe(saved);
+    expect(JSON.stringify(noSpanIds(S().elements))).toBe(saved);
     expect(arcsOf(S().elements)[0]).toMatchObject({ from: end('t', 'prev'), to: end('br', 'next'), strokeColor: '#123456' });
   });
   it('15. export → import keeps arcs; files with broken or malformed arcs are refused', () => {
@@ -276,7 +279,7 @@ describe('saving, restoring, importing', () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       S().loadProject(r.data);
-      expect(S().elements).toEqual(network());
+      expect(noSpanIds(S().elements)).toEqual(network());
       expect(S().connectionDistances).toEqual({ A_P: '10' });
     }
   });

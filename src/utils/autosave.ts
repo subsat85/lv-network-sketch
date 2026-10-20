@@ -3,6 +3,8 @@ import { create } from 'zustand';
 import { useDrawingStore } from '../store/drawingStore';
 import { DrawingElement, DrawingStyle } from '../types/drawing';
 import { META_KEY, ProjectData, ProjectMetadata } from './projectStorage';
+import { readElectricalSettings } from './electricalSettings';
+import { readDistanceFlags } from './distances';
 
 // Automatic draft of the current drawing.
 //
@@ -26,7 +28,7 @@ export interface Draft {
   savedAt: number;
   projectId: string | null;
   projectName: string | null;
-  data: Required<ProjectData>;
+  data: Required<Omit<ProjectData, 'spanProps'>>;
 }
 
 export interface DraftStorage {
@@ -74,7 +76,7 @@ type StoreState = ReturnType<typeof useDrawingStore.getState>;
 
 const TRACKED = [
   'elements', 'style', 'poleSizeScale', 'distanceTextScale', 'consumerSizeScale', 'consumerVariant',
-  'connectionDistances', 'connectionLabelOffsets', 'currentProjectId', 'currentProjectName',
+  'connectionDistances', 'connectionLabelOffsets', 'currentProjectId', 'currentProjectName', 'electrical', 'distanceFlags',
 ] as const;
 
 const trackedChanged = (a: StoreState, b: StoreState) => TRACKED.some((k) => a[k] !== b[k]);
@@ -93,6 +95,8 @@ export const buildDraft = (s: StoreState, now = Date.now()): Draft => ({
     consumerVariant: s.consumerVariant,
     connectionDistances: s.connectionDistances,
     connectionLabelOffsets: s.connectionLabelOffsets,
+    electrical: s.electrical,
+    distanceFlags: s.distanceFlags,
   },
 });
 
@@ -100,7 +104,7 @@ export const buildDraft = (s: StoreState, now = Date.now()): Draft => ({
 const isBlank = (s: StoreState) => s.elements.length === 0 && !s.currentProjectId && !s.currentProjectName;
 
 // ---------- validation (never throws) ----------
-const ELEMENT_TYPES = new Set(['path', 'text', 'symbol', 'cable', 'consumer', 'arc', 'shape', 'transformer_table', 'cable_arc']);
+const ELEMENT_TYPES = new Set(['path', 'text', 'symbol', 'cable', 'consumer', 'arc', 'shape', 'transformer_table', 'cable_arc', 'jumper']);
 const DEFAULT_STYLE: DrawingStyle = { strokeColor: '#000000', fillColor: 'transparent', strokeWidth: 2, fontSize: 16 };
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -143,6 +147,8 @@ export const validateDraft = (raw: unknown): ValidateResult => {
         consumerVariant: d.consumerVariant === 'square' ? 'square' : 'circle',
         connectionDistances: distances,
         connectionLabelOffsets: offsets,
+        electrical: readElectricalSettings(d.electrical).settings,
+        distanceFlags: readDistanceFlags(d.distanceFlags).flags,
       },
     },
   };

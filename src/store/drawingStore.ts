@@ -1,13 +1,18 @@
 import { create } from 'zustand';
-import { DrawingElement, ToolType, DrawingStyle } from '../types/drawing';
+import { DrawingElement, ToolType, DrawingStyle, ElectricalSettings, DistanceFlag } from '../types/drawing';
+import { halveExact, readDistanceFlags } from '../utils/distances';
+import { clearSplitReviewForPair } from '../utils/spanModel';
 import { deletePoleCascade, DeletePoleFailure } from '../utils/deletePole';
 import { pruneInvalidArcs } from '../utils/cableArcs';
+import { pruneLegacyJumpers, reconcileElements } from '../utils/spanModel';
+import { prepareDocument } from '../utils/projectMigration';
+import { DEFAULT_ELECTRICAL, readElectricalSettings, sameSettings } from '../utils/electricalSettings';
 
 // ---------------------------------------------------------------------------
 // Undo / redo
 //
 // A history entry is a snapshot of the whole drawing document: elements plus
-// the per-pole-pair distances and label offsets. Snapshots share unchanged
+// the per-pole-pair distances and label offsets, and the voltage-drop settings. Snapshots share unchanged
 // objects with the live state (all updates are immutable), so they are cheap.
 //
 // One logical operation = one entry. Every change to the document opens a
@@ -27,6 +32,9 @@ export interface DocSnapshot {
   elements: DrawingElement[];
   connectionDistances: Record<string, string>;
   connectionLabelOffsets: Record<string, { x: number, y: number }>;
+  electrical: ElectricalSettings;
+  /** markers of distances that were not typed by the user (estimated after placing a pole) */
+  distanceFlags: Record<string, DistanceFlag>;
 }
 export const HISTORY_LIMIT = 100;
 
@@ -34,6 +42,8 @@ const docOf = (s: DocSnapshot): DocSnapshot => ({
   elements: s.elements,
   connectionDistances: s.connectionDistances,
   connectionLabelOffsets: s.connectionLabelOffsets,
+  electrical: s.electrical,
+  distanceFlags: s.distanceFlags,
 });
 
 const sameRecord = <T,>(a: Record<string, T>, b: Record<string, T>, eq: (x: T, y: T) => boolean) => {
@@ -51,7 +61,9 @@ export const docEqual = (a: DocSnapshot, b: DocSnapshot) => {
     }
   }
   return sameRecord(a.connectionDistances, b.connectionDistances, (x, y) => x === y)
-    && sameRecord(a.connectionLabelOffsets, b.connectionLabelOffsets, (x, y) => x === y || (x.x === y.x && x.y === y.y));
+    && sameRecord(a.connectionLabelOffsets, b.connectionLabelOffsets, (x, y) => x === y || (x.x === y.x && x.y === y.y))
+    && sameSettings(a.electrical, b.electrical)
+    && (a.distanceFlags === b.distanceFlags || JSON.stringify(a.distanceFlags) === JSON.stringify(b.distanceFlags));
 };
 
 const pushLimited = (list: DocSnapshot[], item: DocSnapshot) => {
@@ -113,6 +125,12 @@ interface DrawingState {
   connectionDistances: Record<string, string>;
   connectionLabelOffsets: Record<string, { x: number, y: number }>;
   showDistanceLabels: boolean;
+  /** voltage-drop calculation settings (part of the document) */
+  electrical: ElectricalSettings;
+  /** estimated / split markers of span distances (part of the document) */
+  distanceFlags: Record<string, DistanceFlag>;
+  /** view only: show voltage-drop results on the drawing */
+  showVoltageDrop: boolean;
   
   saveHistory: () => void;
   commitHistory: () => void;
@@ -124,12 +142,16 @@ interface DrawingState {
   setDistanceTextScale: (scale: number) => void;
   setConsumerSizeScale: (scale: number) => void;
   setShowDistanceLabels: (show: boolean) => void;
+  setShowVoltageDrop: (show: boolean) => void;
+  updateElectricalSettings: (changes: Partial<ElectricalSettings>) => void;
   setStyle: (style: Partial<DrawingStyle>) => void;
   addElement: (element: DrawingElement) => void;
   updateElement: (id: string, updates: Partial<DrawingElement>) => void;
   updateElements: (updates: { id: string, changes: Partial<DrawingElement> }[]) => void;
   updateSymbolModifiers: (id: string, modifiers: Partial<import('../types/drawing').SymbolModifiers>) => void;
   updateConnectionDistance: (key: string, distance: string) => void;
+  /** a pole `mid` was placed on span a–b: give a–mid and mid–b estimated distances (exact halves) */
+  splitConnectionDistance: (a: string, b: string, mid: string) => void;
   updateConnectionLabelOffset: (key: string, offset: { x: number, y: number }) => void;
   deleteElement: (id: string) => { ok: boolean; reason?: string };
   setSelectedId: (id: string | null) => void;
@@ -139,7 +161,7 @@ interface DrawingState {
   clearCanvas: () => void;
   undo: () => void;
   redo: () => void;
-  loadProject: (data: { elements: DrawingElement[], style: DrawingStyle, poleSizeScale: number, consumerVariant: 'circle' | 'square', connectionDistances?: Record<string, string>, connectionLabelOffsets?: Record<string, { x: number, y: number }> }) => void;
+  loadProject: (data: { elements: DrawingElement[], style: DrawingStyle, poleSizeScale: number, consumerVariant: 'circle' | 'square', connectionDistances?: Record<string, string>, connectionLabelOffsets?: Record<string, { x: number, y: number }>, electrical?: unknown, spanProps?: unknown, distanceFlags?: unknown }) => void;
 }
 
 export const useDrawingStore = create<DrawingState>((set, get) => {
@@ -147,8 +169,9 @@ export const useDrawingStore = create<DrawingState>((set, get) => {
   const mutate = (changes: Partial<DrawingState> | ((s: DrawingState) => Partial<DrawingState>)) => {
     const s = get();
     const patch = typeof changes === 'function' ? changes(s) : changes;
-    // cable arcs whose pole / cable / connection side is gone are removed with the change
-    if (patch.elements) patch.elements = pruneInvalidArcs(patch.elements);
+    // span ids / properties follow pole-list changes; cable arcs and legacy links
+    // whose pole / cable / connection side is gone are removed with the change
+    if (patch.elements) patch.elements = pruneInvalidArcs(pruneLegacyJumpers(reconcileElements(s.elements, patch.elements)));
     if (s.pendingStep) { set(patch); return; }
     set({ ...patch, pendingStep: docOf(s) });
     scheduleCommit();
@@ -180,27 +203,35 @@ export const useDrawingStore = create<DrawingState>((set, get) => {
   connectionDistances: {},
   connectionLabelOffsets: {},
   showDistanceLabels: true,
+  electrical: { ...DEFAULT_ELECTRICAL },
+  distanceFlags: {},
+  showVoltageDrop: false,
 
   setProjectInfo: (id, name) => set({ currentProjectId: id, currentProjectName: name }),
   setAttachedImage: (image) => set({ attachedImage: image }),
 
-  loadProject: (data) => set({
-    elements: pruneInvalidArcs(data.elements),
+  loadProject: (data) => {
+    const doc = prepareDocument({ elements: data.elements, connectionDistances: data.connectionDistances || {} }, data.spanProps);
+    set({
+    elements: pruneInvalidArcs(doc.elements),
     style: data.style,
     poleSizeScale: data.poleSizeScale,
     distanceTextScale: (data as any).distanceTextScale || 1,
     consumerSizeScale: (data as any).consumerSizeScale || 1,
     consumerVariant: data.consumerVariant,
     attachedImage: (data as any).attachedImage || null,
-    connectionDistances: data.connectionDistances || {},
+    connectionDistances: doc.connectionDistances,
     connectionLabelOffsets: data.connectionLabelOffsets || {},
+    electrical: readElectricalSettings(data.electrical).settings,
+    distanceFlags: readDistanceFlags(data.distanceFlags).flags,
     history: [], // Clear history on load
     redoStack: [], // Clear redo stack on load
     pendingStep: null,
     selectedId: null,
     activeSymbolId: null,
     activeCableId: null,
-  }),
+  });
+  },
 
   setTool: (tool) => set((state) => ({ 
     tool, 
@@ -214,6 +245,8 @@ export const useDrawingStore = create<DrawingState>((set, get) => {
   setDistanceTextScale: (scale) => set({ distanceTextScale: scale }),
   setConsumerSizeScale: (scale) => set({ consumerSizeScale: scale }),
   setShowDistanceLabels: (show) => set({ showDistanceLabels: show }),
+  setShowVoltageDrop: (show) => set({ showVoltageDrop: show }),
+  updateElectricalSettings: (changes) => mutate((state) => ({ electrical: { ...state.electrical, ...changes } })),
   setStyle: (updates) => set((state) => ({ style: { ...state.style, ...updates } })),
   
   addElement: (element) => mutate((state) => ({ 
@@ -261,9 +294,37 @@ export const useDrawingStore = create<DrawingState>((set, get) => {
     }),
   })),
 
-  updateConnectionDistance: (key, distance) => mutate((state) => ({
-    connectionDistances: { ...state.connectionDistances, [key]: distance }
-  })),
+  // a distance typed by the user is a measured value: its "estimated" marker goes,
+  // and so does the "split" review mark of the spans on that pole pair
+  updateConnectionDistance: (key, distance) => mutate((state) => {
+    const patch: Partial<DrawingState> = { connectionDistances: { ...state.connectionDistances, [key]: distance } };
+    if (state.distanceFlags[key]) { const f = { ...state.distanceFlags }; delete f[key]; patch.distanceFlags = f; }
+    const els = clearSplitReviewForPair(state.elements, key);
+    if (els !== state.elements) patch.elements = els;
+    return patch;
+  }),
+
+  splitConnectionDistance: (a, b, mid) => mutate((state) => {
+    const oldKey = [a, b].sort().join('_');
+    const old = state.connectionDistances[oldKey];
+    if (old === undefined) return {}; // nothing recorded: the two new spans stay unrecorded too
+    const d = { ...state.connectionDistances };
+    const o = { ...state.connectionLabelOffsets };
+    const f = { ...state.distanceFlags };
+    const splitFrom: NonNullable<DistanceFlag['splitFrom']> = { key: oldKey, value: old };
+    if (o[oldKey]) splitFrom.offset = o[oldKey];
+    if (f[oldKey]) splitFrom.flag = f[oldKey];
+    const halves = halveExact(old); // null for text that is not a plain number: never turned into a distance
+    for (const k of [[a, mid].sort().join('_'), [mid, b].sort().join('_')]) {
+      if (halves) { d[k] = halves[0]; f[k] = { estimated: true, splitFrom }; }
+      else f[k] = { splitFrom };
+    }
+    // the old pair is no longer a span of any cable (every cable on it was split):
+    // its value moves into the markers, so it cannot come back later as a stale value
+    const stillUsed = state.elements.some((e) => e.type === 'cable' && e.poleIds.some((p, i) => i < e.poleIds.length - 1 && [p, e.poleIds[i + 1]].sort().join('_') === oldKey));
+    if (!stillUsed) { delete d[oldKey]; delete o[oldKey]; delete f[oldKey]; }
+    return { connectionDistances: d, connectionLabelOffsets: o, distanceFlags: f };
+  }),
 
   updateConnectionLabelOffset: (key, offset) => mutate((state) => ({
     connectionLabelOffsets: { ...state.connectionLabelOffsets, [key]: offset }
@@ -286,13 +347,14 @@ export const useDrawingStore = create<DrawingState>((set, get) => {
     if (target && target.type === 'symbol') {
       // Pole: remove it together with its subscribers, and continue/trim every
       // cable through it, as one atomic, single-undo-step change.
-      const res = deletePoleCascade(state.elements, state.connectionDistances, state.connectionLabelOffsets, id);
+      const res = deletePoleCascade(state.elements, state.connectionDistances, state.connectionLabelOffsets, id, state.distanceFlags);
       if (!res.ok) return { ok: false, reason: (res as DeletePoleFailure).reason };
       const gone = new Set(res.removedElementIds);
       mutate({
         elements: res.elements,
         connectionDistances: res.connectionDistances,
         connectionLabelOffsets: res.connectionLabelOffsets,
+        distanceFlags: res.distanceFlags,
         selectedId: state.selectedId && gone.has(state.selectedId) ? null : state.selectedId,
         activeCableId: state.activeCableId && gone.has(state.activeCableId) ? null : state.activeCableId,
       });
@@ -314,6 +376,8 @@ export const useDrawingStore = create<DrawingState>((set, get) => {
     elements: [],
     connectionDistances: {},
     connectionLabelOffsets: {},
+    electrical: { ...DEFAULT_ELECTRICAL },
+    distanceFlags: {},
     selectedId: null,
     activeCableId: null,
   }),

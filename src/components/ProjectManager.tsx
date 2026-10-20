@@ -11,6 +11,7 @@ import {
 } from '../utils/projectStorage';
 import { serializeProject } from '../utils/projectSerialization';
 import { planImport, applyImport, ImportPlan, ImportChoice, copyName } from '../utils/projectImport';
+import { ProjectDataError } from '../utils/projectMigration';
 import { saveFile, openFile } from '../utils/filePickers';
 
 interface ProjectManagerProps {
@@ -38,6 +39,8 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
     currentProjectName,
     connectionDistances,
     connectionLabelOffsets,
+    electrical,
+    distanceFlags,
     loadProject: loadProjectToStore,
     setProjectInfo,
     clearCanvas
@@ -100,7 +103,9 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
           consumerSizeScale,
           consumerVariant,
           connectionDistances,
-          connectionLabelOffsets
+          connectionLabelOffsets,
+          electrical,
+          distanceFlags
         }
       };
 
@@ -133,14 +138,18 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
           connectionDistances: project.data.connectionDistances,
           connectionLabelOffsets: project.data.connectionLabelOffsets,
           distanceTextScale: project.data.distanceTextScale,
-          consumerSizeScale: project.data.consumerSizeScale
+          consumerSizeScale: project.data.consumerSizeScale,
+          electrical: project.data.electrical,
+          distanceFlags: project.data.distanceFlags,
+          spanProps: project.data.spanProps
         } as any);
         setProjectInfo(project.id, project.name);
         onClose();
       }
     } catch (error) {
       console.error('Failed to load project', error);
-      alert('Failed to load project');
+      // e.g. incompatible version-2 data: nothing was loaded and the saved project is untouched
+      alert(error instanceof ProjectDataError ? error.message : 'Failed to load project');
     } finally {
       setIsLoading(false);
     }
@@ -176,7 +185,9 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
         currentProjectId,
         currentProjectName,
         distanceTextScale,
-        consumerSizeScale
+        consumerSizeScale,
+        electrical,
+        distanceFlags
       );
       const safeName = (currentProjectName || 'Project').trim();
       // Replace only invalid filesystem characters, preserving Unicode (Arabic, etc.)

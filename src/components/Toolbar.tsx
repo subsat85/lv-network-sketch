@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { MousePointer2, Trash2, Activity, Check, ArrowRight, Folder, Share, Minus, Zap, BarChart3 } from 'lucide-react';
+import { MousePointer2, Trash2, Activity, Check, ArrowRight, Folder, Share, Minus, Zap, BarChart3, Gauge } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import { ToolType, CableElement } from '../types/drawing';
 import { LoadReportModal } from './LoadReportModal';
+import { VoltageDropPanel } from './VoltageDropPanel';
 import { ICON_LG } from './ui/icons';
 
 interface ToolbarProps {
@@ -23,6 +24,7 @@ interface ConsumerElement {
 
 export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, onOpenTransformerInfo }) => {
   const [showLoadReport, setShowLoadReport] = useState(false);
+  const [showVoltageDrop, setShowVoltageDropPanel] = useState(false);
   
   const { 
     tool, setTool, clearCanvas, activeCableId, setActiveCableId, history, selectedId, deleteElement, cableVariant, setCableVariant, elements, updateElement,
@@ -88,6 +90,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       icon: <BarChart3 {...ICON_LG} />, 
       label: 'تقرير الاحمال',
       onClick: () => setShowLoadReport(true),
+      isActive: false
+    },
+    { 
+      id: 'voltageDrop', 
+      group: 'info',
+      icon: <Gauge {...ICON_LG} />, 
+      label: 'هبوط الفولتية',
+      onClick: () => setShowVoltageDropPanel(true),
       isActive: false
     },
   ];
@@ -164,6 +174,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
         onClose={() => setShowLoadReport(false)} 
         consumers={consumers}
       />
+      {showVoltageDrop && <VoltageDropPanel onClose={() => setShowVoltageDropPanel(false)} />}
     </>
   );
 };

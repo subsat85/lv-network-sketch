@@ -10,9 +10,10 @@ interface ColumnContextMenuProps {
   position: { x: number; y: number };
   onClose: () => void;
   onStartArc?: (poleId: string) => void;
+  onOpenCableEnds?: (poleId: string) => void;
 }
 
-export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId, position, onClose, onStartArc }) => {
+export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId, position, onClose, onStartArc, onOpenCableEnds }) => {
   const { elements, updateSymbolModifiers, updateElement, addElement, saveHistory } = useDrawingStore();
   const element = elements.find(el => el.id === elementId) as SymbolElement;
   const menuRef = useRef<HTMLDivElement>(null);
@@ -28,6 +29,9 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
   
   // Get unique cable colors
   const cableColors = [...new Set(connectedCables.map(c => c.strokeColor))];
+  // cable ends here that meet another cable of their colour (or already have a setting)
+  const endingHere = connectedCables.filter(c => c.poleIds[0] === elementId || c.poleIds[c.poleIds.length - 1] === elementId);
+  const showCableEnds = endingHere.some(c => !!c.endLinks || connectedCables.some(o => o.id !== c.id && o.strokeColor.toLowerCase() === c.strokeColor.toLowerCase()));
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -196,6 +200,30 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
         </button>
       )}
       
+      {/* Supply point of the voltage-drop calculation (Stage 7) */}
+      {connectedCables.length > 0 && (
+        <button
+          className={`ui-menu-item ${modifiers.vdSource ? 'text-ios-blue font-medium' : ''}`}
+          role="menuitemcheckbox"
+          aria-checked={!!modifiers.vdSource}
+          onClick={() => updateSymbolModifiers(elementId, { vdSource: !modifiers.vdSource })}
+        >
+          <span>مصدر التغذية (هبوط الفولتية)</span>
+          {modifiers.vdSource && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
+        </button>
+      )}
+
+      {/* How the cable ends here connect: auto / connected / isolated (Stage 7.9) */}
+      {onOpenCableEnds && showCableEnds && (
+        <button
+          className="ui-menu-item"
+          role="menuitem"
+          onClick={() => { onOpenCableEnds(elementId); onClose(); }}
+        >
+          ربط الكوابل عند هذا العمود
+        </button>
+      )}
+
       {/* Jumper (cable_arc): link two cable connection points at this pole */}
       {onStartArc && connectionPointCount >= 2 && (
         <button

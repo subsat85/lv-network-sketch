@@ -3,7 +3,13 @@ import { ColumnContextMenu } from './ColumnContextMenu';
 import { ColumnModifiers } from './ColumnModifiers';
 import { useDrawingStore } from '../store/drawingStore';
 import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerElement, ArcElement, DrawingElement, ShapeElement, ShapeType, CableArcElement } from '../types/drawing';
-import { pathSegmentSpans } from '../utils/cableSegments';
+import { pathSegmentSpans, SpanRef } from '../utils/cableSegments';
+import { DrawnSpanHint, SpanPropertiesSheet } from './SpanPropertiesSheet';
+import { VoltageDropOverlay } from './VoltageDropOverlay';
+import { CableEndsDialog } from './CableEndsDialog';
+import { useVoltageDrop } from '../utils/useVoltageDrop';
+import { splitSpanInCables } from '../utils/spanModel';
+import { midPoleId } from '../utils/splitPoleId';
 import { arcGeometry, arcPick, ArcPickAction, ArcPickState, createArc, listConnectionPoints, sameEnd } from '../utils/cableArcs';
 import { calculateCablePath } from '../utils/cableLayout';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
@@ -92,6 +98,7 @@ export const SketchCanvas: React.FC = () => {
     updateConnectionLabelOffset,
     addElement,   
     updateElement, 
+    updateElements,
     deleteElement,
     setSelectedId,
     setActiveCableId,
@@ -99,8 +106,13 @@ export const SketchCanvas: React.FC = () => {
     consumerVariant,
     connectionDistances,
     updateConnectionDistance,
+    splitConnectionDistance,
+    distanceFlags,
     updateSymbolModifiers
   } = useDrawingStore();
+
+  const showVoltageDrop = useDrawingStore((s) => s.showVoltageDrop);
+  const vdResult = useVoltageDrop(showVoltageDrop);
 
   const [isDragging, setIsDragging] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
@@ -112,6 +124,12 @@ export const SketchCanvas: React.FC = () => {
   const [dragStart, setDragStart] = useState<Point | null>(null);
   const [currentPathId, setCurrentPathId] = useState<string | null>(null);
   const [pendingConsumer, setPendingConsumer] = useState<PendingConsumerState>(null);
+  // span whose properties are being edited / the span just drawn (Stage 7.2)
+  const [editingSpan, setEditingSpan] = useState<{ cableId: string; index: number } | null>(null);
+  const [drawnSpan, setDrawnSpan] = useState<{ cableId: string; index: number } | null>(null);
+  const pendingSpanRef = useRef<{ cableId: string; index: number } | null>(null);
+  const [cableEndsPole, setCableEndsPole] = useState<string | null>(null);
+  const closeCableEnds = React.useCallback(() => setCableEndsPole(null), []);
   const [pendingArc, setPendingArc] = useState<ArcElement | null>(null);
   const [pendingShape, setPendingShape] = useState<ShapeElement | null>(null);
   const [draggingArcPoint, setDraggingArcPoint] = useState<{ id: string, type: 'start' | 'end' | 'control' } | null>(null);
@@ -136,6 +154,9 @@ export const SketchCanvas: React.FC = () => {
   };
   // leave the arc tool when the tool changes or its pole disappears; Escape cancels
   useEffect(() => { setArcPickState(null); }, [tool]);
+  // the "new span" hint belongs to the cable being drawn
+  useEffect(() => { setDrawnSpan(null); }, [tool]);
+  useEffect(() => { setDrawnSpan((d) => (d && d.cableId === activeCableId ? d : null)); }, [activeCableId]);
   useEffect(() => {
     if (arcPickState && !elements.some(e => e.id === arcPickState.poleId && e.type === 'symbol')) setArcPickState(null);
   }, [elements, arcPickState]);
@@ -145,6 +166,8 @@ export const SketchCanvas: React.FC = () => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [arcPickState]);
+
+  const closeSpanSheet = React.useCallback(() => setEditingSpan(null), []);
 
   const [draggingNote, setDraggingNote] = useState<{ elementId: string; startX: number; startY: number; startNoteX: number; startNoteY: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -858,7 +881,16 @@ export const SketchCanvas: React.FC = () => {
                finalCoords = snapToSymbols(coords);
             }
             
-            const newId = generateId();
+            // a pole placed on a span gets an id that sorts between the span's two
+            // pole ids, so both new spans keep the original span's frame: parallel
+            // cables keep their order and spacing, the distance labels their side
+            // (see utils/splitPoleId.ts). If no such id can be made (unusual ids from an
+            // imported file) the placement is refused with a message and nothing changes.
+            const mid = splitInfo ? midPoleId(splitInfo.id1, splitInfo.id2, (id) => elements.some((e) => e.id === id)) : null;
+            if (mid && 'message' in mid) {
+              alert(mid.message);
+            } else {
+            const newId = mid && 'id' in mid ? mid.id : generateId();
             const newSymbol: SymbolElement = {
               id: newId,
               type: 'symbol',
@@ -874,24 +906,21 @@ export const SketchCanvas: React.FC = () => {
             addElement(newSymbol);
 
             if (splitInfo) {
-              // Split the cable
-              const { cable, index, id1, id2 } = splitInfo;
-              const newPoleIds = [...cable.poleIds];
-              newPoleIds.splice(index + 1, 0, newId);
-              updateElement(cable.id, { poleIds: newPoleIds });
-              
-              // Update distances
-              const key = [id1, id2].sort().join('_');
-              const oldDistStr = connectionDistances[key] || "1";
-              const oldDist = parseFloat(oldDistStr);
-              const newDistVal = isNaN(oldDist) ? 1 : oldDist / 2;
-              const newDistStr = Number.isInteger(newDistVal) ? newDistVal.toString() : newDistVal.toFixed(1);
-              
-              const key1 = [id1, newId].sort().join('_');
-              const key2 = [newId, id2].sort().join('_');
-              
-              updateConnectionDistance(key1, newDistStr);
-              updateConnectionDistance(key2, newDistStr);
+              // Split the span: the new pole goes into every cable that runs
+              // directly between the same two poles (parallel cables share the
+              // route), each in its own direction. Span properties follow
+              // (copied to both parts, marked for review — see spanModel.ts).
+              const { id1, id2 } = splitInfo;
+              const splitUpdates = splitSpanInCables(elements, id1, id2, newId);
+              if (splitUpdates.length) updateElements(splitUpdates);
+
+              // Distances: a recorded distance is split into two exact halves marked as
+              // ESTIMATES (the pole position on a sketch is not a measurement); text
+              // that is not a number is never turned into a distance; an unrecorded
+              // distance stays unrecorded. Deleting the pole again restores the
+              // original value unless one part has been measured since.
+              splitConnectionDistance(id1, id2, newId);
+            }
             }
           } else if (tool === 'consumer') {
             if (pendingConsumer) {
@@ -1090,6 +1119,8 @@ export const SketchCanvas: React.FC = () => {
                }
 
                updateElement(activeCableId, updates);
+               // show the new span's (suggested) properties without interrupting drawing
+               setDrawnSpan({ cableId: activeCableId, index: cable.poleIds.length - 1 });
             }
           }
         } else {
@@ -1159,8 +1190,10 @@ export const SketchCanvas: React.FC = () => {
     }
   };
 
-  // `spanKey`: the pole pair of the drawn segment that was tapped (see pathSegmentSpans).
-  const handleSegmentClick = (e: React.PointerEvent, cableId: string, spanKey: string | null) => {
+  // `span`: the pole span of the drawn segment that was tapped (see pathSegmentSpans).
+  // Tapping a segment of the selected cable opens that span's properties
+  // (length = the span distance, plus the electrical data — Stage 7.2).
+  const handleSegmentClick = (e: React.PointerEvent, cableId: string, span: SpanRef | null) => {
     e.stopPropagation();
     
     if (tool !== 'select' && tool !== 'cable' && tool !== 'cable_straight') return;
@@ -1171,22 +1204,15 @@ export const SketchCanvas: React.FC = () => {
       return;
     }
 
-    if (!spanKey) return;
-    const key = spanKey;
-
-    const currentDist = connectionDistances[key] ?? '1';
-    const newDist = prompt('Enter distance (m):', currentDist);
-    
-    if (newDist !== null) {
-      // one undo step, closed right away (the prompt may swallow the pointer-up)
-      saveHistory();
-      if (newDist.trim() === '') {
-        updateConnectionDistance(key, '1');
-      } else {
-        updateConnectionDistance(key, newDist.trim());
-      }
-      saveHistory();
-    }
+    if (!span) return;
+    // opened when this tap ends (pointer-up), not now; the sheet ignores the
+    // compatibility mouse/click events of this same tap (see useBackdropClose)
+    pendingSpanRef.current = { cableId, index: span.index };
+  };
+  const openPendingSpan = (cableId: string) => {
+    const p = pendingSpanRef.current;
+    pendingSpanRef.current = null;
+    if (p && p.cableId === cableId) setEditingSpan(p);
   };
 
   const handleLabelPointerDown = (e: React.PointerEvent, key: string) => {
@@ -1513,7 +1539,8 @@ export const SketchCanvas: React.FC = () => {
             stroke="transparent"
             strokeWidth={20}
             className={tool === 'select' || tool === 'cable' || tool === 'cable_straight' ? 'cursor-pointer' : ''}
-            onPointerDown={(e) => handleSegmentClick(e, el.id, segmentSpans[i]?.key ?? null)}
+            onPointerDown={(e) => handleSegmentClick(e, el.id, segmentSpans[i] ?? null)}
+            onPointerUp={() => openPendingSpan(el.id)}
             style={{ pointerEvents: tool === 'select' || tool === 'cable' || tool === 'cable_straight' ? 'stroke' : 'none' }}
           />
         </g>
@@ -1811,7 +1838,7 @@ export const SketchCanvas: React.FC = () => {
             paintOrder="stroke"
             style={{ userSelect: 'none' }}
           >
-            {distance}
+            {distanceFlags[key]?.estimated ? `≈${distance}` : distance}
           </text>
         </g>
       );
@@ -2477,6 +2504,19 @@ export const SketchCanvas: React.FC = () => {
       return renderArc(el as ArcElement, isSelected);
     } else if (el.type === 'cable_arc') {
       return renderCableArc(el as CableArcElement, isSelected);
+    } else if (el.type === 'jumper') {
+      // pole-to-pole link read from a version 2 file: kept and shown, not used in calculations
+      const a = elements.find(p => p.id === el.fromPoleId), b = elements.find(p => p.id === el.toPoleId);
+      if (!a || !b) return null;
+      return (
+        <g key={el.id} data-legacy-jumper={el.id}>
+          <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={el.strokeColor || '#64748b'} strokeWidth={2} strokeDasharray="6 4" style={{ pointerEvents: 'none' }} />
+          <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="transparent" strokeWidth={16}
+            onPointerDown={(e) => { if (tool !== 'select') return; e.stopPropagation(); setSelectedId(el.id); }}
+            style={{ pointerEvents: tool === 'select' ? 'stroke' : 'none' }} />
+          {isSelected && <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#3B82F6" strokeWidth={1} strokeDasharray="4 4" className="pointer-events-none" />}
+        </g>
+      );
     } else if (el.type === 'shape') {
       return renderShape(el as ShapeElement, isSelected);
     } else if (el.type === 'transformer_table') {
@@ -2504,6 +2544,8 @@ export const SketchCanvas: React.FC = () => {
           {elements.filter(el => el.type !== 'cable').map(el => renderElement(el))}
 
           {showDistanceLabels && renderConnectionLabels()}
+
+          {vdResult && <VoltageDropOverlay elements={elements} result={vdResult} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} />}
 
           {renderArcPicker()}
 
@@ -2718,7 +2760,23 @@ export const SketchCanvas: React.FC = () => {
           position={{ x: contextMenu.x, y: contextMenu.y }}
           onClose={() => setContextMenu({ ...contextMenu, visible: false })}
           onStartArc={(poleId) => dispatchArcPick({ type: 'start', poleId })}
+          onOpenCableEnds={(poleId) => setCableEndsPole(poleId)}
         />
+      )}
+
+      {cableEndsPole && <CableEndsDialog poleId={cableEndsPole} onClose={closeCableEnds} />}
+
+      {drawnSpan && !arcPickState && !editingSpan && (tool === 'cable' || tool === 'cable_straight') && (
+        <DrawnSpanHint
+          elements={elements}
+          span={drawnSpan}
+          onEdit={() => setEditingSpan(drawnSpan)}
+          onDismiss={() => setDrawnSpan(null)}
+        />
+      )}
+
+      {editingSpan && (
+        <SpanPropertiesSheet cableId={editingSpan.cableId} index={editingSpan.index} onClose={closeSpanSheet} />
       )}
 
       {arcPickState && (

@@ -1,3 +1,4 @@
+import { DEFAULT_ELECTRICAL } from '../electricalSettings';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // In-memory IndexedDB stand-in (idb-keyval API). setMany is all-or-nothing like a
@@ -101,7 +102,16 @@ describe('valid JSON file', () => {
     const out = serializeProject(f.elements as DrawingElement[], f.style, f.poleSizeScale, 'square', f.connectionDistances, f.connectionLabelOffsets, 'P9', 'Round', f.distanceTextScale, f.consumerSizeScale);
     const r = parseProjectFile(out);
     expect(r.ok).toBe(true);
-    if (r.ok) expect({ ...r.data, metadata: undefined }).toEqual({ ...f, metadata: undefined });
+    if (!r.ok) return;
+    // Stage 7: cables gain span ids and the file gains the (default) voltage-drop
+    // settings; everything that was in the file is unchanged.
+    const stripSpanIds = (els: DrawingElement[]) => els.map((e) => { if (e.type !== 'cable') return e; const { spanIds: _s, ...rest } = e; return rest; });
+    expect({ ...r.data, elements: stripSpanIds(r.data.elements), electrical: undefined, distanceFlags: undefined, metadata: undefined }).toEqual({ ...f, electrical: undefined, distanceFlags: undefined, metadata: undefined });
+    expect(r.data.electrical).toEqual(DEFAULT_ELECTRICAL);
+    expect(r.data.distanceFlags).toEqual({}); // Stage 7.8: no distance markers in an older file
+    // and a second round trip changes nothing at all (span ids included)
+    const again = parseProjectFile(serializeProject(r.data.elements, r.data.style, r.data.poleSizeScale, 'square', r.data.connectionDistances, r.data.connectionLabelOffsets!, 'P9', 'Round', r.data.distanceTextScale, r.data.consumerSizeScale, r.data.electrical, r.data.distanceFlags));
+    expect(again.ok && { ...again.data, metadata: undefined }).toEqual({ ...r.data, metadata: undefined });
   });
 });
 
@@ -123,7 +133,7 @@ describe('incomplete or corrupt file is rejected and changes nothing', () => {
     ['path without points', json(validFile({ elements: [{ id: 'p', type: 'path', x: 0, y: 0 }] }))],
     ['style of wrong type', json(validFile({ style: 'red' }))],
     ['distances of wrong type', json(validFile({ connectionDistances: ['25'] }))],
-    ['newer file version', json(validFile({ version: 2 }))],
+    ['newer file version', json(validFile({ version: 3 }))],
   ];
   it.each(bad)('%s', async (_n, input) => {
     currentDrawing();

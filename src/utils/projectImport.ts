@@ -75,6 +75,8 @@ const loadIntoCanvas = (data: ProjectExportData, id: string | null, name: string
     connectionLabelOffsets: data.connectionLabelOffsets,
     distanceTextScale: data.distanceTextScale,
     consumerSizeScale: data.consumerSizeScale,
+    electrical: data.electrical,
+    distanceFlags: data.distanceFlags,
   } as Parameters<typeof store.loadProject>[0]);
   store.setProjectInfo(id, name);
 };
@@ -88,6 +90,8 @@ const projectData = (data: ProjectExportData): Project['data'] => ({
   consumerVariant: data.consumerVariant,
   connectionDistances: data.connectionDistances,
   connectionLabelOffsets: data.connectionLabelOffsets,
+  electrical: data.electrical,
+  distanceFlags: data.distanceFlags,
 });
 
 export const applyImport = async (plan: ImportPlan, choice: ImportChoice, deps: Partial<ImportDeps> = {}): Promise<ApplyResult> => {
