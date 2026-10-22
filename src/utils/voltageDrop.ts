@@ -282,6 +282,8 @@ export const computeVoltageDrop = (
       if (ok) {
         const L = len.m! / 1000, n = z.parallel;
         const zPh = z.r! * cos + z.x! * sin;
+        // Assumption (documented, unchanged): the neutral conductor uses the span's X (the phase
+        // reactance) — there is no separate Xn; only its resistance Rn is its own.
         const zN = needNeutral ? z.rn! * cos + z.x! * sin : 0;
         // the span's drop for given downstream currents (same expressions for both load models)
         const drop = (A3: number, A1: number) => {

@@ -10,6 +10,7 @@ import { CableEndsDialog } from './CableEndsDialog';
 import { useVoltageDrop } from '../utils/useVoltageDrop';
 import { splitSpanInCables } from '../utils/spanModel';
 import { midPoleId } from '../utils/splitPoleId';
+import { withDefaultSpan } from '../utils/spanDefaults';
 import { arcGeometry, arcPick, ArcPickAction, ArcPickState, createArc, listConnectionPoints, sameEnd } from '../utils/cableArcs';
 import { calculateCablePath } from '../utils/cableLayout';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
@@ -1119,6 +1120,13 @@ export const SketchCanvas: React.FC = () => {
                }
 
                updateElement(activeCableId, updates);
+               // a new span that got no properties from its neighbour gets the default
+               // ones (same undo step); see utils/spanDefaults.ts
+               const drawn = useDrawingStore.getState().elements.find((e) => e.id === activeCableId) as CableElement | undefined;
+               if (drawn) {
+                 const withDefaults = withDefaultSpan(drawn, drawn.poleIds.length - 2);
+                 if (withDefaults !== drawn) updateElement(activeCableId, { spanProps: withDefaults.spanProps });
+               }
                // show the new span's (suggested) properties without interrupting drawing
                setDrawnSpan({ cableId: activeCableId, index: cable.poleIds.length - 1 });
             }

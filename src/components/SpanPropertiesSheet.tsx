@@ -5,7 +5,8 @@ import type { CableElement, CableKind, ConductorMaterial, DrawingElement, SpanPr
 import { hasElectrical, spanAt, withSpanProps } from '../utils/spanModel';
 import { pairKey } from '../utils/cableSegments';
 import { computeVoltageDrop, spanKey } from '../utils/voltageDrop';
-import { tableSections, CONDUCTOR_TABLE_SOURCE } from '../data/conductors';
+import { tableSections, companySections, CONDUCTOR_TABLE_SOURCE, COMPANY_TABLE_SOURCE } from '../data/conductors';
+import { DEFAULT_DATA_SOURCE, followNeutralTable, followPhaseTable, neutralTableState, phaseTableState } from '../utils/spanDefaults';
 import { CABLE_KIND_LABEL, fmt, INHERITED_LABEL, MISSING_LABEL, PROVISIONAL_LABEL, REVIEW_LABEL, SETTING_MISSING_LABEL } from '../utils/vdLabels';
 import { isPlainDistance } from '../utils/distances';
 import { poleNamer } from '../utils/poleNames';
@@ -101,6 +102,20 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
   const distKey = a && b ? pairKey(a, b) : '';
   const [form, setForm] = useState<Form>(() => toForm(stored, connectionDistances[distKey] ?? ''));
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
+  // phase / neutral material or section changed: R, X (and Rn) follow the company table
+  // only while they hold its values or are empty; typed values are kept (Stage 7.12)
+  const setPhase = (k: 'material' | 'section', v: string) => setForm((f) => {
+    const next = { ...f, [k]: v };
+    const t = followPhaseTable(f, next);
+    return { ...next, r: t.r, x: t.x, source: !f.source.trim() && (t.r !== f.r || t.x !== f.x) && t.r ? DEFAULT_DATA_SOURCE : f.source };
+  });
+  const setNeutral = (k: 'neutralMaterial' | 'neutral', v: string) => setForm((f) => {
+    const next = { ...f, [k]: v };
+    const t = followNeutralTable(f, next);
+    return { ...next, rn: t.rn, source: !f.source.trim() && t.rn !== f.rn && t.rn ? DEFAULT_DATA_SOURCE : f.source };
+  });
+  const useCompanyPhase = () => setForm((f) => { const t = phaseTableState(f).table; return t ? { ...f, r: String(t.r), x: String(t.x), source: f.source.trim() || DEFAULT_DATA_SOURCE } : f; });
+  const useCompanyNeutral = () => setForm((f) => { const t = neutralTableState(f).table; return t ? { ...f, rn: String(t.r), source: f.source.trim() || DEFAULT_DATA_SOURCE } : f; });
   const lengthFlag = distanceFlags[distKey];
   const lengthEstimated = !!lengthFlag?.estimated;
   // an estimated length becomes a measured one only when it is changed or explicitly confirmed
@@ -133,7 +148,11 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
   if (!cable || !a || !b || !spanId || !draft) return null;
 
   const prevSpan = index > 0 ? spanAt(cable, index - 1).props : undefined;
-  const sections = form.material ? tableSections(form.material) : [];
+  const sections = form.material ? [...new Set([...companySections(form.material), ...tableSections(form.material)])].sort((p, q) => p - q) : [];
+  const phaseTable = phaseTableState(form);
+  const neutralTable = neutralTableState(form);
+  const rxTyped = !phaseTable.matches && (form.r.trim() !== '' || form.x.trim() !== '');
+  const rnTyped = !neutralTable.matches && form.rn.trim() !== '';
   const lengthBad = form.length.trim() !== '' && !(isPlainDistance(form.length) && posOrUndef(form.length) !== undefined);
   const canSave = !draft.errors.length && !lengthBad;
   const parallelCables = elements.filter((e): e is CableElement => e.type === 'cable' && e.id !== cable.id && e.poleIds.some((p, i) => i < e.poleIds.length - 1 && pairKey(p, e.poleIds[i + 1]) === distKey)).length;
@@ -211,20 +230,20 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
               </select>
             </Field>
             <Field label="مادة الموصل">
-              <select className="ui-field h-11" value={form.material} onChange={(e) => set('material', e.target.value as Form['material'])} aria-label="مادة الموصل">
+              <select className="ui-field h-11" value={form.material} onChange={(e) => setPhase('material', e.target.value)} aria-label="مادة الموصل">
                 <option value="">—</option>
                 <option value="al">ألمنيوم</option>
                 <option value="cu">نحاس</option>
               </select>
             </Field>
             <Field label="مقطع الطور (mm²)">
-              <input className="ui-field h-11" type="text" inputMode="decimal" list="vd-sections" value={form.section} onChange={(e) => set('section', e.target.value)} aria-label="مقطع الطور" />
+              <input className="ui-field h-11" type="text" inputMode="decimal" list="vd-sections" value={form.section} onChange={(e) => setPhase('section', e.target.value)} aria-label="مقطع الطور" />
             </Field>
             <Field label="مقطع المحايد (mm²)">
-              <input className="ui-field h-11" type="text" inputMode="decimal" list="vd-sections" value={form.neutral} onChange={(e) => set('neutral', e.target.value)} aria-label="مقطع المحايد" />
+              <input className="ui-field h-11" type="text" inputMode="decimal" list="vd-sections" value={form.neutral} onChange={(e) => setNeutral('neutral', e.target.value)} aria-label="مقطع المحايد" />
             </Field>
             <Field label="مادة المحايد" hint="لا تُفترض مثل الطور">
-              <select className="ui-field h-11" value={form.neutralMaterial} onChange={(e) => set('neutralMaterial', e.target.value as Form['neutralMaterial'])} aria-label="مادة المحايد">
+              <select className="ui-field h-11" value={form.neutralMaterial} onChange={(e) => setNeutral('neutralMaterial', e.target.value)} aria-label="مادة المحايد">
                 <option value="">—</option>
                 <option value="al">ألمنيوم</option>
                 <option value="cu">نحاس</option>
@@ -245,10 +264,31 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
               <input className="ui-field h-11" type="text" inputMode="decimal" value={form.rn} onChange={(e) => set('rn', e.target.value)} aria-label="مقاومة المحايد Rn" />
             </Field>
           </div>
+          {/* how R / X / Rn relate to the company table for the chosen material and section (Stage 7.12) */}
+          <div className="flex flex-col gap-1 rounded-ctl bg-ios-fill px-3 py-2 text-[13px] text-ios-label" data-company-table>
+            {phaseTable.table ? (
+              <p data-company-phase={phaseTable.matches ? 'table' : rxTyped ? 'typed' : 'empty'}>
+                {COMPANY_TABLE_SOURCE} ({form.material === 'cu' ? 'Cu' : 'Al'} {form.section} mm²): R {phaseTable.table.r} · X {phaseTable.table.x} Ω/km —{' '}
+                {phaseTable.matches ? '✓ R و X منه' : rxTyped ? 'R / X الحالية مُدخلة يدويًا ولم تُستبدل' : 'غير مستعملة'}
+                {!phaseTable.matches && <button type="button" className="ui-tinted-btn !mr-2 !inline-flex !w-auto !min-h-[30px] !px-3" onClick={useCompanyPhase}>استخدام قيم جدول الشركة</button>}
+              </p>
+            ) : (
+              form.material && form.section.trim() && <p data-company-phase="none">المقطع {form.section} mm² غير موجود في {COMPANY_TABLE_SOURCE}: أدخل R و X من مصدر موثق{form.r.trim() ? '' : ' (بدون R تُؤخذ المقاومة من IEC 60228 إن انطبق)'}.</p>
+            )}
+            {neutralTable.table ? (
+              <p data-company-neutral={neutralTable.matches ? 'table' : rnTyped ? 'typed' : 'empty'}>
+                المحايد ({form.neutralMaterial === 'cu' ? 'Cu' : 'Al'} {form.neutral} mm²): Rn {neutralTable.table.r} Ω/km من {COMPANY_TABLE_SOURCE} —{' '}
+                {neutralTable.matches ? '✓ مستعملة' : rnTyped ? 'Rn الحالية مُدخلة يدويًا ولم تُستبدل' : 'غير مستعملة'}
+                {!neutralTable.matches && <button type="button" className="ui-tinted-btn !mr-2 !inline-flex !w-auto !min-h-[30px] !px-3" onClick={useCompanyNeutral}>استخدام Rn من الجدول</button>}
+              </p>
+            ) : (
+              form.neutral.trim() && form.neutralMaterial && <p data-company-neutral="none">المحايد {form.neutralMaterial === 'alloy' ? 'من سبيكة ألمنيوم' : `${form.neutral} mm²`} غير موجود في {COMPANY_TABLE_SOURCE}: أدخل Rn من كتالوج الكيبل.</p>
+            )}
+          </div>
           <Field label="مصدر البيانات" hint="كتالوج / تقرير / قياس">
             <input className="ui-field h-11" type="text" value={form.source} onChange={(e) => set('source', e.target.value)} aria-label="مصدر البيانات" />
           </Field>
-          <p className="text-[12px] text-ios-tertiary">بدون R يدوي تُؤخذ المقاومة من {CONDUCTOR_TABLE_SOURCE} مصححة لحرارة التشغيل — للكوابل المعزولة فقط (ABC أو أرضي)، ولموصلات الألمنيوم أو النحاس العادي. الموصلات العارية والمحايد من سبيكة: أدخل R / Rn من مصدر موثق. المفاعلة لا تُستنتج من المقطع، واذكر مصدر كل قيمة تُدخلها.</p>
+          <p className="text-[12px] text-ios-tertiary">عند تغيير المادة أو المقطع تتبع R و X (و Rn للمحايد) {COMPANY_TABLE_SOURCE} ما دامت قيمه أو فارغة؛ القيمة المُدخلة يدويًا لا تُستبدل إلا بزر «استخدام قيم جدول الشركة». بدون R تُؤخذ المقاومة من {CONDUCTOR_TABLE_SOURCE} مصححة لحرارة التشغيل — للكوابل المعزولة فقط (ABC أو أرضي)، ولموصلات الألمنيوم أو النحاس العادي. الموصلات العارية والمحايد من سبيكة: أدخل R / Rn من مصدر موثق. المفاعلة لا تُستنتج من المقطع، واذكر مصدر كل قيمة تُدخلها.</p>
 
           {/* live check */}
           <div className="rounded-ctl border border-ios-separator px-3 py-2 text-[13px]" aria-live="polite" data-span-check>

@@ -38,6 +38,27 @@ export const ALPHA_20: Record<ConductorMaterial, number> = { cu: 0.00393, al: 0.
 
 export const tableSections = (m: ConductorMaterial) => Object.keys(R20_OHM_PER_KM[m]).map(Number).sort((a, b) => a - b);
 
+// ---------------------------------------------------------------------------
+// Company cable table (Stage 7.12): R and X in Ω/km per material and phase
+// cross-section, as approved in the company's tables (values supplied by the
+// user; not IEC values). They are written into a span as its R / X (and Rn for
+// the neutral conductor of the same material and section) and used as they are:
+// no temperature correction is applied to them.
+// ---------------------------------------------------------------------------
+
+export const COMPANY_TABLE_SOURCE = 'جدول الشركة';
+
+export const COMPANY_RX_OHM_PER_KM: Record<ConductorMaterial, Record<number, { r: number; x: number }>> = {
+  al: { 120: { r: 0.2415, x: 0.0716 }, 70: { r: 0.4126, x: 0.0754 }, 35: { r: 0.8242, x: 0.0846 }, 25: { r: 1.1536, x: 0.0838 }, 4: { r: 7.53, x: 0.107 }, 2.5: { r: 12.1, x: 0.11 }, 1.5: { r: 19.5, x: 0.115 } },
+  cu: { 120: { r: 0.253, x: 0.095 }, 70: { r: 0.32, x: 0.095 }, 35: { r: 0.524, x: 0.095 }, 25: { r: 0.727, x: 0.095 }, 4: { r: 4.61, x: 0.107 }, 2.5: { r: 7.41, x: 0.11 }, 1.5: { r: 12.1, x: 0.115 } },
+};
+
+/** R and X of the company table for a material and cross-section, or null when that size is not in it. */
+export const companyRX = (m: string | undefined, mm2: number | undefined): { r: number; x: number } | null =>
+  (m === 'al' || m === 'cu') && mm2 !== undefined ? COMPANY_RX_OHM_PER_KM[m][mm2] ?? null : null;
+
+export const companySections = (m: ConductorMaterial) => Object.keys(COMPANY_RX_OHM_PER_KM[m]).map(Number).sort((a, b) => a - b);
+
 /** R at temperature T from the table, or null when the size is not in the table. */
 export const tableResistance = (m: ConductorMaterial, mm2: number, tempC: number): number | null => {
   const r20 = R20_OHM_PER_KM[m]?.[mm2];
