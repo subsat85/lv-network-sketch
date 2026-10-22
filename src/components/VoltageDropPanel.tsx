@@ -17,6 +17,9 @@ import { poleNamer } from '../utils/poleNames';
 import { spanAt } from '../utils/spanModel';
 import { SpanPropertiesSheet, spanSummary } from './SpanPropertiesSheet';
 import { CableEndsDialog } from './CableEndsDialog';
+import { DEFAULT_POWER_FACTOR, isPowerFactorDefault } from '../utils/electricalSettings';
+import { planMissingDefaults } from '../utils/spanDefaults';
+import { DEFAULTS_REVIEW_SHORT } from '../utils/vdLabels';
 import { ALPHA_SOURCE, CONDUCTOR_TABLE_SOURCE } from '../data/conductors';
 
 // Voltage-drop settings, results and report (Stages 7.6 / 7.7).
@@ -56,12 +59,12 @@ const NumField: React.FC<{ label: string; value: string; onChange: (v: string) =
 );
 
 /** Plain-text report (for copying into a message / document). */
-export const voltageDropReportText = (r: VoltageDropResult, name: (id: string) => string, cables: Map<string, CableElement>): string => {
+export const voltageDropReportText = (r: VoltageDropResult, name: (id: string) => string, cables: Map<string, CableElement>, powerFactorDefault = false): string => {
   const s = r.settings;
   const lines: string[] = [];
   lines.push('تقرير هبوط الفولتية');
   lines.push(`الفولتية الاسمية ${s.phaseVoltage}/${s.lineVoltage} V — الحد ${s.limitPercent}% (مرجعي، يُطابق مع معيار المشروع) — أدنى فولتية ${s.minPhaseVoltage} V طور / ${s.minLineVoltage} V بين الأطوار`);
-  lines.push(`cos φ = ${s.powerFactor ?? 'غير مُدخل'} — حرارة الموصل ${s.conductorTempC ?? 'غير مُدخلة'} °C — أحمال الطور الواحد: ${s.singlePhaseMode === 'worst' ? 'أسوأ حالة (على الطور المفحوص)' : 'موزعة بالتساوي (افتراض)'}`);
+  lines.push(`cos φ = ${s.powerFactor ?? 'غير مُدخل'}${powerFactorDefault ? ' (افتراضي)' : ''} — حرارة الموصل ${s.conductorTempC ?? 'غير مُدخلة'} °C — أحمال الطور الواحد: ${s.singlePhaseMode === 'worst' ? 'أسوأ حالة (على الطور المفحوص)' : 'موزعة بالتساوي (افتراض)'}`);
   lines.push(`نموذج الحمل: ${LOAD_MODEL_LABEL[s.loadModel ?? 'constant-current']}${(s.loadModel ?? 'constant-current') === 'constant-power' ? ' (التيار يتغير مع الفولتية عند كل عمود، حساب بالتكرار)' : ''}`);
   for (const m of r.settingsMissing) lines.push(`ناقص: ${SETTING_MISSING_LABEL[m]}`);
   r.circuits.forEach((c, i) => {
@@ -92,7 +95,18 @@ export const voltageDropReportText = (r: VoltageDropResult, name: (id: string) =
 };
 
 export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const { elements, electrical, updateElectricalSettings, saveHistory, showVoltageDrop, setShowVoltageDrop, updateSymbolModifiers } = useDrawingStore();
+  const { elements, electrical, updateElectricalSettings, saveHistory, showVoltageDrop, setShowVoltageDrop, updateSymbolModifiers, updateElements } = useDrawingStore();
+  const pfDefault = isPowerFactorDefault(electrical);
+  // spans with missing properties (old drawings): filled only on request, in one undo step (Stage 7.13)
+  const defaultsPlan = useMemo(() => planMissingDefaults(elements), [elements]);
+  const [confirmDefaults, setConfirmDefaults] = useState(false);
+  const applyDefaults = () => {
+    if (!defaultsPlan.updates.length) return;
+    saveHistory();
+    updateElements(defaultsPlan.updates);
+    saveHistory();
+    setConfirmDefaults(false);
+  };
   const result = useVoltageDrop(true)!;
   const name = useMemo(() => poleNamer(elements), [elements]);
   const cables = useMemo(() => new Map(elements.filter((e): e is CableElement => e.type === 'cable').map((c) => [c.id, c])), [elements]);
@@ -112,7 +126,7 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
   };
   const setSource = (poleId: string, on: boolean) => { saveHistory(); updateSymbolModifiers(poleId, { vdSource: on }); saveHistory(); };
   const copyReport = async () => {
-    const text = voltageDropReportText(result, name, cables);
+    const text = voltageDropReportText(result, name, cables, pfDefault);
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { window.prompt('انسخ التقرير:', text); }
   };
 
@@ -136,7 +150,7 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
           <section aria-label="إعدادات الحساب" className="mb-4 rounded-ctl border border-ios-separator p-3">
             <h3 className="mb-2 text-[15px] font-semibold text-ios-label">إعدادات الحساب</h3>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <NumField label="cos φ" value={form.pf} onChange={(v) => setF('pf', v)} hint="مطلوب" placeholder="مثال 0.9" />
+              <NumField label="cos φ" value={form.pf} onChange={(v) => setF('pf', v)} hint={pfDefault ? `افتراضي ${DEFAULT_POWER_FACTOR}` : undefined} placeholder={`${DEFAULT_POWER_FACTOR} (افتراضي)`} />
               <NumField label="حرارة الموصل °C" value={form.temp} onChange={(v) => setF('temp', v)} hint="للجدول" />
               <NumField label="حد الهبوط %" value={form.limit} onChange={(v) => setF('limit', v)} />
               <NumField label="تحذير من % من الحد" value={form.near} onChange={(v) => setF('near', v)} />
@@ -170,6 +184,24 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
           </section>
 
           <p className="mb-2 text-[13px] text-ios-label" data-vd-load-model={electrical.loadModel ?? 'constant-current'}>نموذج الحمل المستعمل في النتائج: <b>{LOAD_MODEL_LABEL[electrical.loadModel ?? 'constant-current']}</b></p>
+          <p className="mb-2 text-[13px] text-ios-label" data-vd-power-factor={pfDefault ? 'default' : 'saved'}>cos φ المستعمل: <b>{pfDefault ? DEFAULT_POWER_FACTOR : electrical.powerFactor}</b>{pfDefault && <span className="text-ios-secondary"> (افتراضي — غير محفوظ في المشروع؛ أدخله واحفظ الإعدادات لاعتماد قيمة أخرى)</span>}</p>
+
+          {/* old drawings: spans with missing properties, filled only on request (Stage 7.13) */}
+          {(defaultsPlan.empty > 0 || defaultsPlan.partial > 0) && (
+            <section aria-label="المقاطع الناقصة" className="mb-3 rounded-ctl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900" data-vd-missing-defaults={`${defaultsPlan.empty}/${defaultsPlan.partial}`}>
+              <p>{defaultsPlan.empty > 0 && <>{defaultsPlan.empty} مقطع بلا خصائص</>}{defaultsPlan.empty > 0 && defaultsPlan.partial > 0 && '، '}{defaultsPlan.partial > 0 && <>{defaultsPlan.partial} مقطع خصائصه ناقصة</>}.</p>
+              <p className="mt-1">يمكن تعبئة الناقص فقط بالقيم الافتراضية (ABC، 3 أطوار + N، Al 120 / محايد Al 70، R و X و Rn من جدول الشركة حيث يتوفر). لا تتغير أي قيمة موجودة، وتُعلَّم المقاطع «{DEFAULTS_REVIEW_SHORT}» حتى تراجعها وتحفظها.</p>
+              {!confirmDefaults ? (
+                <button type="button" className="ui-tinted-btn mt-2 !w-auto !px-3" onClick={() => setConfirmDefaults(true)}>تعبئة القيم الافتراضية ({defaultsPlan.empty + defaultsPlan.partial})</button>
+              ) : (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span>ستُعبّأ {defaultsPlan.empty + defaultsPlan.partial} مقطعًا (خطوة تراجع واحدة).</span>
+                  <button type="button" className="min-h-[36px] rounded-ctl bg-ios-blue px-4 text-[15px] font-semibold text-white" onClick={applyDefaults}>تأكيد التعبئة</button>
+                  <button type="button" className="min-h-[36px] rounded-ctl bg-ios-fill px-4 text-[15px] text-ios-blue" onClick={() => setConfirmDefaults(false)}>إلغاء</button>
+                </div>
+              )}
+            </section>
+          )}
           {result.settingsMissing.map((m) => <p key={m} className="mb-2 rounded-ctl bg-amber-50 px-3 py-2 text-[13px] text-amber-900">⚠ ناقص: {SETTING_MISSING_LABEL[m]}</p>)}
 
           {result.circuits.length === 0 && <p className="py-6 text-center text-ios-secondary">لا توجد كوابل متصلة في الرسم.</p>}

@@ -46,7 +46,9 @@ export const REVIEW_LABEL: Record<SpanReview, string> = {
   'merge-partial': 'دُمج مقطع له خصائص مع مقطع بلا خصائص: استُعملت الموجودة، والأصل محفوظ أدناه — راجعها واحفظ',
   'moved': 'أُعيد ربط الخصائص بهذا المقطع حسب أعمدته — تحقّق',
   'v2': 'خصائص من ملف إصدار 2 (feature/vd) محفوظة كما هي، ولا تُستخدم في الحساب',
+  'defaults': 'افتراضي — يحتاج مراجعة: عُبّئت الخصائص الناقصة لهذا المقطع بالقيم الافتراضية (جدول الشركة). تحقّق منها واحفظ لاعتمادها',
 };
+export const DEFAULTS_REVIEW_SHORT = 'افتراضي — يحتاج مراجعة';
 export const INHERITED_LABEL = 'منسوخة من المقطع السابق — راجعها واحفظ';
 
 export const CABLE_KIND_LABEL: Record<CableKind, string> = {

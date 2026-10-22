@@ -131,7 +131,9 @@ export interface SpanProps {
    *  every original record (null = that span had none), kept for review */
   mergedFrom?: (Omit<SpanProps, 'poles' | 'mergedFrom'> | null)[];
 }
-export type SpanReview = 'split' | 'merge' | 'merge-different' | 'merge-partial' | 'moved' | 'v2';
+// 'defaults' (Stage 7.13): missing properties of an existing span were filled with the default
+// values on the user's request; shown as «افتراضي — يحتاج مراجعة» until the span is saved
+export type SpanReview = 'split' | 'merge' | 'merge-different' | 'merge-partial' | 'moved' | 'v2' | 'defaults';
 
 /**
  * Status of a span distance (connectionDistances[key]) that was not typed by the user.

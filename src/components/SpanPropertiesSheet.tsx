@@ -6,7 +6,8 @@ import { hasElectrical, spanAt, withSpanProps } from '../utils/spanModel';
 import { pairKey } from '../utils/cableSegments';
 import { computeVoltageDrop, spanKey } from '../utils/voltageDrop';
 import { tableSections, companySections, CONDUCTOR_TABLE_SOURCE, COMPANY_TABLE_SOURCE } from '../data/conductors';
-import { DEFAULT_DATA_SOURCE, followNeutralTable, followPhaseTable, neutralTableState, phaseTableState } from '../utils/spanDefaults';
+import { DEFAULT_DATA_SOURCE, fillMissingSpanDefaults, followNeutralTable, followPhaseTable, neutralTableState, phaseTableState } from '../utils/spanDefaults';
+import { effectiveSettings } from '../utils/electricalSettings';
 import { CABLE_KIND_LABEL, fmt, INHERITED_LABEL, MISSING_LABEL, PROVISIONAL_LABEL, REVIEW_LABEL, SETTING_MISSING_LABEL } from '../utils/vdLabels';
 import { isPlainDistance } from '../utils/distances';
 import { poleNamer } from '../utils/poleNames';
@@ -140,7 +141,7 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
     if (form.length.trim()) d[distKey] = form.length.trim(); else delete d[distKey];
     const flags = { ...distanceFlags };
     if (form.length.trim() !== (connectionDistances[distKey] ?? '') || confirmMeasured) delete flags[distKey];
-    const r = computeVoltageDrop(els, d, electrical, flags);
+    const r = computeVoltageDrop(els, d, effectiveSettings(electrical), flags);
     const circuit = r.circuits.find((c) => c.spans.some((s) => s.cableId === cable.id && s.index === index));
     return { span: r.bySpan.get(spanKey(cable.id, index)), circuit, settingsMissing: r.settingsMissing };
   }, [elements, connectionDistances, electrical, distanceFlags, confirmMeasured, cable, spanId, index, form, distKey, draft]);
@@ -153,6 +154,10 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
   const neutralTable = neutralTableState(form);
   const rxTyped = !phaseTable.matches && (form.r.trim() !== '' || form.x.trim() !== '');
   const rnTyped = !neutralTable.matches && form.rn.trim() !== '';
+  // missing fields of this span can be filled with the defaults on request (Stage 7.13):
+  // the form is filled, nothing is saved until «حفظ»; existing values are never changed
+  const filledDraft = fillMissingSpanDefaults(hasElectrical(draft.props) ? draft.props : undefined, [a, b]);
+  const fillFormDefaults = () => { if (filledDraft) setForm((f) => ({ ...toForm(filledDraft, f.length) })); };
   const lengthBad = form.length.trim() !== '' && !(isPlainDistance(form.length) && posOrUndef(form.length) !== undefined);
   const canSave = !draft.errors.length && !lengthBad;
   const parallelCables = elements.filter((e): e is CableElement => e.type === 'cable' && e.id !== cable.id && e.poleIds.some((p, i) => i < e.poleIds.length - 1 && pairKey(p, e.poleIds[i + 1]) === distKey)).length;
@@ -314,6 +319,9 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
           </div>
 
           <div className="flex flex-wrap gap-2">
+            {filledDraft && draft.props.legacyV2 === undefined && (
+              <button type="button" className="ui-tinted-btn !w-auto" onClick={fillFormDefaults} data-fill-defaults>تعبئة الحقول الناقصة بالقيم الافتراضية</button>
+            )}
             {prevSpan && (
               <button type="button" className="ui-tinted-btn !w-auto" onClick={() => setForm((f) => ({ ...toForm(prevSpan, f.length) }))}>نسخ من المقطع السابق</button>
             )}

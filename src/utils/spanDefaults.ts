@@ -1,6 +1,6 @@
 import type { CableElement, SpanProps } from '../types/drawing';
 import { companyRX } from '../data/conductors';
-import { spanAt, withSpanProps } from './spanModel';
+import { hasElectrical, spanAt, withSpanProps } from './spanModel';
 
 // Default properties of a newly drawn span, and filling R / X / Rn from the
 // company cable table (Stage 7.12).
@@ -108,4 +108,83 @@ export const phaseTableState = (f: PhaseFields): { table: { r: number; x: number
 export const neutralTableState = (f: NeutralFields): { table: { r: number; x: number } | null; matches: boolean } => {
   const table = companyRX(f.neutralMaterial, num(f.neutral));
   return { table, matches: !!table && num(f.rn) === table.r };
+};
+
+// ---------- filling the missing properties of existing spans (Stage 7.13) ----------
+//
+// Only on the user's explicit request (the voltage-drop panel, or the span sheet),
+// never when a project is opened, imported or restored. Rules:
+// - a span without any electrical property gets the full defaults;
+// - a span with some properties keeps every one of them; only missing fields are
+//   filled, and only where that does not change a value the span already relies on:
+//     · system missing → 3 phases + N; cable kind missing → ABC; parallel missing → 1;
+//     · phase material AND section both missing → Al 120 (one of them given → neither
+//       is guessed);
+//     · R and X both missing → both from the company table; R given, X missing → X
+//       from the table; R missing with X given → R stays missing (the calculation keeps
+//       using the IEC table as before) — only when the phase material / section are
+//       in the company table;
+//     · neutral material AND section both missing → Al 70, with Rn from the table when
+//       Rn is missing; a neutral that is given is left as it is;
+//     · source «كتالوج» only when a table value was filled and no source is given;
+// - a span with feature/vd (version 2) data is left for review as it is;
+// - every filled span is marked 'defaults' («افتراضي — يحتاج مراجعة»), so its results
+//   are shown as provisional until the span is checked and saved.
+
+const addDefaultsReview = (review: SpanProps['review']): NonNullable<SpanProps['review']> =>
+  review?.includes('defaults') ? review : [...(review ?? []), 'defaults'];
+
+/** The span's properties with the missing ones filled, or null when nothing is missing / it is not filled. */
+export const fillMissingSpanDefaults = (p: SpanProps | undefined, poles: [string, string]): SpanProps | null => {
+  if (p?.legacyV2 !== undefined) return null;
+  if (!hasElectrical(p)) return { ...(p ?? {}), ...defaultSpanValues(), poles, review: addDefaultsReview(p?.review) };
+  const out: SpanProps = { ...p!, poles };
+  let filled = false, fromTable = false;
+  const fill = <K extends keyof SpanProps>(k: K, v: SpanProps[K], table = false) => { out[k] = v; filled = true; if (table) fromTable = true; };
+  if (out.system === undefined) fill('system', '3ph4w');
+  if (out.cableKind === undefined) fill('cableKind', 'abc');
+  if (out.parallel === undefined) fill('parallel', 1);
+  if (out.material === undefined && out.crossSectionMm2 === undefined) { fill('material', 'al'); fill('crossSectionMm2', 120); }
+  const ph = companyRX(out.material, out.crossSectionMm2);
+  if (ph && out.xOhmPerKm === undefined) {
+    if (out.rOhmPerKm === undefined) fill('rOhmPerKm', ph.r, true);
+    fill('xOhmPerKm', ph.x, true);
+  }
+  if (out.neutralMaterial === undefined && out.neutralCrossSectionMm2 === undefined) {
+    fill('neutralMaterial', 'al'); fill('neutralCrossSectionMm2', 70);
+    const ne = companyRX('al', 70);
+    if (ne && out.rNeutralOhmPerKm === undefined) fill('rNeutralOhmPerKm', ne.r, true);
+  }
+  if (fromTable && !out.dataSource?.trim()) fill('dataSource', DEFAULT_DATA_SOURCE);
+  if (!filled) return null;
+  out.review = addDefaultsReview(out.review);
+  return out;
+};
+
+export interface MissingDefaultsPlan {
+  /** cable updates to apply in one step */
+  updates: { id: string; changes: Partial<CableElement> }[];
+  /** spans without any property that get the full defaults */
+  empty: number;
+  /** spans with some properties whose missing fields get filled */
+  partial: number;
+}
+
+/** What "fill the defaults" would change in the drawing (nothing is changed here). */
+export const planMissingDefaults = (elements: { type: string }[]): MissingDefaultsPlan => {
+  const plan: MissingDefaultsPlan = { updates: [], empty: 0, partial: 0 };
+  for (const el of elements) {
+    if (el.type !== 'cable') continue;
+    let cable = el as CableElement;
+    for (let i = 0; i < cable.poleIds.length - 1; i++) {
+      const { id, props } = spanAt(cable, i);
+      if (!id) continue;
+      const next = fillMissingSpanDefaults(props, [cable.poleIds[i], cable.poleIds[i + 1]]);
+      if (!next) continue;
+      if (hasElectrical(props)) plan.partial++; else plan.empty++;
+      cable = withSpanProps(cable, id, next);
+    }
+    if (cable !== el) plan.updates.push({ id: cable.id, changes: { spanProps: cable.spanProps } });
+  }
+  return plan;
 };

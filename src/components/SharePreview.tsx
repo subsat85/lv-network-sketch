@@ -5,6 +5,7 @@ import { PreviewCanvas } from './PreviewCanvas';
 import html2canvas from 'html2canvas';
 import { useVoltageDrop } from '../utils/useVoltageDrop';
 import { LOAD_MODEL_LABEL } from '../utils/vdLabels';
+import { DEFAULT_POWER_FACTOR, isPowerFactorDefault } from '../utils/electricalSettings';
 import jsPDF from 'jspdf';
 
 interface SharePreviewProps {
@@ -405,7 +406,7 @@ export const SharePreview: React.FC<SharePreviewProps> = ({ onClose }) => {
               {voltageDrop && (
                 // what the badges mean, on the page itself (and so in the PDF / image)
                 <text x={A4_WIDTH - 40} y={A4_HEIGHT - 40} textAnchor="end" fontSize={22} fill="#374151" fontFamily="sans-serif" direction="rtl" data-vd-legend>
-                  {`هبوط الفولتية — نموذج الحمل: ${LOAD_MODEL_LABEL[electrical.loadModel ?? 'constant-current']} — cos φ ${electrical.powerFactor ?? '؟'} — الحد ${electrical.limitPercent}% — ≈ تقديري، ؟ غير قابل للحساب`}
+                  {`هبوط الفولتية — نموذج الحمل: ${LOAD_MODEL_LABEL[electrical.loadModel ?? 'constant-current']} — cos φ ${isPowerFactorDefault(electrical) ? `${DEFAULT_POWER_FACTOR} (افتراضي)` : electrical.powerFactor} — الحد ${electrical.limitPercent}% — ≈ تقديري، ؟ غير قابل للحساب`}
                 </text>
               )}
             </svg>

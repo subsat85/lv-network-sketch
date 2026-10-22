@@ -4,8 +4,9 @@ import type { ElectricalSettings } from '../types/drawing';
  * Starting values of the voltage-drop settings. 230/400 V is the nominal LV
  * system; 5 % and 218 V / 380 V are reference starting points to be checked
  * against the standard that applies to the project — they are editable and are
- * not presented as a legal limit. Power factor and conductor temperature have
- * no default: the calculation reports them as missing until they are entered.
+ * not presented as a legal limit. The conductor temperature has no default: the
+ * calculation reports it as missing (where the IEC table needs it) until entered.
+ * The power factor is not stored by default either; see effectiveSettings.
  */
 export const DEFAULT_ELECTRICAL: ElectricalSettings = {
   phaseVoltage: 230,
@@ -49,6 +50,18 @@ export const readElectricalSettings = (raw: unknown): { settings: ElectricalSett
   }
   return { settings, invalid };
 };
+
+/**
+ * Power factor used when a project has none (Stage 7.13). It is applied only when
+ * calculating (effectiveSettings) and shown as «افتراضي»; it is never written into
+ * the project, so opening a project changes neither the saved project nor the
+ * autosave draft. A power factor saved in the project is always used as it is.
+ */
+export const DEFAULT_POWER_FACTOR = 0.9;
+export const isPowerFactorDefault = (s: ElectricalSettings) => s.powerFactor === undefined;
+/** The settings the calculation uses: the stored ones, with the default power factor when none is stored. */
+export const effectiveSettings = (s: ElectricalSettings): ElectricalSettings =>
+  isPowerFactorDefault(s) ? { ...s, powerFactor: DEFAULT_POWER_FACTOR } : s;
 
 export const sameSettings = (a: ElectricalSettings, b: ElectricalSettings) =>
   a === b || (Object.keys(CHECKS) as (keyof ElectricalSettings)[]).every((k) => a[k] === b[k]);
