@@ -13,7 +13,20 @@ const SHAPES: { id: ShapeType; icon: React.ReactNode }[] = [
   { id: 'curved_arrow', icon: <Spline {...ICON_MD} /> },
 ];
 
-export const FloatingHistoryControls: React.FC = () => {
+interface FloatingHistoryControlsProps {
+  /** Full Screen Drawing Mode is on (App) */
+  fullScreen?: boolean;
+  /** buttons the panel must not cover (the full-screen «استعادة الواجهة» buttons) */
+  avoidRef?: React.RefObject<HTMLElement>;
+  /** changes when those buttons change size (e.g. «إنهاء الكابل» shown), to re-check in the same commit */
+  avoidLayoutKey?: string | number;
+}
+
+const AVOID_GAP = 8;
+const overlaps = (x: number, y: number, w: number, h: number, a: DOMRect) =>
+  x < a.right + AVOID_GAP && x + w > a.left - AVOID_GAP && y < a.bottom + AVOID_GAP && y + h > a.top - AVOID_GAP;
+
+export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = ({ fullScreen = false, avoidRef, avoidLayoutKey }) => {
   const { undo, redo, history, redoStack, tool, setTool, activeShapeType, setActiveShapeType } = useDrawingStore();
   const [position, setPosition] = useState({ x: window.innerWidth - 60, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
@@ -21,6 +34,17 @@ export const FloatingHistoryControls: React.FC = () => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [showShapesMenu, setShowShapesMenu] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const shapesMenuRef = useRef<HTMLDivElement>(null);
+  const [shapesMenuPos, setShapesMenuPos] = useState<{ left: number; top: number } | null>(null);
+
+  // read through a ref: the resize listeners below are registered once
+  const fullScreenRef = useRef(fullScreen);
+  fullScreenRef.current = fullScreen;
+  /** the area to keep clear (only while the full-screen buttons are shown) */
+  const avoidRect = () => {
+    const r = fullScreenRef.current ? avoidRef?.current?.getBoundingClientRect() : undefined;
+    return r && r.width > 0 && r.height > 0 ? r : null;
+  };
 
   // Keep the whole widget inside the visible viewport (iOS Safari bars,
   // orientation changes, expand/collapse) using its real rendered size.
@@ -30,16 +54,52 @@ export const FloatingHistoryControls: React.FC = () => {
     const vw = window.visualViewport?.width ?? window.innerWidth;
     const vh = window.visualViewport?.height ?? window.innerHeight;
     const margin = 4;
+    const a = avoidRect();
     setPosition(prev => {
-      const x = Math.max(margin, Math.min(prev.x, vw - w - margin));
-      const y = Math.max(margin, Math.min(prev.y, vh - h - margin));
+      let x = Math.max(margin, Math.min(prev.x, vw - w - margin));
+      let y = Math.max(margin, Math.min(prev.y, vh - h - margin));
+      // Full Screen Drawing Mode: never cover the restore button — move below it when there
+      // is room, otherwise beside it (both measured, so safe areas / orientation are included)
+      if (a && overlaps(x, y, w, h, a)) {
+        if (a.bottom + AVOID_GAP + h <= vh - margin) y = a.bottom + AVOID_GAP;
+        else x = Math.min(Math.max(x, a.right + AVOID_GAP), vw - w - margin);
+      }
       return x === prev.x && y === prev.y ? prev : { x, y };
     });
   };
 
+  // runs in the same commit as the full-screen buttons (App renders them first, so their ref is
+  // set): the panel is moved before the browser paints — no frame with an overlap
   useLayoutEffect(() => {
     clampToViewport();
-  }, [isExpanded]);
+  }, [isExpanded, fullScreen, avoidLayoutKey]);
+
+  // the full-screen buttons grow while a cable is drawn («إنهاء الكابل»): keep clear of them
+  useEffect(() => {
+    const el = fullScreen ? avoidRef?.current : null;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => clampToViewport());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [fullScreen]);
+
+  // The shapes menu opens on the left of the panel. In full screen it must cover neither the
+  // panel (near the left edge: opens on its right, or below it) nor the restore buttons (below them).
+  useLayoutEffect(() => {
+    const m = shapesMenuRef.current?.getBoundingClientRect(); const p = containerRef.current?.getBoundingClientRect();
+    let pos: { left: number; top: number } | null = null;
+    if (showShapesMenu && fullScreen && m && p) {
+      const vw = window.visualViewport?.width ?? window.innerWidth;
+      let left = Math.max(8, position.x - 180), top = position.y;
+      if (left < p.right + 4 && left + m.width > p.left - 4) {
+        if (p.right + AVOID_GAP + m.width <= vw - 8) left = p.right + AVOID_GAP; else top = p.bottom + AVOID_GAP;
+      }
+      const a = avoidRect();
+      if (a && overlaps(left, top, m.width, m.height, a)) top = a.bottom + AVOID_GAP;
+      pos = { left, top };
+    }
+    setShapesMenuPos(prev => (prev?.left === pos?.left && prev?.top === pos?.top ? prev : pos));
+  }, [showShapesMenu, position, fullScreen, isExpanded]);
 
   useEffect(() => {
     window.addEventListener('resize', clampToViewport);
@@ -77,6 +137,7 @@ export const FloatingHistoryControls: React.FC = () => {
   const handlePointerUp = (e: React.PointerEvent) => {
     setIsDragging(false);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    if (fullScreen) clampToViewport(); // dropped on the restore button: move it clear
   };
 
   const handleShapeClick = (shapeId: ShapeType) => {
@@ -179,10 +240,11 @@ export const FloatingHistoryControls: React.FC = () => {
       {/* Shapes Menu Popup */}
       {showShapesMenu && (
         <div
+          ref={shapesMenuRef}
           style={{ 
             position: 'fixed',
-            left: `${Math.max(8, position.x - 180)}px`,
-            top: `${position.y}px`
+            left: `${shapesMenuPos?.left ?? Math.max(8, position.x - 180)}px`,
+            top: `${shapesMenuPos?.top ?? position.y}px`
           }}
           className="z-50 ui-float p-1.5 grid grid-cols-3 gap-0.5"
         >

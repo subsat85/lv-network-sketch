@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useLayoutEffect, useMemo } from 'react';
 import { ColumnContextMenu } from './ColumnContextMenu';
 import { ColumnModifiers } from './ColumnModifiers';
 import { useDrawingStore } from '../store/drawingStore';
@@ -65,13 +65,44 @@ type PendingConsumerState = {
   position: Point;
 } | null;
 
-export const SketchCanvas: React.FC = () => {
+export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = false }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const rawPointsRef = useRef<Point[]>([]); // Store raw points for snapping
   const lastTapRef = useRef<number>(0); // For double tap detection
   
   // Zoom/Pan State
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+
+  // Full Screen Drawing Mode (App): hiding / showing the bars moves the canvas origin on the
+  // screen. The pan is moved by the same measured amount so the drawing stays where it is.
+  // Only the view offset changes (no element is changed; scale untouched); the coordinate
+  // conversion keeps using getScreenCTM(), so touches still land on the same world points.
+  const canvasOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const readCanvasOrigin = () => {
+    const r = svgRef.current?.getBoundingClientRect();
+    return r ? { x: r.left, y: r.top } : null;
+  };
+  useLayoutEffect(() => {
+    const before = canvasOriginRef.current;
+    const now = readCanvasOrigin();
+    canvasOriginRef.current = now;
+    if (!before || !now) return;
+    const k = svgRef.current?.getScreenCTM()?.a || 1; // screen px per svg unit (1 without a viewBox)
+    const dx = (before.x - now.x) / k, dy = (before.y - now.y) / k;
+    if (dx !== 0 || dy !== 0) setTransform(prev => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
+  }, [fullScreen]);
+  // keep the recorded origin current when the window size / orientation changes in between
+  useEffect(() => {
+    const update = () => { canvasOriginRef.current = readCanvasOrigin(); };
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    window.visualViewport?.addEventListener('resize', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+      window.visualViewport?.removeEventListener('resize', update);
+    };
+  }, []);
   const [editingDistance, setEditingDistance] = useState<{ key: string, value: string } | null>(null);
   const [draggingLabel, setDraggingLabel] = useState<{ key: string, startX: number, startY: number, initialOffset: {x: number, y: number} } | null>(null);
   const pointersRef = useRef<Map<number, { x: number, y: number }>>(new Map());

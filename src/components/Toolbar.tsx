@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MousePointer2, Trash2, Activity, Check, ArrowRight, Folder, Share, Minus, Zap, BarChart3, Gauge } from 'lucide-react';
+import { MousePointer2, Trash2, Activity, Check, ArrowRight, Folder, Share, Minus, Zap, BarChart3, Gauge, Maximize } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import { ToolType, CableElement } from '../types/drawing';
 import { LoadReportModal } from './LoadReportModal';
@@ -10,6 +10,8 @@ interface ToolbarProps {
   onOpenProjects?: () => void;
   onOpenShare?: () => void;
   onOpenTransformerInfo?: () => void;
+  /** Full Screen Drawing Mode: hides the bars and panels around the canvas */
+  onEnterFullScreen?: () => void;
 }
 
 interface ConsumerElement {
@@ -22,7 +24,7 @@ interface ConsumerElement {
   label?: string;
 }
 
-export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, onOpenTransformerInfo }) => {
+export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, onOpenTransformerInfo, onEnterFullScreen }) => {
   const [showLoadReport, setShowLoadReport] = useState(false);
   const [showVoltageDrop, setShowVoltageDropPanel] = useState(false);
   
@@ -49,6 +51,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       icon: <Share {...ICON_LG} />, 
       label: 'Share',
       onClick: () => onOpenShare?.(),
+      isActive: false
+    },
+    {
+      // first group, so it is visible without scrolling the bar on a phone
+      id: 'fullScreen',
+      group: 'file',
+      icon: <Maximize {...ICON_LG} />,
+      label: 'وضع الرسم الكامل',
+      onClick: () => onEnterFullScreen?.(),
       isActive: false
     },
     { 
