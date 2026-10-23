@@ -7,6 +7,8 @@ import { pathSegmentSpans, SpanRef } from '../utils/cableSegments';
 import { DrawnSpanHint, SpanPropertiesSheet } from './SpanPropertiesSheet';
 import { VoltageDropOverlay } from './VoltageDropOverlay';
 import { CableEndsDialog } from './CableEndsDialog';
+import { ProposedConsumerSheet } from './ProposedConsumerSheet';
+import { proposalBoxCenter, proposalGeometry } from '../utils/proposalDrawing';
 import { useVoltageDrop } from '../utils/useVoltageDrop';
 import { splitSpanInCables } from '../utils/spanModel';
 import { midPoleId } from '../utils/splitPoleId';
@@ -146,6 +148,9 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
   const pendingSpanRef = useRef<{ cableId: string; index: number } | null>(null);
   const [cableEndsPole, setCableEndsPole] = useState<string | null>(null);
   const closeCableEnds = React.useCallback(() => setCableEndsPole(null), []);
+  const [proposalSheet, setProposalSheet] = useState<{ poleId: string; consumerId?: string } | null>(null);
+  const closeProposalSheet = React.useCallback(() => setProposalSheet(null), []);
+  const proposalTapRef = useRef<{ id: string; wasSelected: boolean; moved: boolean } | null>(null);
   const [pendingArc, setPendingArc] = useState<ArcElement | null>(null);
   const [pendingShape, setPendingShape] = useState<ShapeElement | null>(null);
   const [draggingArcPoint, setDraggingArcPoint] = useState<{ id: string, type: 'start' | 'end' | 'control' } | null>(null);
@@ -644,6 +649,18 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
       
       const el = elements.find(e => e.id === selectedId);
       if (el) {
+        // a proposed subscriber's box moves relative to its pole (it follows the pole)
+        const prop = el.type === 'consumer' ? (el as ConsumerElement).proposal : undefined;
+        if (prop) {
+          const pole = elements.find((p) => p.id === (el as ConsumerElement).poleId);
+          const B = proposalBoxCenter(elements, el as ConsumerElement, POLE_RADIUS * poleSizeScale, consumerSizeScale);
+          if (pole && B && (dx || dy)) {
+            updateElement(selectedId, { proposal: { ...prop, boxOffset: { x: B.x + dx - pole.x, y: B.y + dy - pole.y } } });
+            if (proposalTapRef.current?.id === selectedId) proposalTapRef.current.moved = true;
+          }
+          setDragStart(coords);
+          return;
+        }
         // auto-placed consumer: start from where it is drawn and pin it there
         const autoConsumer = el.type === 'consumer' && !(el as ConsumerElement).hasManualPosition;
         const base = autoConsumer ? consumerAutoPosition(el as ConsumerElement) : { x: el.x, y: el.y };
@@ -1074,7 +1091,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
 
   // Where an auto-placed consumer is drawn (same formula the renderer uses).
   const consumerAutoPosition = (consumer: ConsumerElement) => {
-    const consumersOnPole = elements.filter(e => e.type === 'consumer' && (e as ConsumerElement).poleId === consumer.poleId);
+    const consumersOnPole = elements.filter(e => e.type === 'consumer' && !(e as ConsumerElement).proposal && (e as ConsumerElement).poleId === consumer.poleId);
     const index = consumersOnPole.findIndex(e => e.id === consumer.id);
     const placement = getSmartPlacement(consumer.poleId);
     const radius = POLE_RADIUS * poleSizeScale;
@@ -1630,7 +1647,37 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
     };
   };
 
+  // «مشترك مقترح»: box («مشترك» + load in A), line to the pole, jumper to the chosen cable
+  const renderProposal = (el: ConsumerElement) => {
+    const g = proposalGeometry(elements, el, POLE_RADIUS * poleSizeScale, consumerSizeScale);
+    if (!g) return null;
+    const isSelected = el.id === selectedId;
+    const confirmed = el.proposal?.status === 'confirmed';
+    const stroke = isSelected ? '#3B82F6' : 'red';
+    const { cx, cy, w, h } = g.box;
+    return (
+      <g key={el.id} data-proposed-consumer={el.id} data-proposal-status={el.proposal?.status} data-proposal-connected={g.connected ? 'yes' : 'no'}>
+        <line x1={g.line[0].x} y1={g.line[0].y} x2={g.line[1].x} y2={g.line[1].y} stroke={stroke} strokeWidth={2} strokeDasharray={confirmed ? undefined : '5 3'} style={{ pointerEvents: 'none' }} />
+        {g.jumper && <path d={g.jumper.d} fill="none" stroke={g.jumper.color} strokeWidth={2} strokeDasharray={confirmed ? undefined : '5 3'} style={{ pointerEvents: 'none' }} data-proposal-jumper />}
+        {g.jumper && <circle cx={g.jumper.dot.x} cy={g.jumper.dot.y} r={g.jumper.dotRadius} fill={g.jumper.color} style={{ pointerEvents: 'none' }} />}
+        <rect x={cx - w / 2} y={cy - h / 2} width={w} height={h} rx={4} fill="white" stroke={stroke} strokeWidth={2} strokeDasharray={confirmed ? undefined : '5 3'}
+          className={tool === 'select' ? 'cursor-move' : ''}
+          onPointerDown={(e) => { proposalTapRef.current = { id: el.id, wasSelected: selectedId === el.id, moved: false }; handleElementPointerDown(e, el.id); }}
+          onClick={(e) => {
+            // a second tap on the selected box (not a drag) opens it
+            const t = proposalTapRef.current;
+            if (tool === 'select' && t && t.id === el.id && t.wasSelected && !t.moved) { e.stopPropagation(); setProposalSheet({ poleId: el.poleId, consumerId: el.id }); }
+          }}
+          style={{ pointerEvents: tool === 'select' ? 'all' : 'none' }} />
+        <text x={cx} y={cy - h * 0.12} textAnchor="middle" fill={stroke} fontSize={12 * consumerSizeScale} fontWeight="bold" style={{ pointerEvents: 'none' }}>مشترك</text>
+        <text x={cx} y={cy + h * 0.32} textAnchor="middle" fill={stroke} fontSize={12 * consumerSizeScale} fontWeight="bold" style={{ pointerEvents: 'none' }}>{g.amps !== undefined ? `${Number.isInteger(g.amps) ? g.amps : g.amps.toFixed(1)} A` : '? A'}</text>
+        {!g.connected && <text x={cx + w / 2 + 4} y={cy - h / 2} fill="red" fontSize={14 * consumerSizeScale} fontWeight="bold" style={{ pointerEvents: 'none' }}>؟</text>}
+      </g>
+    );
+  };
+
   const renderConsumer = (el: ConsumerElement) => {
+    if (el.proposal) return renderProposal(el);
     const pole = elements.find(e => e.id === el.poleId);
     if (!pole) return null;
     
@@ -1640,7 +1687,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
       cx = el.x;
       cy = el.y;
     } else {
-      const consumersOnPole = elements.filter(e => e.type === 'consumer' && (e as ConsumerElement).poleId === el.poleId);
+      const consumersOnPole = elements.filter(e => e.type === 'consumer' && !(e as ConsumerElement).proposal && (e as ConsumerElement).poleId === el.poleId);
       const index = consumersOnPole.findIndex(e => e.id === el.id);
       
       const placement = getSmartPlacement(el.poleId);
@@ -2540,7 +2587,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
           {pendingConsumer && (
             <g transform={(() => {
                const placement = getSmartPlacement(pendingConsumer.poleId);
-               const consumersOnPole = elements.filter(e => e.type === 'consumer' && (e as ConsumerElement).poleId === pendingConsumer.poleId);
+               const consumersOnPole = elements.filter(e => e.type === 'consumer' && !(e as ConsumerElement).proposal && (e as ConsumerElement).poleId === pendingConsumer.poleId);
                const index = consumersOnPole.length;
                const radius = POLE_RADIUS * poleSizeScale;
                const consumerRadius = 16 * consumerSizeScale;
@@ -2748,10 +2795,12 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
           onClose={() => setContextMenu({ ...contextMenu, visible: false })}
           onStartArc={(poleId) => dispatchArcPick({ type: 'start', poleId })}
           onOpenCableEnds={(poleId) => setCableEndsPole(poleId)}
+          onProposeConsumer={(poleId, consumerId) => setProposalSheet({ poleId, consumerId })}
         />
       )}
 
       {cableEndsPole && <CableEndsDialog poleId={cableEndsPole} onClose={closeCableEnds} />}
+      {proposalSheet && <ProposedConsumerSheet poleId={proposalSheet.poleId} consumerId={proposalSheet.consumerId} onClose={closeProposalSheet} />}
 
       {drawnSpan && !arcPickState && !editingSpan && (tool === 'cable' || tool === 'cable_straight') && (
         <DrawnSpanHint

@@ -35,6 +35,7 @@ const CHECKS: Checks = {
   singlePhaseMode: (v) => (v === 'worst' || v === 'balanced' ? v : undefined),
   loadModel: (v) => (v === 'constant-current' || v === 'constant-power' ? v : undefined),
   studySuggestedSplits: (v) => (typeof v === 'boolean' ? v : undefined),
+  studyProposedConsumers: (v) => (typeof v === 'boolean' ? v : undefined),
 };
 
 /** Settings read from a file / draft. Missing fields get defaults; invalid ones are reported. */

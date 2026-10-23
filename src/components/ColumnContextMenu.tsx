@@ -4,6 +4,8 @@ import { SymbolElement, CableElement, TextElement } from '../types/drawing';
 import { Check } from 'lucide-react';
 import { toggleSuggestedSplit } from '../utils/cableArrows';
 import { poleNamer } from '../utils/poleNames';
+import { proposalLoadText } from '../utils/proposedConsumers';
+import type { ConsumerElement } from '../types/drawing';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -13,9 +15,11 @@ interface ColumnContextMenuProps {
   onClose: () => void;
   onStartArc?: (poleId: string) => void;
   onOpenCableEnds?: (poleId: string) => void;
+  /** «اقتراح مشترك جديد» (no id) / «تعديل المشترك المقترح» (its id) */
+  onProposeConsumer?: (poleId: string, consumerId?: string) => void;
 }
 
-export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId, position, onClose, onStartArc, onOpenCableEnds }) => {
+export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId, position, onClose, onStartArc, onOpenCableEnds, onProposeConsumer }) => {
   const { elements, updateSymbolModifiers, updateElement, addElement, saveHistory } = useDrawingStore();
   const element = elements.find(el => el.id === elementId) as SymbolElement;
   const menuRef = useRef<HTMLDivElement>(null);
@@ -293,6 +297,19 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
           )}
         </div>
       )}
+
+      {/* «مشترك مقترح»: propose a new subscriber here / edit the ones proposed here */}
+      {onProposeConsumer && connectedCables.length > 0 && (
+        <button className="ui-menu-item" role="menuitem" data-propose-consumer="new" onClick={() => { onProposeConsumer(elementId); onClose(); }}>
+          اقتراح مشترك جديد
+        </button>
+      )}
+      {onProposeConsumer && elements.filter((e): e is ConsumerElement => e.type === 'consumer' && e.poleId === elementId && !!e.proposal).map((pc) => (
+        <button key={pc.id} className="ui-menu-item" role="menuitem" data-propose-consumer={pc.id} onClick={() => { onProposeConsumer(elementId, pc.id); onClose(); }}>
+          <span>تعديل المشترك المقترح</span>
+          <span className="text-[13px] text-ios-secondary">{proposalLoadText(pc)}{pc.proposal!.status === 'confirmed' ? ' · معتمد' : ''}</span>
+        </button>
+      ))}
 
       {/* Jumper (cable_arc): link two cable connection points at this pole */}
       {onStartArc && connectionPointCount >= 2 && (

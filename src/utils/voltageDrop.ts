@@ -225,13 +225,16 @@ const propsOf = (elements: Map<string, CableElement>, s: NetSpan) => {
   return id ? c?.spanProps?.[id] : undefined;
 };
 
+/** Network options the project settings ask for. */
+export const networkOptions = (settings: ElectricalSettings) => ({ studySplits: settings.studySuggestedSplits === true, includeProposedConsumers: settings.studyProposedConsumers === true });
+
 export const computeVoltageDrop = (
   elements: DrawingElement[],
   distances: Record<string, string>,
   settings: ElectricalSettings,
   distanceFlags: Record<string, DistanceFlag> = {},
-  // the study with suggested split points is a setting of the project (off unless switched on)
-  network: Network = buildNetwork(elements, { studySplits: settings.studySuggestedSplits === true }),
+  // the studies (suggested split points, proposed subscribers) are settings of the project (off unless switched on)
+  network: Network = buildNetwork(elements, networkOptions(settings)),
 ): VoltageDropResult => {
   const cables = new Map<string, CableElement>();
   for (const e of elements) if (e.type === 'cable') cables.set(e.id, e);

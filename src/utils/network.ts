@@ -45,7 +45,15 @@ import { splitSideKey, type SplitSide } from './splitStudy';
 //     names that side. No side chosen: both sides are open; if anything at that pole
 //     could belong to one of them (a consumer or a cable of its colour, a transformer,
 //     a chosen source) the network is not computed (split-side-unassigned) — nothing
-//     is guessed. Suggestions at a cable's first / last pole are not used here.
+//     is guessed. Suggestions at a cable's first / last pole are not used here;
+//   - proposed subscribers (ConsumerElement.proposal): a confirmed one is a
+//     subscriber like any other; a proposed (not confirmed) one is used only with
+//     the option includeProposedConsumers (the study). Either is connected to the
+//     cable it names at its pole (ConsumerProposal.connection: that visit's
+//     connection point, or the side it names at a study split), never by colour.
+//     When that connection does not exist (no cable chosen, the cable no longer
+//     passes the pole) the networks at that pole are not computed
+//     (proposed-consumer-unconnected): its load is never dropped silently.
 //
 // Supply of a connected network:
 //   - a pole the user marked as source wins (transformers inside the network are
@@ -73,7 +81,8 @@ export type NetworkIssue =
   | { kind: 'isolated-end-jumpered'; poleId: string; cableId: string }
   | { kind: 'connected-end-alone'; poleId: string; cableId: string }
   | { kind: 'three-phase-on-single-phase'; spanKey: string }
-  | { kind: 'split-side-unassigned'; poleId: string; cableId: string; occurrence: number };
+  | { kind: 'split-side-unassigned'; poleId: string; cableId: string; occurrence: number }
+  | { kind: 'proposed-consumer-unconnected'; consumerId: string; poleId: string };
 
 /** A junction the 'auto' rule made: a cable end joined to same-colour cables at a pole. */
 export interface InferredJunction {
@@ -166,13 +175,19 @@ class DSU {
 export interface BuildNetworkOptions {
   /** calculate the suggested split points at interior poles as open points (the study) */
   studySplits?: boolean;
+  /** calculate proposed subscribers that are not confirmed yet (the study) */
+  includeProposedConsumers?: boolean;
 }
+
+/** Whether a subscriber is calculated: existing and confirmed ones always, proposed ones only in the study. */
+export const consumerIncluded = (c: ConsumerElement, includeProposed = false) =>
+  !c.proposal || c.proposal.status === 'confirmed' || (includeProposed && c.proposal.status === 'proposed');
 
 export const buildNetwork = (elements: DrawingElement[], opts: BuildNetworkOptions = {}): Network => {
   const poles = new Map<string, SymbolElement>();
   for (const e of elements) if (e.type === 'symbol') poles.set(e.id, e);
   const cables = elements.filter((e): e is CableElement => e.type === 'cable');
-  const consumers = elements.filter((e): e is ConsumerElement => e.type === 'consumer');
+  const consumers = elements.filter((e): e is ConsumerElement => e.type === 'consumer' && consumerIncluded(e, opts.includeProposedConsumers));
 
   // study split points: cable → index in poleIds → side kept at the pole (null: not chosen)
   const splitAt = new Map<string, Map<number, SplitSide | null>>();
@@ -234,7 +249,7 @@ export const buildNetwork = (elements: DrawingElement[], opts: BuildNetworkOptio
     const color = normColor(u.cable.strokeColor);
     const matters = isTransformer(pole) || !!pole.modifiers?.vdSource
       || (terminalsAtPole.get(u.poleId) ?? []).some((t) => t.color === color)
-      || consumers.some((x) => x.poleId === u.poleId && normColor(x.color) === color);
+      || consumers.some((x) => x.poleId === u.poleId && (x.proposal ? x.proposal.connection?.cableId === u.cable.id : normColor(x.color) === color));
     if (matters) for (const side of ['prev', 'next'] as const)
       blocking.push({ key: keyAt(u.cable.id, u.index, side), issue: { kind: 'split-side-unassigned', poleId: u.poleId, cableId: u.cable.id, occurrence: u.occurrence } });
   }
@@ -336,6 +351,23 @@ export const buildNetwork = (elements: DrawingElement[], opts: BuildNetworkOptio
   const consumerBus = new Map<string, string | null>();
   for (const cons of consumers) {
     const list = terminalsAtPole.get(cons.poleId) ?? [];
+    if (cons.proposal) {
+      // a proposed subscriber: the connection point of the cable it names
+      const conn = cons.proposal.connection;
+      const c = conn ? cableById.get(conn.cableId) : undefined;
+      const i = c && conn && poles.has(cons.poleId) ? occurrenceIndex(c, cons.poleId, conn.occurrence) : -1;
+      const key = c && i >= 0 ? (conn!.side ? keyAt(c.id, i, conn!.side) : terminalKey(c.id, i)) : undefined;
+      const bus = key ? busOfTerminal.get(key) ?? null : null;
+      consumerBus.set(cons.id, bus);
+      // at a study split whose side is not chosen yet that visit has no connection point: already reported (split-side-unassigned)
+      const awaitingSide = !!c && i >= 0 && !conn!.side && splitAt.get(c.id)?.get(i) === null;
+      if (!bus && !awaitingSide) {
+        const issue: NetworkIssue = { kind: 'proposed-consumer-unconnected', consumerId: cons.id, poleId: cons.poleId };
+        if (list.length) for (const t of list) blocking.push({ key: t.key, issue });
+        else issues.push(issue);
+      }
+      continue;
+    }
     const t = list.find((x) => x.color === normColor(cons.color));
     const bus = t ? busOfTerminal.get(t.key)! : null;
     consumerBus.set(cons.id, bus);

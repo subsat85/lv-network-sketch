@@ -21,6 +21,8 @@ import { DEFAULT_POWER_FACTOR, isPowerFactorDefault } from '../utils/electricalS
 import { planMissingDefaults } from '../utils/spanDefaults';
 import { DEFAULTS_REVIEW_SHORT } from '../utils/vdLabels';
 import { ALPHA_SOURCE, CONDUCTOR_TABLE_SOURCE } from '../data/conductors';
+import { ProposedConsumerSheet } from './ProposedConsumerSheet';
+import { proposalLoadText, proposedConsumers } from '../utils/proposedConsumers';
 import { allStudySplitPoints, endSplitPoints, setSplitConsumerSide, type SplitSide } from '../utils/splitStudy';
 
 // Voltage-drop settings, results and report (Stages 7.6 / 7.7).
@@ -67,6 +69,7 @@ export const voltageDropReportText = (r: VoltageDropResult, name: (id: string) =
   lines.push(`الفولتية الاسمية ${s.phaseVoltage}/${s.lineVoltage} V — الحد ${s.limitPercent}% (مرجعي، يُطابق مع معيار المشروع) — أدنى فولتية ${s.minPhaseVoltage} V طور / ${s.minLineVoltage} V بين الأطوار`);
   lines.push(`cos φ = ${s.powerFactor ?? 'غير مُدخل'}${powerFactorDefault ? ' (افتراضي)' : ''} — حرارة الموصل ${s.conductorTempC ?? 'غير مُدخلة'} °C — أحمال الطور الواحد: ${s.singlePhaseMode === 'worst' ? 'أسوأ حالة (على الطور المفحوص)' : 'موزعة بالتساوي (افتراض)'}`);
   lines.push(`نموذج الحمل: ${LOAD_MODEL_LABEL[s.loadModel ?? 'constant-current']}${(s.loadModel ?? 'constant-current') === 'constant-power' ? ' (التيار يتغير مع الفولتية عند كل عمود، حساب بالتكرار)' : ''}`);
+  if (s.studyProposedConsumers) lines.push('دراسة: المشتركون المقترحون (غير المعتمدين) محسوبون');
   if (s.studySuggestedSplits) lines.push('دراسة: نقاط الفصل المقترحة (في نص الكيبل) محسوبة كنقاط فتح كهربائية');
   for (const m of r.settingsMissing) lines.push(`ناقص: ${SETTING_MISSING_LABEL[m]}`);
   r.circuits.forEach((c, i) => {
@@ -131,6 +134,10 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
   const study = electrical.studySuggestedSplits === true;
   const splitPoints = useMemo(() => allStudySplitPoints(elements), [elements]);
   const endSplits = useMemo(() => elements.filter((e): e is CableElement => e.type === 'cable').flatMap(endSplitPoints), [elements]);
+  const proposals = useMemo(() => proposedConsumers(elements), [elements]);
+  const studyProposed = electrical.studyProposedConsumers === true;
+  const setStudyProposed = (on: boolean) => { saveHistory(); updateElectricalSettings({ studyProposedConsumers: on }); saveHistory(); };
+  const [proposalEdit, setProposalEdit] = useState<{ poleId: string; consumerId: string } | null>(null);
   const setStudy = (on: boolean) => { saveHistory(); updateElectricalSettings({ studySuggestedSplits: on }); saveHistory(); };
   const setSplitSide = (cableId: string, poleId: string, occurrence: number, side: SplitSide) => {
     const c = cables.get(cableId);
@@ -197,6 +204,36 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
 
           <p className="mb-2 text-[13px] text-ios-label" data-vd-load-model={electrical.loadModel ?? 'constant-current'}>نموذج الحمل المستعمل في النتائج: <b>{LOAD_MODEL_LABEL[electrical.loadModel ?? 'constant-current']}</b></p>
           <p className="mb-2 text-[13px] text-ios-label" data-vd-power-factor={pfDefault ? 'default' : 'saved'}>cos φ المستعمل: <b>{pfDefault ? DEFAULT_POWER_FACTOR : electrical.powerFactor}</b>{pfDefault && <span className="text-ios-secondary"> (افتراضي — غير محفوظ في المشروع؛ أدخله واحفظ الإعدادات لاعتماد قيمة أخرى)</span>}</p>
+
+          {/* proposed subscribers: confirmed ones are always calculated; the others only in this study */}
+          {proposals.length > 0 && (
+            <section aria-label="المشتركون المقترحون" data-vd-proposed-study={studyProposed ? 'on' : 'off'} className={`mb-3 rounded-ctl border p-3 text-[13px] ${studyProposed ? 'border-ios-red/40 bg-red-50' : 'border-ios-separator'}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-ios-label">احسب مع المشتركين المقترحين (دراسة)</span>
+                <button type="button" role="switch" aria-checked={studyProposed} aria-label="احسب مع المشتركين المقترحين (دراسة)" className="ui-switch shrink-0" onClick={() => setStudyProposed(!studyProposed)}><span className="ui-switch-knob" /></button>
+              </div>
+              <p className="mt-1 text-[12px] text-ios-secondary">{studyProposed
+                ? 'مفعّلة: المشتركون المقترحون غير المعتمدين محسوبون أيضًا (دراسة). المعتمدون محسوبون دائمًا.'
+                : 'غير مفعّلة: النتائج الرسمية — المشتركون الحاليون والمقترحون المعتمدون فقط.'}</p>
+              <ul className="mt-2 flex flex-col gap-2">
+                {proposals.map((pc) => {
+                  const conn = pc.proposal!.connection;
+                  const cab = conn ? cables.get(conn.cableId) : undefined;
+                  const included = pc.proposal!.status === 'confirmed' || studyProposed;
+                  return (
+                    <li key={pc.id} data-vd-proposal={pc.id} data-vd-proposal-status={pc.proposal!.status} className="flex flex-wrap items-center gap-2 rounded-ctl bg-white/70 p-2 ring-1 ring-inset ring-black/5">
+                      <span className="h-3 w-3 shrink-0 rounded-full ring-1 ring-inset ring-black/10" style={{ backgroundColor: cab?.strokeColor ?? '#999' }} />
+                      <b>{name(pc.poleId)}</b>
+                      <span>{proposalLoadText(pc)}</span>
+                      <span className={pc.proposal!.status === 'confirmed' ? 'font-semibold text-green-700' : 'text-ios-secondary'}>{pc.proposal!.status === 'confirmed' ? 'معتمد' : 'مقترح'}{included ? ' — محسوب' : ' — غير محسوب'}</span>
+                      {!cab && <span className="font-semibold text-amber-900">⚠ بدون كيبل</span>}
+                      <button type="button" className="ui-tinted-btn mr-auto !w-auto !min-h-[30px] !px-3" onClick={() => setProposalEdit({ poleId: pc.poleId, consumerId: pc.id })}>تعديل / اعتماد</button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
 
           {/* study: suggested split points calculated as open points (off = drawing marks only) */}
           <section aria-label="دراسة نقاط الفصل المقترحة" data-vd-split-study={study ? 'on' : 'off'} className={`mb-3 rounded-ctl border p-3 text-[13px] ${study ? 'border-ios-red/40 bg-red-50' : 'border-ios-separator'}`}>
@@ -365,6 +402,7 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
       </div>
       {editing && <div onClick={(e) => e.stopPropagation()}><SpanPropertiesSheet cableId={editing.cableId} index={editing.index} onClose={() => setEditing(null)} /></div>}
       {endsPole && <div onClick={(e) => e.stopPropagation()}><CableEndsDialog poleId={endsPole} onClose={() => setEndsPole(null)} /></div>}
+      {proposalEdit && <div onClick={(e) => e.stopPropagation()}><ProposedConsumerSheet poleId={proposalEdit.poleId} consumerId={proposalEdit.consumerId} onClose={() => setProposalEdit(null)} /></div>}
     </div>
   );
 };

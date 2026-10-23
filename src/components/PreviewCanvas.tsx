@@ -5,6 +5,7 @@ import { calculateCablePath } from '../utils/cableLayout';
 import { cableEndArrow, suggestedSplitArrows, SUGGESTED_SPLIT_COLOR } from '../utils/cableArrows';
 import { CableArrowHead } from './CableArrowHead';
 import { arcGeometry } from '../utils/cableArcs';
+import { ProposalSvg } from './ProposalSvg';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
 import { VoltageDropOverlay } from './VoltageDropOverlay';
 import type { VoltageDropResult } from '../utils/voltageDrop';
@@ -371,13 +372,14 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
       const cons = el as ConsumerElement;
       const pole = elements.find(e => e.id === cons.poleId);
       if (!pole) return null;
+      if (cons.proposal) return <ProposalSvg key={cons.id} elements={elements} consumer={cons} poleRadius={POLE_RADIUS * poleSizeScale} scale={consumerSizeScale} />;
       
       let cx, cy;
       if (cons.hasManualPosition) {
         cx = cons.x;
         cy = cons.y;
       } else {
-        const consumersOnPole = elements.filter(e => e.type === 'consumer' && (e as ConsumerElement).poleId === cons.poleId);
+        const consumersOnPole = elements.filter(e => e.type === 'consumer' && !(e as ConsumerElement).proposal && (e as ConsumerElement).poleId === cons.poleId);
         const index = consumersOnPole.findIndex(e => e.id === cons.id);
         const placement = getSmartPlacement(cons.poleId, elements);
         const radius = POLE_RADIUS * poleSizeScale;

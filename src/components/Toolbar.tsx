@@ -5,6 +5,7 @@ import { ToolType, CableElement } from '../types/drawing';
 import { LoadReportModal } from './LoadReportModal';
 import { VoltageDropPanel } from './VoltageDropPanel';
 import { ICON_LG } from './ui/icons';
+import { consumerIncluded } from '../utils/network';
 
 interface ToolbarProps {
   onOpenProjects?: () => void;
@@ -34,7 +35,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
   } = useDrawingStore();
 
   // Filter consumers from elements
-  const consumers = elements.filter((el): el is ConsumerElement => el.type === 'consumer');
+  // (a proposed subscriber that is not confirmed is not part of the load report; a confirmed one is)
+  const consumers = elements.filter((el): el is ConsumerElement => el.type === 'consumer' && consumerIncluded(el));
 
   const tools: { id: string; icon: React.ReactNode; label: string; onClick: () => void; isActive: boolean; group: 'file' | 'draw' | 'info' }[] = [
     { 

@@ -153,6 +153,12 @@ export const validateProjectFile = (raw: unknown): ValidateProjectResult => {
         break;
       case 'consumer':
         if (!isStr(el.poleId)) err(`${label}: بدون poleId.`);
+        if (el.proposal !== undefined) {
+          const pr = el.proposal, cn = isObj(pr) ? pr.connection : undefined, bo = isObj(pr) ? pr.boxOffset : undefined;
+          const okConn = cn === undefined || (isObj(cn) && isStr(cn.cableId) && Number.isInteger(cn.occurrence) && (cn.occurrence as number) >= 0 && (cn.side === undefined || cn.side === 'prev' || cn.side === 'next'));
+          const okBox = bo === undefined || (isObj(bo) && isNum(bo.x) && isNum(bo.y));
+          if (!isObj(pr) || (pr.status !== 'proposed' && pr.status !== 'confirmed') || !okConn || !okBox) err(`${label}: بيانات المشترك المقترح (proposal) غير صالحة.`);
+        }
         break;
       case 'path':
         if (!Array.isArray(el.points) || !el.points.every(isPoint)) err(`${label}: نقاط الخط غير صالحة.`);

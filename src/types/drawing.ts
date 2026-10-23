@@ -200,6 +200,12 @@ export interface ElectricalSettings {
    * (the default, and every project saved before): suggestions are drawing marks only.
    */
   studySuggestedSplits?: boolean;
+  /**
+   * Voltage-drop study: when true, proposed subscribers that are not confirmed yet
+   * (ConsumerElement.proposal.status 'proposed') are calculated too. Off / missing
+   * (the default): only existing and confirmed subscribers are calculated.
+   */
+  studyProposedConsumers?: boolean;
 }
 
 /**
@@ -221,6 +227,27 @@ export interface ConsumerElement extends BaseElement {
   hasManualPosition?: boolean;
   variant?: 'circle' | 'square';
   label?: string;
+  /**
+   * «مشترك مقترح»: a new subscriber proposed at this pole. Missing = an existing
+   * subscriber (unchanged behaviour). Its load follows the same rules as any
+   * subscriber (variant / label / count). See ConsumerProposal.
+   */
+  proposal?: ConsumerProposal;
+}
+
+/**
+ * A proposed subscriber. It is connected to ONE chosen cable at its pole (not by
+ * colour): `connection` names the cable and which visit of the pole; `side` is set
+ * only when the user chose one side of a study split there (missing = the pole's
+ * connection point of that visit). While 'proposed' it is calculated only in the
+ * study (ElectricalSettings.studyProposedConsumers); once 'confirmed' it is always
+ * calculated, as a permanent subscriber, and is still drawn as a proposal.
+ */
+export interface ConsumerProposal {
+  status: 'proposed' | 'confirmed';
+  connection?: { cableId: string; occurrence: number; side?: 'prev' | 'next' };
+  /** where its box is drawn, relative to the pole centre (world units); missing = automatic */
+  boxOffset?: { x: number; y: number };
 }
 
 export interface TransformerTableElement extends BaseElement {
