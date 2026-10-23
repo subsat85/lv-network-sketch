@@ -9,6 +9,9 @@ import { MIN_SCREEN_FONT_PX, VoltageDropOverlay } from './VoltageDropOverlay';
 import { distanceLabelExtraOffset, distanceLabelFontSizes, layoutViewScale } from '../utils/overlayLayout';
 import { CableEndsDialog } from './CableEndsDialog';
 import { CableColorBar } from './CableColorBar';
+import { OPEN_STYLE_PANEL_EVENT } from './StylePanel';
+import { CableActions, CablePicker } from './CablePicker';
+import { cableChoices, cablesNear, isAmbiguous, type CableChoice, type CableHit } from '../utils/cableHits';
 import { ProposedConsumerSheet } from './ProposedConsumerSheet';
 import { layoutProposalBoxes, proposalBoxCenter, proposalGeometry } from '../utils/proposalDrawing';
 import { useSmallScreen } from '../utils/smallScreen';
@@ -166,8 +169,12 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
   const [pendingConsumer, setPendingConsumer] = useState<PendingConsumerState>(null);
   // span whose properties are being edited / the span just drawn (Stage 7.2)
   const [editingSpan, setEditingSpan] = useState<{ cableId: string; index: number } | null>(null);
+  // choosing among cables under one touch (CablePicker), then the chosen cable's two pages
+  type CanvasBounds = { left: number; top: number; right: number; bottom: number };
+  const [cablePick, setCablePick] = useState<{ at: { x: number; y: number }; bounds: CanvasBounds; choices: CableChoice[] } | null>(null);
+  const [cableActions, setCableActions] = useState<{ bounds: CanvasBounds; choice: CableChoice } | null>(null);
   const [drawnSpan, setDrawnSpan] = useState<{ cableId: string; index: number } | null>(null);
-  const pendingSpanRef = useRef<{ cableId: string; index: number } | null>(null);
+  const pendingSpanRef = useRef<{ cableId: string; index: number; via?: string } | null>(null);
   const [cableEndsPole, setCableEndsPole] = useState<string | null>(null);
   const closeCableEnds = React.useCallback(() => setCableEndsPole(null), []);
   const [proposalSheet, setProposalSheet] = useState<{ poleId: string; consumerId?: string } | null>(null);
@@ -252,6 +259,11 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
   }, [arcPickState]);
 
   const closeSpanSheet = React.useCallback(() => setEditingSpan(null), []);
+  // the cable choice closes when the view moves (its place would be wrong) or the tool changes;
+  // the actions of the chosen cable close when another element is selected
+  useEffect(() => { setCablePick(null); }, [transform.x, transform.y, transform.scale, tool]);
+  useEffect(() => { setCableActions((a) => (a && a.choice.cableId !== selectedId ? null : a)); }, [selectedId]);
+  useEffect(() => { if (tool !== 'select') setCableActions(null); }, [tool]);
 
   const [draggingNote, setDraggingNote] = useState<{ elementId: string; startX: number; startY: number; startNoteX: number; startNoteY: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
@@ -1298,8 +1310,24 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
   // (length = the span distance, plus the electrical data — Stage 7.2).
   const handleSegmentClick = (e: React.PointerEvent, cableId: string, span: SpanRef | null) => {
     e.stopPropagation();
-    
+
     if (tool !== 'select' && tool !== 'cable' && tool !== 'cable_straight') return;
+    let via: string | undefined; // the cable whose hit area got the event, when another one is meant
+
+    // which cable is meant (select tool): the hit areas overlap, and the one drawn on top
+    // gets the event. Several cables within reach of this touch: a choice when the touch
+    // ends without moving. Exactly one, but another than the one that got the event: that
+    // one (with its own span). None: as before.
+    if (tool === 'select' && !arcPickState) {
+      const reach = (e.pointerType === 'mouse' ? 4 : 14) / (transform.scale || 1); // screen px: a finger, a mouse
+      const hits = cablesNear(elements, getWorldCoordinates(e.clientX, e.clientY), reach);
+      if (isAmbiguous(hits)) {
+        pendingSpanRef.current = null;
+        armCablePick(e, hits);
+        return;
+      }
+      if (hits.length === 1 && hits[0].cableId !== cableId) { via = cableId; cableId = hits[0].cableId; span = hits[0].span; }
+    }
 
     if (selectedId !== cableId) {
       setSelectedId(cableId);
@@ -1310,12 +1338,39 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
     if (!span) return;
     // opened when this tap ends (pointer-up), not now; the sheet ignores the
     // compatibility mouse/click events of this same tap (see useBackdropClose)
-    pendingSpanRef.current = { cableId, index: span.index };
+    pendingSpanRef.current = { cableId, index: span.index, via };
+  };
+  // the choice is opened on pointer-up of the same pointer, only if it did not move
+  // (> 8 px) and no second finger came (a pan or a pinch starting on cables)
+  const armCablePick = (e: React.PointerEvent, hits: CableHit[]) => {
+    const start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    let cancelled = false;
+    const done = () => {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onCancel, true);
+    };
+    const onMove = (ev: PointerEvent) => { if (ev.pointerId === start.id && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 8) cancelled = true; };
+    const onDown = (ev: PointerEvent) => { if (ev.pointerId !== start.id) cancelled = true; };
+    const onCancel = () => { cancelled = true; done(); };
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== start.id) return;
+      done();
+      if (cancelled || !svgRef.current) return;
+      const r = svgRef.current.getBoundingClientRect();
+      setCableActions(null);
+      setCablePick({ at: { x: start.x, y: start.y }, bounds: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, choices: cableChoices(elements, hits) });
+    };
+    window.addEventListener('pointermove', onMove, true);
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onCancel, true);
   };
   const openPendingSpan = (cableId: string) => {
     const p = pendingSpanRef.current;
     pendingSpanRef.current = null;
-    if (p && p.cableId === cableId) setEditingSpan(p);
+    if (p && (p.cableId === cableId || p.via === cableId)) setEditingSpan({ cableId: p.cableId, index: p.index });
   };
 
   const handleLabelPointerDown = (e: React.PointerEvent, key: string) => {
@@ -2628,6 +2683,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
     <div className="flex-1 w-full h-full bg-white overflow-hidden touch-none">
       <svg
         ref={svgRef}
+        data-drawing-canvas
         className="w-full h-full block"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -2842,6 +2898,23 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
           setActiveCableId(id);
         }}
       />
+      {cablePick && (
+        <CablePicker at={cablePick.at} bounds={cablePick.bounds} choices={cablePick.choices} selectedId={selectedId}
+          onClose={() => setCablePick(null)}
+          onPick={(c) => {
+            // the same selection a tap on that cable alone makes; no page is opened by choosing
+            setSelectedId(c.cableId);
+            setActiveCableId(c.cableId);
+            setCablePick(null);
+            setCableActions({ bounds: cablePick.bounds, choice: c });
+          }} />
+      )}
+      {cableActions && (
+        <CableActions bounds={cableActions.bounds} choice={cableActions.choice} styleAvailable={!fullScreen}
+          onClose={() => setCableActions(null)}
+          onStyle={() => { setCableActions(null); window.dispatchEvent(new CustomEvent(OPEN_STYLE_PANEL_EVENT)); }}
+          onDrop={() => { const s = cableActions.choice.span; setCableActions(null); if (s) setEditingSpan({ cableId: cableActions.choice.cableId, index: s.index }); }} />
+      )}
       {/* Context Menu */}
       {contextMenu.visible && contextMenu.elementId && (
         <ColumnContextMenu

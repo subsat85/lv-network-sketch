@@ -50,11 +50,16 @@ const CustomColour: React.FC<{ value: string; active: boolean; onPick: (c: strin
   );
 };
 
+/** event that unfolds the properties panel (the look of the selected element) */
+export const OPEN_STYLE_PANEL_EVENT = 'lv:open-style-panel';
+
 export const StylePanel: React.FC = () => {
   const { style, setStyle, selectedId, elements, updateElement, updateElements, poleSizeScale, setPoleSizeScale, distanceTextScale, setDistanceTextScale, consumerSizeScale, setConsumerSizeScale, showDistanceLabels, setShowDistanceLabels, updateSymbolModifiers } = useDrawingStore();
   // starts folded on a phone (the drawing keeps its room), open on a desktop as before; the user's
   // choice is kept from then on (also through full-screen mode, where the panel stays mounted)
   const [isCollapsed, setIsCollapsed] = useState(isSmallScreen);
+  // «تنسيق الكيبل» of the cable chooser (SketchCanvas) unfolds this panel; nothing else changes
+  useEffect(() => { const open = () => setIsCollapsed(false); window.addEventListener(OPEN_STYLE_PANEL_EVENT, open); return () => window.removeEventListener(OPEN_STYLE_PANEL_EVENT, open); }, []);
 
   const selectedElement = selectedId ? elements.find(e => e.id === selectedId) : null;
 
