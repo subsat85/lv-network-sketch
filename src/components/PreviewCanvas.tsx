@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ColumnModifiers } from './ColumnModifiers';
 import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerElement, ArcElement, DrawingElement, ShapeElement } from '../types/drawing';
 import { calculateCablePath } from '../utils/cableLayout';
@@ -6,6 +6,7 @@ import { cableEndArrow, suggestedSplitArrows, SUGGESTED_SPLIT_COLOR } from '../u
 import { CableArrowHead } from './CableArrowHead';
 import { arcGeometry } from '../utils/cableArcs';
 import { ProposalSvg } from './ProposalSvg';
+import { layoutProposalBoxes, proposalGeometry } from '../utils/proposalDrawing';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
 import { VoltageDropOverlay } from './VoltageDropOverlay';
 import type { VoltageDropResult } from '../utils/voltageDrop';
@@ -111,6 +112,17 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   voltageDrop = null,
   distanceFlags
 }) => {
+
+  // the same label layout as the canvas (overlayLayout.ts), at the sizes set (no on-screen minimum on paper)
+  const layoutCtx = useMemo(() => ({
+    poleRadius: POLE_RADIUS * poleSizeScale, consumerScale: consumerSizeScale, connectionDistances, connectionLabelOffsets, distanceTextScale,
+  }), [poleSizeScale, consumerSizeScale, connectionDistances, connectionLabelOffsets, distanceTextScale]);
+  const boxLayout = useMemo(() => layoutProposalBoxes(elements, layoutCtx, consumerSizeScale), [elements, layoutCtx, consumerSizeScale]);
+  const vdLayoutCtx = useMemo(() => ({ ...layoutCtx, showDistances: showDistanceLabels, arrowSize: 8 }), [layoutCtx, showDistanceLabels]);
+  const vdBoxes = useMemo(() => elements.filter((e): e is ConsumerElement => e.type === 'consumer' && !!(e as ConsumerElement).proposal).flatMap((c) => {
+    const g = proposalGeometry(elements, c, POLE_RADIUS * poleSizeScale, consumerSizeScale, boxLayout);
+    return g ? [{ x: g.box.cx - g.box.w / 2, y: g.box.cy - g.box.h / 2, w: g.box.w, h: g.box.h }] : [];
+  }), [elements, poleSizeScale, consumerSizeScale, boxLayout]);
 
   const getTransformerIntersection = (pole: SymbolElement, externalPoint: Point): Point => {
     const radius = POLE_RADIUS * poleSizeScale;
@@ -372,7 +384,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
       const cons = el as ConsumerElement;
       const pole = elements.find(e => e.id === cons.poleId);
       if (!pole) return null;
-      if (cons.proposal) return <ProposalSvg key={cons.id} elements={elements} consumer={cons} poleRadius={POLE_RADIUS * poleSizeScale} scale={consumerSizeScale} />;
+      if (cons.proposal) return <ProposalSvg key={cons.id} elements={elements} consumer={cons} poleRadius={POLE_RADIUS * poleSizeScale} scale={consumerSizeScale} layout={boxLayout} />;
       
       let cx, cy;
       if (cons.hasManualPosition) {
@@ -814,7 +826,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
       {elements.filter(el => el.type === 'cable').map(el => renderElement(el))}
       {elements.filter(el => el.type !== 'cable').map(el => renderElement(el))}
       {showDistanceLabels && renderConnectionLabels()}
-      {voltageDrop && <VoltageDropOverlay elements={elements} result={voltageDrop} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} />}
+      {voltageDrop && <VoltageDropOverlay elements={elements} result={voltageDrop} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} layoutContext={vdLayoutCtx} boxes={vdBoxes} />}
     </>
   );
 };

@@ -5,6 +5,10 @@ import { Check } from 'lucide-react';
 import { toggleSuggestedSplit } from '../utils/cableArrows';
 import { poleNamer } from '../utils/poleNames';
 import { proposalLoadText } from '../utils/proposedConsumers';
+import { useSmallScreen } from '../utils/smallScreen';
+
+/** the phone sheet's largest height, as a fraction of the visible height */
+export const SHEET_MAX = 0.45;
 import type { ConsumerElement } from '../types/drawing';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -12,14 +16,17 @@ const generateId = () => Math.random().toString(36).substr(2, 9);
 interface ColumnContextMenuProps {
   elementId: string;
   position: { x: number; y: number };
-  onClose: () => void;
+  /** 'touch': closed by a touch on the drawing (the user takes over the view) */
+  onClose: (reason?: 'touch') => void;
   onStartArc?: (poleId: string) => void;
   onOpenCableEnds?: (poleId: string) => void;
   /** «اقتراح مشترك جديد» (no id) / «تعديل المشترك المقترح» (its id) */
   onProposeConsumer?: (poleId: string, consumerId?: string) => void;
+  /** phone sheet: the screen y of its top edge, so the drawing can keep the pole visible above it */
+  onSheetTop?: (top: number) => void;
 }
 
-export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId, position, onClose, onStartArc, onOpenCableEnds, onProposeConsumer }) => {
+export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId, position, onClose, onStartArc, onOpenCableEnds, onProposeConsumer, onSheetTop }) => {
   const { elements, updateSymbolModifiers, updateElement, addElement, saveHistory } = useDrawingStore();
   const element = elements.find(el => el.id === elementId) as SymbolElement;
   const menuRef = useRef<HTMLDivElement>(null);
@@ -40,27 +47,77 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
   const endingHere = connectedCables.filter(c => c.poleIds[0] === elementId || c.poleIds[c.poleIds.length - 1] === elementId);
   const showCableEnds = endingHere.some(c => !!c.endLinks || connectedCables.some(o => o.id !== c.id && o.strokeColor.toLowerCase() === c.strokeColor.toLowerCase()));
 
+  // On a phone the menu is a sheet at the bottom (at most SHEET_MAX of the visible height,
+  // scrolling inside); on a desktop it is the popover it always was.
+  const small = useSmallScreen();
+  const [viewportTick, setViewportTick] = useState(0);
+  // the listeners below stay registered while the drawing re-renders (a drag re-renders it on
+  // every move): the latest onClose and the touch start are kept in refs
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        onClose();
+        onCloseRef.current();
       }
+    };
+    // a phone: a pan or a pinch on the drawing (a touch outside the sheet that moves, or two
+    // fingers) closes it — the user takes over the view. A plain tap outside closes it through
+    // the mousedown above (the view then moves back). Touches inside the sheet are left alone,
+    // so its own scrolling works.
+    const outside = (e: TouchEvent) => !!menuRef.current && !menuRef.current.contains(e.target as Node);
+    const handleTouchStart = (e: TouchEvent) => {
+      if (!outside(e)) { touchStartRef.current = null; return; }
+      if (e.touches.length > 1) { touchStartRef.current = null; onCloseRef.current('touch'); return; }
+      touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    };
+    const handleTouchMove = (e: TouchEvent) => {
+      const start = touchStartRef.current;
+      if (!start) return;
+      const t = e.touches[0];
+      if (e.touches.length > 1 || Math.hypot(t.clientX - start.x, t.clientY - start.y) > 6) { touchStartRef.current = null; onCloseRef.current('touch'); }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
+    if (small) {
+      document.addEventListener('touchstart', handleTouchStart, { passive: true });
+      document.addEventListener('touchmove', handleTouchMove, { passive: true });
+    }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchmove', handleTouchMove);
     };
-  }, [onClose]);
+  }, [small]);
+
+  // a phone: placed again when the visible area changes (rotation, resizing, browser bars)
+  useEffect(() => {
+    if (!small) return;
+    const bump = () => setViewportTick((t) => t + 1);
+    window.addEventListener('resize', bump);
+    window.visualViewport?.addEventListener('resize', bump);
+    return () => { window.removeEventListener('resize', bump); window.visualViewport?.removeEventListener('resize', bump); };
+  }, [small]);
 
   // Screen position after keeping the menu inside the visible viewport.
   // Default: centred above the tap point; flips below / slides sideways near edges.
   // A menu taller than the room above and below the tap point goes on the side with more
   // room and scrolls inside, so it never covers the tapped pole (it can then still be dragged).
-  const [placed, setPlaced] = useState<{ left: number; top: number; maxHeight?: number } | null>(null);
+  const [placed, setPlaced] = useState<{ left: number; top: number; maxHeight?: number; sheet?: boolean } | null>(null);
   useLayoutEffect(() => {
     const el = menuRef.current;
     if (!el) return;
+    if (small) {
+      const vv = window.visualViewport;
+      const vh = vv?.height ?? window.innerHeight, offTop = vv?.offsetTop ?? 0;
+      const maxHeight = Math.floor(vh * SHEET_MAX);
+      const top = offTop + vh - Math.min(el.scrollHeight, maxHeight);
+      setPlaced(prev => (prev && prev.sheet && prev.top === top && prev.maxHeight === maxHeight ? prev : { left: 0, top, maxHeight, sheet: true }));
+      onSheetTop?.(top);
+      return;
+    }
     const w = el.offsetWidth;
     const h = el.scrollHeight; // full content height, also while the menu is height-limited
     const vw = window.visualViewport?.width ?? window.innerWidth;
@@ -78,7 +135,7 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
     else { top = margin; maxHeight = Math.max(0, spaceAbove); }
     const left = Math.max(margin, Math.min(position.x - w / 2, vw - w - margin));
     setPlaced(prev => (prev && prev.left === left && prev.top === top && prev.maxHeight === maxHeight ? prev : { left, top, maxHeight }));
-  }, [position.x, position.y, showCableNumberMenu, showSplitMenu, element?.type]);
+  }, [position.x, position.y, showCableNumberMenu, showSplitMenu, element?.type, small, viewportTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!element || element.type !== 'symbol') return null;
 
@@ -171,9 +228,16 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
   return (
     <div 
       ref={menuRef}
-      className="fixed z-[51] ui-float !rounded-[14px] py-1 flex flex-col min-w-[220px] divide-y divide-ios-separator"
+      className={small
+        ? 'fixed z-[51] ui-float !rounded-b-none !rounded-t-[16px] py-1 flex flex-col divide-y divide-ios-separator'
+        : 'fixed z-[51] ui-float !rounded-[14px] py-1 flex flex-col min-w-[220px] divide-y divide-ios-separator'}
       role="menu"
-      style={placed ? { left: placed.left, top: placed.top, ...(placed.maxHeight !== undefined ? { maxHeight: placed.maxHeight, overflowY: 'auto', overscrollBehavior: 'contain' } : {}) } : {
+      data-menu-sheet={small ? 'yes' : undefined}
+      style={small ? {
+        left: 0, right: 0, bottom: 0, maxHeight: placed?.maxHeight ?? `${SHEET_MAX * 100}vh`,
+        overflowY: 'auto', overscrollBehavior: 'contain', touchAction: 'pan-y', WebkitOverflowScrolling: 'touch',
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      } : placed ? { left: placed.left, top: placed.top, ...(placed.maxHeight !== undefined ? { maxHeight: placed.maxHeight, overflowY: 'auto', overscrollBehavior: 'contain' } : {}) } : {
         left: position.x, 
         top: position.y,
         transform: 'translate(-50%, -100%) translateY(-10px)' 

@@ -5,10 +5,12 @@ import { useDrawingStore } from '../store/drawingStore';
 import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerElement, ArcElement, DrawingElement, ShapeElement, ShapeType, CableArcElement } from '../types/drawing';
 import { pathSegmentSpans, SpanRef } from '../utils/cableSegments';
 import { DrawnSpanHint, SpanPropertiesSheet } from './SpanPropertiesSheet';
-import { VoltageDropOverlay } from './VoltageDropOverlay';
+import { MIN_SCREEN_FONT_PX, VoltageDropOverlay } from './VoltageDropOverlay';
+import { distanceLabelExtraOffset, distanceLabelFontSizes, layoutViewScale } from '../utils/overlayLayout';
 import { CableEndsDialog } from './CableEndsDialog';
 import { ProposedConsumerSheet } from './ProposedConsumerSheet';
-import { proposalBoxCenter, proposalGeometry } from '../utils/proposalDrawing';
+import { layoutProposalBoxes, proposalBoxCenter, proposalGeometry } from '../utils/proposalDrawing';
+import { useSmallScreen } from '../utils/smallScreen';
 import { useVoltageDrop } from '../utils/useVoltageDrop';
 import { splitSpanInCables } from '../utils/spanModel';
 import { midPoleId } from '../utils/splitPoleId';
@@ -132,6 +134,25 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
   const showVoltageDrop = useDrawingStore((s) => s.showVoltageDrop);
   const vdResult = useVoltageDrop(showVoltageDrop);
 
+  // Label layout (overlayLayout.ts): the zoom stepped DOWN in 2 % steps (layoutViewScale; the layout is
+  // not redone on every pinch frame); texts are kept at least MIN_SCREEN_FONT_PX high on screen, never smaller than set.
+  const viewScale = layoutViewScale(transform.scale);
+  const minWorldFont = MIN_SCREEN_FONT_PX / viewScale;
+  const distanceFontSize = Math.max(10 * distanceTextScale, minWorldFont);
+  const boxDrawScale = consumerSizeScale * Math.max(1, minWorldFont / (12 * consumerSizeScale));
+  const layoutCtx = useMemo(() => ({
+    poleRadius: POLE_RADIUS * poleSizeScale, consumerScale: consumerSizeScale, connectionDistances, connectionLabelOffsets, distanceTextScale,
+  }), [poleSizeScale, consumerSizeScale, connectionDistances, connectionLabelOffsets, distanceTextScale]);
+  const boxLayout = useMemo(() => layoutProposalBoxes(elements, layoutCtx, consumerSizeScale, boxDrawScale), [elements, layoutCtx, consumerSizeScale, boxDrawScale]);
+  // the proposal boxes as drawn (final places): obstacles for the distance numbers and the results
+  const vdBoxes = useMemo(() => elements.filter((e): e is ConsumerElement => e.type === 'consumer' && !!(e as ConsumerElement).proposal).flatMap((c) => {
+    const g = proposalGeometry(elements, c, POLE_RADIUS * poleSizeScale, consumerSizeScale, boxLayout, boxDrawScale);
+    return g ? [{ x: g.box.cx - g.box.w / 2, y: g.box.cy - g.box.h / 2, w: g.box.w, h: g.box.h }] : [];
+  }), [elements, poleSizeScale, consumerSizeScale, boxLayout, boxDrawScale]);
+  // each distance number: the minimum only where it adds no overlap (it cannot move)
+  const distanceFontSizes = useMemo(() => distanceLabelFontSizes(elements, { ...layoutCtx, arrowSize: 8 / viewScale }, 10 * distanceTextScale, distanceFontSize, vdBoxes), [elements, layoutCtx, distanceTextScale, distanceFontSize, viewScale, vdBoxes]);
+  const vdLayoutCtx = useMemo(() => ({ ...layoutCtx, showDistances: showDistanceLabels, distanceFontSizes, arrowSize: 8 / viewScale }), [layoutCtx, showDistanceLabels, distanceFontSizes, viewScale]);
+
   const [isDragging, setIsDragging] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -151,6 +172,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
   const [proposalSheet, setProposalSheet] = useState<{ poleId: string; consumerId?: string } | null>(null);
   const closeProposalSheet = React.useCallback(() => setProposalSheet(null), []);
   const proposalTapRef = useRef<{ id: string; wasSelected: boolean; moved: boolean } | null>(null);
+
   const [pendingArc, setPendingArc] = useState<ArcElement | null>(null);
   const [pendingShape, setPendingShape] = useState<ShapeElement | null>(null);
   const [draggingArcPoint, setDraggingArcPoint] = useState<{ id: string, type: 'start' | 'end' | 'control' } | null>(null);
@@ -158,6 +180,46 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
   const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; elementId: string | null }>({
     visible: false, x: 0, y: 0, elementId: null
   });
+
+  // Phone pole menu (a sheet at the bottom): the view moves up just enough that the pole stays
+  // visible above it — a view change only (no coordinate changes) — and moves back when the menu
+  // closes, unless the user then took over the view (a touch on the drawing / a pan / a zoom).
+  const sheetShiftRef = useRef(0);
+  const programmaticViewRef = useRef(false);
+  // shifts asked for but not drawn yet (the screen position read below is then still the old one)
+  const pendingShiftRef = useRef(0);
+  const revealAboveSheet = React.useCallback((sheetTop: number) => {
+    const pole = contextMenu.elementId ? elements.find((e) => e.id === contextMenu.elementId) : undefined;
+    // the drawing group (it carries the view transform), as last drawn
+    const svg = svgRef.current, ctm = (svg?.querySelector(':scope > g') as SVGGElement | null)?.getScreenCTM();
+    if (!pole || !svg || !ctm) return;
+    const r = POLE_RADIUS * poleSizeScale * ctm.a, margin = 12;
+    const y = ctm.b * pole.x + ctm.d * pole.y + ctm.f - pendingShiftRef.current;
+    const minY = svg.getBoundingClientRect().top + r + margin; // keep it below the top of the drawing
+    const dy = Math.min(y + r + margin - sheetTop, y - minY);
+    if (dy <= 0.5) return;
+    sheetShiftRef.current += dy;
+    pendingShiftRef.current += dy;
+    programmaticViewRef.current = true;
+    setTransform((prev) => ({ ...prev, y: prev.y - dy }));
+  }, [contextMenu.elementId, elements, poleSizeScale]);
+  const closeColumnMenu = (reason?: 'touch') => {
+    const shift = sheetShiftRef.current;
+    sheetShiftRef.current = 0;
+    if (shift && reason !== 'touch') { programmaticViewRef.current = true; pendingShiftRef.current -= shift; setTransform((prev) => ({ ...prev, y: prev.y + shift })); }
+    setContextMenu((m) => ({ ...m, visible: false }));
+  };
+  // a phone: a pan or a zoom of the drawing while the menu is open closes it
+  const smallScreen = useSmallScreen();
+  const lastTransformRef = useRef(transform);
+  useEffect(() => {
+    const changed = lastTransformRef.current !== transform;
+    lastTransformRef.current = transform;
+    if (!changed) return;
+    pendingShiftRef.current = 0; // drawn now
+    if (programmaticViewRef.current) { programmaticViewRef.current = false; return; }
+    if (smallScreen && contextMenu.visible) { sheetShiftRef.current = 0; setContextMenu((m) => ({ ...m, visible: false })); }
+  }, [transform]); // eslint-disable-line react-hooks/exhaustive-deps
   // Cable arc tool: pick two connection points at one pole; each pair becomes an arc.
   const [arcPickState, setArcPickState] = useState<ArcPickState>(null);
   const arcRadius = POLE_RADIUS * poleSizeScale;
@@ -653,7 +715,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
         const prop = el.type === 'consumer' ? (el as ConsumerElement).proposal : undefined;
         if (prop) {
           const pole = elements.find((p) => p.id === (el as ConsumerElement).poleId);
-          const B = proposalBoxCenter(elements, el as ConsumerElement, POLE_RADIUS * poleSizeScale, consumerSizeScale);
+          const B = proposalBoxCenter(elements, el as ConsumerElement, POLE_RADIUS * poleSizeScale, consumerSizeScale, boxLayout);
           if (pole && B && (dx || dy)) {
             updateElement(selectedId, { proposal: { ...prop, boxOffset: { x: B.x + dx - pole.x, y: B.y + dy - pole.y } } });
             if (proposalTapRef.current?.id === selectedId) proposalTapRef.current.moved = true;
@@ -1649,7 +1711,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
 
   // «مشترك مقترح»: box («مشترك» + load in A), line to the pole, jumper to the chosen cable
   const renderProposal = (el: ConsumerElement) => {
-    const g = proposalGeometry(elements, el, POLE_RADIUS * poleSizeScale, consumerSizeScale);
+    const g = proposalGeometry(elements, el, POLE_RADIUS * poleSizeScale, consumerSizeScale, boxLayout, boxDrawScale);
     if (!g) return null;
     const isSelected = el.id === selectedId;
     const confirmed = el.proposal?.status === 'confirmed';
@@ -1669,8 +1731,8 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
             if (tool === 'select' && t && t.id === el.id && t.wasSelected && !t.moved) { e.stopPropagation(); setProposalSheet({ poleId: el.poleId, consumerId: el.id }); }
           }}
           style={{ pointerEvents: tool === 'select' ? 'all' : 'none' }} />
-        <text x={cx} y={cy - h * 0.12} textAnchor="middle" fill={stroke} fontSize={12 * consumerSizeScale} fontWeight="bold" style={{ pointerEvents: 'none' }}>مشترك</text>
-        <text x={cx} y={cy + h * 0.32} textAnchor="middle" fill={stroke} fontSize={12 * consumerSizeScale} fontWeight="bold" style={{ pointerEvents: 'none' }}>{g.amps !== undefined ? `${Number.isInteger(g.amps) ? g.amps : g.amps.toFixed(1)} A` : '? A'}</text>
+        <text x={cx} y={cy - h * 0.12} textAnchor="middle" fill={stroke} fontSize={12 * boxDrawScale} fontWeight="bold" style={{ pointerEvents: 'none' }}>مشترك</text>
+        <text x={cx} y={cy + h * 0.32} textAnchor="middle" fill={stroke} fontSize={12 * boxDrawScale} fontWeight="bold" style={{ pointerEvents: 'none' }}>{g.amps !== undefined ? `${Number.isInteger(g.amps) ? g.amps : g.amps.toFixed(1)} A` : '? A'}</text>
         {!g.connected && <text x={cx + w / 2 + 4} y={cy - h / 2} fill="red" fontSize={14 * consumerSizeScale} fontWeight="bold" style={{ pointerEvents: 'none' }}>؟</text>}
       </g>
     );
@@ -1844,7 +1906,9 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
       // So we can place label at base_offset.
       // If maxOffset > 0, we place at maxOffset + base_offset.
       const baseOffset = 15 * distanceTextScale;
-      const labelOffset = Math.max(0, maxOffset) + baseOffset;
+      // drawn larger than set (the on-screen minimum at a small zoom): as far from the cable as at its set size
+      const labelFont = distanceFontSizes.get(key) ?? 10 * distanceTextScale;
+      const labelOffset = Math.max(0, maxOffset) + baseOffset + distanceLabelExtraOffset(labelFont, 10 * distanceTextScale);
       const storedOffset = connectionLabelOffsets[key] || { x: 0, y: 0 };
       
       const lx = mx + nx * labelOffset + storedOffset.x;
@@ -1864,7 +1928,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
             x={0} y={0}
             dy=".3em"
             textAnchor="middle"
-            fontSize={10 * distanceTextScale}
+            fontSize={labelFont}
             fill="red"
             fontWeight="bold"
             stroke="white"
@@ -2579,7 +2643,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
 
           {showDistanceLabels && renderConnectionLabels()}
 
-          {vdResult && <VoltageDropOverlay elements={elements} result={vdResult} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} />}
+          {vdResult && <VoltageDropOverlay elements={elements} result={vdResult} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} layoutContext={vdLayoutCtx} boxes={vdBoxes} viewScale={viewScale} />}
 
           {renderArcPicker()}
 
@@ -2792,7 +2856,8 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
         <ColumnContextMenu
           elementId={contextMenu.elementId}
           position={{ x: contextMenu.x, y: contextMenu.y }}
-          onClose={() => setContextMenu({ ...contextMenu, visible: false })}
+          onClose={(reason) => closeColumnMenu(reason)}
+          onSheetTop={revealAboveSheet}
           onStartArc={(poleId) => dispatchArcPick({ type: 'start', poleId })}
           onOpenCableEnds={(poleId) => setCableEndsPole(poleId)}
           onProposeConsumer={(poleId, consumerId) => setProposalSheet({ poleId, consumerId })}

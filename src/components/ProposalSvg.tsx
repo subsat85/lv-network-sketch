@@ -1,10 +1,10 @@
 import React from 'react';
-import type { ConsumerElement, DrawingElement } from '../types/drawing';
+import type { ConsumerElement, DrawingElement, Point } from '../types/drawing';
 import { proposalGeometry } from '../utils/proposalDrawing';
 
 /** A proposed subscriber as drawn in the share preview / PDF (the same geometry as the canvas). */
-export const ProposalSvg: React.FC<{ elements: DrawingElement[]; consumer: ConsumerElement; poleRadius: number; scale: number }> = ({ elements, consumer, poleRadius, scale }) => {
-  const g = proposalGeometry(elements, consumer, poleRadius, scale);
+export const ProposalSvg: React.FC<{ elements: DrawingElement[]; consumer: ConsumerElement; poleRadius: number; scale: number; layout?: Map<string, Point> }> = ({ elements, consumer, poleRadius, scale, layout }) => {
+  const g = proposalGeometry(elements, consumer, poleRadius, scale, layout);
   if (!g) return null;
   const dash = consumer.proposal?.status === 'confirmed' ? undefined : '5 3';
   const { cx, cy, w, h } = g.box;

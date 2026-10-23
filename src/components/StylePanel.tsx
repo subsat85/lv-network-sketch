@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { isSmallScreen } from '../utils/smallScreen';
 import { useDrawingStore } from '../store/drawingStore';
 import { Minus, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import { ICON_SM } from './ui/icons';
@@ -18,7 +19,9 @@ const COLORS = [
 
 export const StylePanel: React.FC = () => {
   const { style, setStyle, selectedId, elements, updateElement, updateElements, poleSizeScale, setPoleSizeScale, distanceTextScale, setDistanceTextScale, consumerSizeScale, setConsumerSizeScale, showDistanceLabels, setShowDistanceLabels, updateSymbolModifiers } = useDrawingStore();
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  // starts folded on a phone (the drawing keeps its room), open on a desktop as before; the user's
+  // choice is kept from then on (also through full-screen mode, where the panel stays mounted)
+  const [isCollapsed, setIsCollapsed] = useState(isSmallScreen);
 
   const selectedElement = selectedId ? elements.find(e => e.id === selectedId) : null;
 
