@@ -1,6 +1,7 @@
 import type { CableArcElement, CableElement, ConsumerElement, DrawingElement, SymbolElement } from '../types/drawing';
 import { occurrenceIndex } from './cableArcs';
 import { consumerLoad } from './loads';
+import { splitSideKey, type SplitSide } from './splitStudy';
 
 // ---------------------------------------------------------------------------
 // Electrical topology of the drawing — a calculation layer only; it reads the
@@ -34,7 +35,17 @@ import { consumerLoad } from './loads';
 //     explicitly) and is reported. Junctions made by the 'auto' rule are listed
 //     (inferredJunctions) so they can be reviewed;
 //   - pole-to-pole links read from version 2 files are not used (their meaning
-//     is not defined) — reported as a warning.
+//     is not defined) — reported as a warning;
+//   - voltage-drop study with suggested split points (option studySplits, from
+//     ElectricalSettings.studySuggestedSplits; off by default): at a suggested split
+//     at an INTERIOR pole of a cable (CableElement.suggestedSplits, each visit of the
+//     pole) the cable's two sides are separate. The side chosen in
+//     splitConsumerSides keeps that connection point (consumers and the joins above,
+//     unchanged); the other side is an open end there, joined only by a Jumper that
+//     names that side. No side chosen: both sides are open; if anything at that pole
+//     could belong to one of them (a consumer or a cable of its colour, a transformer,
+//     a chosen source) the network is not computed (split-side-unassigned) — nothing
+//     is guessed. Suggestions at a cable's first / last pole are not used here.
 //
 // Supply of a connected network:
 //   - a pole the user marked as source wins (transformers inside the network are
@@ -61,7 +72,8 @@ export type NetworkIssue =
   | { kind: 'invalid-load'; consumerId: string; poleId: string; label: string }
   | { kind: 'isolated-end-jumpered'; poleId: string; cableId: string }
   | { kind: 'connected-end-alone'; poleId: string; cableId: string }
-  | { kind: 'three-phase-on-single-phase'; spanKey: string };
+  | { kind: 'three-phase-on-single-phase'; spanKey: string }
+  | { kind: 'split-side-unassigned'; poleId: string; cableId: string; occurrence: number };
 
 /** A junction the 'auto' rule made: a cable end joined to same-colour cables at a pole. */
 export interface InferredJunction {
@@ -151,10 +163,39 @@ class DSU {
   union(a: string, b: string) { const ra = this.find(a), rb = this.find(b); if (ra !== rb) this.parent.set(rb < ra ? ra : rb, rb < ra ? rb : ra); }
 }
 
-export const buildNetwork = (elements: DrawingElement[]): Network => {
+export interface BuildNetworkOptions {
+  /** calculate the suggested split points at interior poles as open points (the study) */
+  studySplits?: boolean;
+}
+
+export const buildNetwork = (elements: DrawingElement[], opts: BuildNetworkOptions = {}): Network => {
   const poles = new Map<string, SymbolElement>();
   for (const e of elements) if (e.type === 'symbol') poles.set(e.id, e);
   const cables = elements.filter((e): e is CableElement => e.type === 'cable');
+  const consumers = elements.filter((e): e is ConsumerElement => e.type === 'consumer');
+
+  // study split points: cable → index in poleIds → side kept at the pole (null: not chosen)
+  const splitAt = new Map<string, Map<number, SplitSide | null>>();
+  if (opts.studySplits) for (const c of cables) {
+    const ids = new Set(c.suggestedSplits ?? []);
+    if (!ids.size) continue;
+    const seen = new Map<string, number>();
+    c.poleIds.forEach((pid, i) => {
+      const occ = seen.get(pid) ?? 0; seen.set(pid, occ + 1);
+      if (!ids.has(pid) || i === 0 || i === c.poleIds.length - 1) return;
+      const m = splitAt.get(c.id) ?? new Map<number, SplitSide | null>();
+      m.set(i, c.splitConsumerSides?.[splitSideKey(pid, occ)] ?? null);
+      splitAt.set(c.id, m);
+    });
+  }
+  /** connection point of one side of a pole visit: the visit's own one, or the open end of a split side */
+  const keyAt = (cableId: string, i: number, side: SplitSide) => {
+    const m = splitAt.get(cableId);
+    if (!m || !m.has(i)) return terminalKey(cableId, i);
+    return m.get(i) === side ? terminalKey(cableId, i) : `${terminalKey(cableId, i)}~${side}`;
+  };
+  const openEnds: { key: string; poleId: string }[] = [];
+  const unassigned: { poleId: string; cable: CableElement; index: number; occurrence: number }[] = [];
   const issues: NetworkIssue[] = [];
   const dsu = new DSU();
   type Terminal = { key: string; color: string; cableId: string; isEnd: boolean; side?: 'start' | 'end'; link?: 'connected' | 'isolated' };
@@ -166,9 +207,18 @@ export const buildNetwork = (elements: DrawingElement[]): Network => {
 
   // connection points
   for (const c of cables) {
+    const occ = new Map<string, number>();
     c.poleIds.forEach((pid, i) => {
+      const occurrence = occ.get(pid) ?? 0; occ.set(pid, occurrence + 1);
       if (!poles.has(pid)) { issues.push({ kind: 'missing-pole', cableId: c.id, poleId: pid }); return; }
       const key = terminalKey(c.id, i);
+      const split = splitAt.get(c.id);
+      if (split?.has(i)) {
+        // study split: the side not kept is an open end at this pole (not a connection point of the pole)
+        const kept = split.get(i);
+        for (const side of ['prev', 'next'] as const) if (side !== kept) { const k = keyAt(c.id, i, side); dsu.add(k); openEnds.push({ key: k, poleId: pid }); }
+        if (!kept) { unassigned.push({ poleId: pid, cable: c, index: i, occurrence }); return; }
+      }
       dsu.add(key);
       const list = terminalsAtPole.get(pid) ?? [];
       const isEnd = i === 0 || i === c.poleIds.length - 1;
@@ -178,6 +228,17 @@ export const buildNetwork = (elements: DrawingElement[]): Network => {
       terminalsAtPole.set(pid, list);
     });
   }
+  // a split without a chosen side: not computed when something at the pole could belong to either side
+  for (const u of unassigned) {
+    const pole = poles.get(u.poleId)!;
+    const color = normColor(u.cable.strokeColor);
+    const matters = isTransformer(pole) || !!pole.modifiers?.vdSource
+      || (terminalsAtPole.get(u.poleId) ?? []).some((t) => t.color === color)
+      || consumers.some((x) => x.poleId === u.poleId && normColor(x.color) === color);
+    if (matters) for (const side of ['prev', 'next'] as const)
+      blocking.push({ key: keyAt(u.cable.id, u.index, side), issue: { kind: 'split-side-unassigned', poleId: u.poleId, cableId: u.cable.id, occurrence: u.occurrence } });
+  }
+
   // joins at poles (see the rules above)
   for (const [pid, all] of terminalsAtPole) {
     const pole = poles.get(pid)!;
@@ -227,7 +288,8 @@ export const buildNetwork = (elements: DrawingElement[]): Network => {
     const ends = [arc.from, arc.to].map((end) => {
       const c = cableById.get(end.cableId);
       const i = c ? occurrenceIndex(c, arc.poleId, end.occurrence) : -1;
-      return c && i >= 0 && poles.has(arc.poleId) ? terminalKey(c.id, i) : null;
+      // the side the Jumper names (the same point unless the visit is a study split)
+      return c && i >= 0 && poles.has(arc.poleId) ? keyAt(c.id, i, end.side) : null;
     });
     if (ends[0] && ends[1]) {
       dsu.union(ends[0], ends[1]);
@@ -247,13 +309,19 @@ export const buildNetwork = (elements: DrawingElement[]): Network => {
     poleOfBus.set(b, pid);
     if (t.link !== 'isolated') liveBus.add(b);
   }
+  // open ends of study splits: at their pole, but never a supply there
+  for (const o of openEnds) {
+    const b = dsu.find(o.key);
+    busOfTerminal.set(o.key, b);
+    if (!poleOfBus.has(b)) poleOfBus.set(b, o.poleId);
+  }
 
   // spans (edges)
   interface Edge { cable: CableElement; index: number; a: string; b: string; busA: string; busB: string }
   const edges: Edge[] = [];
   for (const c of cables) {
     for (let i = 0; i < c.poleIds.length - 1; i++) {
-      const ka = terminalKey(c.id, i), kb = terminalKey(c.id, i + 1);
+      const ka = keyAt(c.id, i, 'next'), kb = keyAt(c.id, i + 1, 'prev');
       const busA = busOfTerminal.get(ka), busB = busOfTerminal.get(kb);
       if (!busA || !busB || busA === busB) continue;
       edges.push({ cable: c, index: i, a: c.poleIds[i], b: c.poleIds[i + 1], busA, busB });
@@ -266,7 +334,6 @@ export const buildNetwork = (elements: DrawingElement[]): Network => {
 
   // consumers → buses
   const consumerBus = new Map<string, string | null>();
-  const consumers = elements.filter((e): e is ConsumerElement => e.type === 'consumer');
   for (const cons of consumers) {
     const list = terminalsAtPole.get(cons.poleId) ?? [];
     const t = list.find((x) => x.color === normColor(cons.color));

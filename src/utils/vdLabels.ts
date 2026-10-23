@@ -91,6 +91,7 @@ export const issueText = (i: NetworkIssue, poleName: (id: string) => string): st
     case 'isolated-end-jumpered': return `طرف كيبل عند ${poleName(i.poleId)} معلَّم «منفصل» لكن عليه Jumper: اعتُبر الـ Jumper (يربط طرفين محددين) — راجع أحدهما`;
     case 'connected-end-alone': return `طرف كيبل عند ${poleName(i.poleId)} معلَّم «متصل» ولا يوجد عنده كيبل آخر بلونه يتصل به`;
     case 'invalid-load': return `مشترك على ${poleName(i.poleId)} قيمة حمله غير صالحة («${i.label}»): لم يُستعمل في الحساب`;
+    case 'split-side-unassigned': return `نقطة فصل مقترحة عند ${poleName(i.poleId)} (دراسة الفصل مفعّلة): اختر الجهة التي يبقى عليها المشتركون واتصالات العمود — لا تُحسب الشبكة قبل ذلك`;
   }
 };
 

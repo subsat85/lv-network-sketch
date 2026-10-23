@@ -230,7 +230,8 @@ export const computeVoltageDrop = (
   distances: Record<string, string>,
   settings: ElectricalSettings,
   distanceFlags: Record<string, DistanceFlag> = {},
-  network: Network = buildNetwork(elements),
+  // the study with suggested split points is a setting of the project (off unless switched on)
+  network: Network = buildNetwork(elements, { studySplits: settings.studySuggestedSplits === true }),
 ): VoltageDropResult => {
   const cables = new Map<string, CableElement>();
   for (const e of elements) if (e.type === 'cable') cables.set(e.id, e);

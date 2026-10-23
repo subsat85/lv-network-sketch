@@ -71,6 +71,15 @@ export interface CableElement extends BaseElement {
    * the cable is not cut and its connections, lengths and calculations are unchanged.
    */
   suggestedSplits?: string[];
+  /**
+   * For the voltage-drop study with suggested split points (ElectricalSettings.studySuggestedSplits):
+   * at each suggested split at an interior pole of this cable, the side that stays connected to the
+   * pole — its consumers and its other connections. Key `${poleId}#${occurrence}` (occurrence = which
+   * visit of that pole by this cable, as for Jumpers); 'prev' = the side towards the previous pole in
+   * poleIds, 'next' = towards the next one. The other side is an open end there (only a Jumper that
+   * names it connects it). Missing = not chosen yet (the network is not computed while it matters).
+   */
+  splitConsumerSides?: Record<string, 'prev' | 'next'>;
   cableType?: 'overhead' | 'ground';
   lineStyle?: 'zigzag' | 'straight';
   distances?: Record<number, string>; // Key: index of start pole in poleIds
@@ -185,6 +194,12 @@ export interface ElectricalSettings {
    * nominal voltage, so its current is scaled by V_nominal / V at its pole (iterated).
    */
   loadModel?: 'constant-current' | 'constant-power';
+  /**
+   * Voltage-drop study: when true, every suggested split point at an interior pole of a cable
+   * (CableElement.suggestedSplits) is calculated as an electrical open point there. Off / missing
+   * (the default, and every project saved before): suggestions are drawing marks only.
+   */
+  studySuggestedSplits?: boolean;
 }
 
 /**

@@ -21,6 +21,7 @@ import { DEFAULT_POWER_FACTOR, isPowerFactorDefault } from '../utils/electricalS
 import { planMissingDefaults } from '../utils/spanDefaults';
 import { DEFAULTS_REVIEW_SHORT } from '../utils/vdLabels';
 import { ALPHA_SOURCE, CONDUCTOR_TABLE_SOURCE } from '../data/conductors';
+import { allStudySplitPoints, endSplitPoints, setSplitConsumerSide, type SplitSide } from '../utils/splitStudy';
 
 // Voltage-drop settings, results and report (Stages 7.6 / 7.7).
 
@@ -66,6 +67,7 @@ export const voltageDropReportText = (r: VoltageDropResult, name: (id: string) =
   lines.push(`الفولتية الاسمية ${s.phaseVoltage}/${s.lineVoltage} V — الحد ${s.limitPercent}% (مرجعي، يُطابق مع معيار المشروع) — أدنى فولتية ${s.minPhaseVoltage} V طور / ${s.minLineVoltage} V بين الأطوار`);
   lines.push(`cos φ = ${s.powerFactor ?? 'غير مُدخل'}${powerFactorDefault ? ' (افتراضي)' : ''} — حرارة الموصل ${s.conductorTempC ?? 'غير مُدخلة'} °C — أحمال الطور الواحد: ${s.singlePhaseMode === 'worst' ? 'أسوأ حالة (على الطور المفحوص)' : 'موزعة بالتساوي (افتراض)'}`);
   lines.push(`نموذج الحمل: ${LOAD_MODEL_LABEL[s.loadModel ?? 'constant-current']}${(s.loadModel ?? 'constant-current') === 'constant-power' ? ' (التيار يتغير مع الفولتية عند كل عمود، حساب بالتكرار)' : ''}`);
+  if (s.studySuggestedSplits) lines.push('دراسة: نقاط الفصل المقترحة (في نص الكيبل) محسوبة كنقاط فتح كهربائية');
   for (const m of r.settingsMissing) lines.push(`ناقص: ${SETTING_MISSING_LABEL[m]}`);
   r.circuits.forEach((c, i) => {
     lines.push('');
@@ -95,7 +97,7 @@ export const voltageDropReportText = (r: VoltageDropResult, name: (id: string) =
 };
 
 export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const { elements, electrical, updateElectricalSettings, saveHistory, showVoltageDrop, setShowVoltageDrop, updateSymbolModifiers, updateElements } = useDrawingStore();
+  const { elements, electrical, updateElectricalSettings, saveHistory, showVoltageDrop, setShowVoltageDrop, updateSymbolModifiers, updateElements, updateElement } = useDrawingStore();
   const pfDefault = isPowerFactorDefault(electrical);
   // spans with missing properties (old drawings): filled only on request, in one undo step (Stage 7.13)
   const defaultsPlan = useMemo(() => planMissingDefaults(elements), [elements]);
@@ -125,6 +127,16 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
     saveHistory();
   };
   const setSource = (poleId: string, on: boolean) => { saveHistory(); updateSymbolModifiers(poleId, { vdSource: on }); saveHistory(); };
+  // voltage-drop study with the suggested split points: each change is one undo step
+  const study = electrical.studySuggestedSplits === true;
+  const splitPoints = useMemo(() => allStudySplitPoints(elements), [elements]);
+  const endSplits = useMemo(() => elements.filter((e): e is CableElement => e.type === 'cable').flatMap(endSplitPoints), [elements]);
+  const setStudy = (on: boolean) => { saveHistory(); updateElectricalSettings({ studySuggestedSplits: on }); saveHistory(); };
+  const setSplitSide = (cableId: string, poleId: string, occurrence: number, side: SplitSide) => {
+    const c = cables.get(cableId);
+    if (!c) return;
+    saveHistory(); updateElement(cableId, setSplitConsumerSide(c, poleId, occurrence, side)); saveHistory();
+  };
   const copyReport = async () => {
     const text = voltageDropReportText(result, name, cables, pfDefault);
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { window.prompt('انسخ التقرير:', text); }
@@ -185,6 +197,42 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
 
           <p className="mb-2 text-[13px] text-ios-label" data-vd-load-model={electrical.loadModel ?? 'constant-current'}>نموذج الحمل المستعمل في النتائج: <b>{LOAD_MODEL_LABEL[electrical.loadModel ?? 'constant-current']}</b></p>
           <p className="mb-2 text-[13px] text-ios-label" data-vd-power-factor={pfDefault ? 'default' : 'saved'}>cos φ المستعمل: <b>{pfDefault ? DEFAULT_POWER_FACTOR : electrical.powerFactor}</b>{pfDefault && <span className="text-ios-secondary"> (افتراضي — غير محفوظ في المشروع؛ أدخله واحفظ الإعدادات لاعتماد قيمة أخرى)</span>}</p>
+
+          {/* study: suggested split points calculated as open points (off = drawing marks only) */}
+          <section aria-label="دراسة نقاط الفصل المقترحة" data-vd-split-study={study ? 'on' : 'off'} className={`mb-3 rounded-ctl border p-3 text-[13px] ${study ? 'border-ios-red/40 bg-red-50' : 'border-ios-separator'}`}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-semibold text-ios-label">احسب مع نقاط الفصل المقترحة (دراسة)</span>
+              <button type="button" role="switch" aria-checked={study} aria-label="احسب مع نقاط الفصل المقترحة (دراسة)" className="ui-switch shrink-0" onClick={() => setStudy(!study)}><span className="ui-switch-knob" /></button>
+            </div>
+            <p className="mt-1 text-[12px] text-ios-secondary">{study
+              ? 'مفعّلة: كل نقطة فصل مقترحة في نص كيبل تُحسب كنقطة فتح — الجهتان منفصلتان كهربائيًا. الجهة المختارة تبقى على العمود (مشتركوه وربطه)، والجهة الأخرى طرف مفتوح لا يتصل إلا بجمبر يحددها.'
+              : 'غير مفعّلة: نقاط الفصل المقترحة علامات على الرسم فقط ولا تغيّر الحساب.'}</p>
+            {splitPoints.length === 0 && <p className="mt-2 text-ios-tertiary">لا توجد نقاط فصل مقترحة في نص كيبل.</p>}
+            {splitPoints.length > 0 && (
+              <ul className="mt-2 flex flex-col gap-2">
+                {splitPoints.map((p) => {
+                  const col = cables.get(p.cableId)?.strokeColor ?? '#000';
+                  return (
+                    <li key={`${p.cableId}|${p.poleId}#${p.occurrence}`} data-vd-split-point={`${p.cableId}|${p.poleId}#${p.occurrence}`} data-vd-split-side={p.consumerSide ?? 'none'} className="flex flex-col gap-1 rounded-ctl bg-white/70 p-2 ring-1 ring-inset ring-black/5">
+                      <span className="flex flex-wrap items-center gap-2 text-ios-label">
+                        <span className="h-3 w-3 shrink-0 rounded-full ring-1 ring-inset ring-black/10" style={{ backgroundColor: col }} />
+                        <b>{name(p.poleId)}</b>
+                        <span className="text-ios-secondary">بين {name(p.prevPoleId)} و{name(p.nextPoleId)}</span>
+                        {!p.consumerSide && <span className="font-semibold text-amber-900">⚠ اختر الجهة</span>}
+                      </span>
+                      <span className="text-[12px] text-ios-secondary">المشتركون واتصالات العمود يبقون مع:</span>
+                      <div className="ui-segment self-start max-w-full flex-wrap" role="radiogroup" aria-label={`جهة المشتركين عند ${name(p.poleId)}`}>
+                        {(['prev', 'next'] as const).map((side) => (
+                          <button key={side} type="button" role="radio" aria-checked={p.consumerSide === side} className={`ui-segment-item ${p.consumerSide === side ? 'is-active' : ''}`} onClick={() => setSplitSide(p.cableId, p.poleId, p.occurrence, side)}>باتجاه {name(side === 'prev' ? p.prevPoleId : p.nextPoleId)}</button>
+                        ))}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {endSplits.length > 0 && <p className="mt-2 text-[12px] text-ios-tertiary">نقاط مقترحة عند طرف كيبل ({[...new Set(endSplits.map((e) => name(e.poleId)))].join('، ')}) لا تدخل الدراسة: لفصل طرف كيبل استعمل «منفصل» في «ربط الكوابل».</p>}
+          </section>
 
           {/* old drawings: spans with missing properties, filled only on request (Stage 7.13) */}
           {(defaultsPlan.empty > 0 || defaultsPlan.partial > 0) && (

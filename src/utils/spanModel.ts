@@ -1,5 +1,6 @@
 import type { CableElement, DrawingElement, SpanProps, SpanReview } from '../types/drawing';
 import { pruneSuggestedSplits } from './cableArrows';
+import { pruneSplitSides } from './splitStudy';
 
 // ---------------------------------------------------------------------------
 // Span identity and per-span electrical properties.
@@ -254,8 +255,9 @@ export const reconcileElements = (prev: DrawingElement[], next: DrawingElement[]
     if (el.type !== 'cable') return el;
     const p = before.get(el.id);
     if (p === el) return el;
-    // a suggested split mark stays only on a pole that is still on the cable (cableArrows.ts)
-    const r = pruneSuggestedSplits(reconcileCable(p, el, genId));
+    // a suggested split mark stays only on a pole that is still on the cable (cableArrows.ts),
+    // and a split side choice only where it still means the same place (splitStudy.ts)
+    const r = pruneSplitSides(p, pruneSuggestedSplits(reconcileCable(p, el, genId)));
     if (r !== el) changed = true;
     return r;
   });

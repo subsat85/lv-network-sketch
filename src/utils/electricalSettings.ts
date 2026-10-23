@@ -34,6 +34,7 @@ const CHECKS: Checks = {
   conductorTempC: (v) => num(v, (n) => n >= -40 && n <= 250),
   singlePhaseMode: (v) => (v === 'worst' || v === 'balanced' ? v : undefined),
   loadModel: (v) => (v === 'constant-current' || v === 'constant-power' ? v : undefined),
+  studySuggestedSplits: (v) => (typeof v === 'boolean' ? v : undefined),
 };
 
 /** Settings read from a file / draft. Missing fields get defaults; invalid ones are reported. */

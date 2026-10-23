@@ -144,6 +144,9 @@ export const validateProjectFile = (raw: unknown): ValidateProjectResult => {
         // suggested split marks: pole ids (a pole that is not on the cable is shown nothing)
         if (el.suggestedSplits !== undefined && (!Array.isArray(el.suggestedSplits) || el.suggestedSplits.some((p) => !isStr(p))))
           err(`${label}: نقاط الفصل المقترحة (suggestedSplits) غير صالحة.`);
+        // study split sides: { "poleId#occurrence": "prev" | "next" } (stale entries are dropped on the first edit)
+        if (el.splitConsumerSides !== undefined && (!isObj(el.splitConsumerSides) || Object.entries(el.splitConsumerSides).some(([k, v]) => !/#\d+$/.test(k) || (v !== 'prev' && v !== 'next'))))
+          err(`${label}: جهات نقاط الفصل (splitConsumerSides) غير صالحة.`);
         break;
       case 'jumper':
         if (!isStr(el.fromPoleId) || !isStr(el.toPoleId)) err(`وصلة (v2) "${String(el.id)}": بيانات ناقصة.`);
