@@ -141,6 +141,9 @@ export const validateProjectFile = (raw: unknown): ValidateProjectResult => {
           if (!isObj(el.endLinks) || !ok(el.endLinks.start) || !ok(el.endLinks.end) || Object.keys(el.endLinks).some((k) => k !== 'start' && k !== 'end'))
             err(`${label}: حالة أطراف الكيبل (endLinks) غير صالحة.`);
         }
+        // suggested split marks: pole ids (a pole that is not on the cable is shown nothing)
+        if (el.suggestedSplits !== undefined && (!Array.isArray(el.suggestedSplits) || el.suggestedSplits.some((p) => !isStr(p))))
+          err(`${label}: نقاط الفصل المقترحة (suggestedSplits) غير صالحة.`);
         break;
       case 'jumper':
         if (!isStr(el.fromPoleId) || !isStr(el.toPoleId)) err(`وصلة (v2) "${String(el.id)}": بيانات ناقصة.`);

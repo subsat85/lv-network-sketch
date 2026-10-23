@@ -13,30 +13,14 @@ import { midPoleId } from '../utils/splitPoleId';
 import { withDefaultSpan } from '../utils/spanDefaults';
 import { arcGeometry, arcPick, ArcPickAction, ArcPickState, createArc, listConnectionPoints, sameEnd } from '../utils/cableArcs';
 import { calculateCablePath } from '../utils/cableLayout';
+import { cableEndArrow, suggestedSplitArrows, SUGGESTED_SPLIT_COLOR } from '../utils/cableArrows';
+import { CableArrowHead } from './CableArrowHead';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
 import { simplifyPath, detectShape, generateSmoothPathData } from '../utils/pathUtils';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const POLE_RADIUS = 20;
 const CABLE_SPACING = 8;
-
-const getCircleSegmentIntersection = (p1: Point, p2: Point, center: Point, r: number): Point | null => {
-  const dx = p2.x - p1.x;
-  const dy = p2.y - p1.y;
-  const fx = p1.x - center.x;
-  const fy = p1.y - center.y;
-  const a = dx * dx + dy * dy;
-  const b = 2 * (fx * dx + fy * dy);
-  const c = (fx * fx + fy * fy) - r * r;
-  let delta = b * b - 4 * a * c;
-  if (delta < 0) return null;
-  delta = Math.sqrt(delta);
-  const t1 = (-b - delta) / (2 * a);
-  const t2 = (-b + delta) / (2 * a);
-  if (t1 >= 0 && t1 <= 1) return { x: p1.x + t1 * dx, y: p1.y + t1 * dy };
-  if (t2 >= 0 && t2 <= 1) return { x: p1.x + t2 * dx, y: p1.y + t2 * dy };
-  return null;
-};
 
 const getSegmentDistance = (p: Point, p1: Point, p2: Point) => {
   const x = p1.x;
@@ -1505,54 +1489,17 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
       ? finalPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
       : createZigzagPath(finalPoints, 2, 10);
     
-    // Arrow Logic
-    let arrowPath = null;
-    if (el.arrowMode && el.arrowMode !== 'none') {
-      const isStart = el.arrowMode === 'start';
-      const poleId = isStart ? el.poleIds[0] : el.poleIds[el.poleIds.length - 1];
-      const pole = elements.find(e => e.id === poleId);
-      
-      if (pole) {
-        const radius = POLE_RADIUS * poleSizeScale;
-        let arrowPos: Point | null = null;
-        let angle = 0;
-        
-        // Trace outward from the pole center along the cable path to find intersection with pole boundary
-        const tracePoints = isStart ? finalPoints : [...finalPoints].reverse();
-        
-        for (let i = 0; i < tracePoints.length - 1; i++) {
-           const p1 = tracePoints[i]; // Inner point
-           const p2 = tracePoints[i+1]; // Outer point
-           
-           const intersection = getCircleSegmentIntersection(p1, p2, {x: pole.x, y: pole.y}, radius);
-           if (intersection) {
-             arrowPos = intersection;
-             const dx = p2.x - p1.x;
-             const dy = p2.y - p1.y;
-             // Vector p1->p2 is Outward. Arrow points Inward (Towards Pole).
-             angle = Math.atan2(dy, dx) * 180 / Math.PI + 180;
-             break;
-           }
-        }
-        
-        if (arrowPos) {
-          const arrowSize = 8 / transform.scale;
-          
-          arrowPath = (
-            <path
-              d={`M ${-arrowSize} ${-arrowSize/2} L 0 0 L ${-arrowSize} ${arrowSize/2} Z`}
-              stroke={el.strokeColor}
-              strokeWidth={el.strokeWidth}
-              fill={el.strokeColor}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              transform={`translate(${arrowPos.x}, ${arrowPos.y}) rotate(${angle})`}
-              style={{ pointerEvents: 'none' }}
-            />
-          );
-        }
-      }
-    }
+    // Arrow Logic (start / end of the cable) and the suggested split marks: the same
+    // arrowhead, the split marks in red (cableArrows.ts)
+    const arrowSize = 8 / transform.scale;
+    const arrowRadius = POLE_RADIUS * poleSizeScale;
+    const endArrow = cableEndArrow(el, finalPoints, elements, arrowRadius);
+    const arrowPath = endArrow && (
+      <CableArrowHead at={endArrow} size={arrowSize} color={el.strokeColor} strokeWidth={el.strokeWidth} style={{ pointerEvents: 'none' }} />
+    );
+    const splitArrows = suggestedSplitArrows(el, finalPoints, elements, arrowRadius).map((a) => (
+      <CableArrowHead key={a.key} at={a} size={arrowSize} color={SUGGESTED_SPLIT_COLOR} strokeWidth={el.strokeWidth} style={{ pointerEvents: 'none' }} suggestedSplit={`${el.id}:${a.key}`} />
+    ));
 
     const segmentSpans = pathSegmentSpans(el, elements, finalPoints);
     const segments = [];
@@ -1611,6 +1558,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
           />
         )}
         {arrowPath}
+        {splitArrows}
         {segments}
       </g>
     );

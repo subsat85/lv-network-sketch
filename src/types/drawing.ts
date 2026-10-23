@@ -65,6 +65,12 @@ export interface CableElement extends BaseElement {
   cableIndex: number;
   offset: number;
   arrowMode?: 'none' | 'start' | 'end';
+  /**
+   * «نقطة فصل مقترحة»: poles of this cable where a split is suggested for study.
+   * Drawn as the start / end arrowhead in red (cableArrows.ts). A drawing mark only:
+   * the cable is not cut and its connections, lengths and calculations are unchanged.
+   */
+  suggestedSplits?: string[];
   cableType?: 'overhead' | 'ground';
   lineStyle?: 'zigzag' | 'straight';
   distances?: Record<number, string>; // Key: index of start pole in poleIds

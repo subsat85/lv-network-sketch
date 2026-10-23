@@ -2,6 +2,8 @@ import React from 'react';
 import { ColumnModifiers } from './ColumnModifiers';
 import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerElement, ArcElement, DrawingElement, ShapeElement } from '../types/drawing';
 import { calculateCablePath } from '../utils/cableLayout';
+import { cableEndArrow, suggestedSplitArrows, SUGGESTED_SPLIT_COLOR } from '../utils/cableArrows';
+import { CableArrowHead } from './CableArrowHead';
 import { arcGeometry } from '../utils/cableArcs';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
 import { VoltageDropOverlay } from './VoltageDropOverlay';
@@ -25,24 +27,6 @@ interface PreviewCanvasProps {
   /** estimated distances are written "≈…" */
   distanceFlags?: Record<string, DistanceFlag>;
 }
-
-const getCircleSegmentIntersection = (p1: Point, p2: Point, center: Point, r: number): Point | null => {
-  const dx = p2.x - p1.x;
-  const dy = p2.y - p1.y;
-  const fx = p1.x - center.x;
-  const fy = p1.y - center.y;
-  const a = dx * dx + dy * dy;
-  const b = 2 * (fx * dx + fy * dy);
-  const c = (fx * fx + fy * fy) - r * r;
-  let delta = b * b - 4 * a * c;
-  if (delta < 0) return null;
-  delta = Math.sqrt(delta);
-  const t1 = (-b - delta) / (2 * a);
-  const t2 = (-b + delta) / (2 * a);
-  if (t1 >= 0 && t1 <= 1) return { x: p1.x + t1 * dx, y: p1.y + t1 * dy };
-  if (t2 >= 0 && t2 <= 1) return { x: p1.x + t2 * dx, y: p1.y + t2 * dy };
-  return null;
-};
 
 const getSmartPlacement = (poleId: string, elements: DrawingElement[]) => {
   const pole = elements.find(e => e.id === poleId);
@@ -359,45 +343,14 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
         ? finalPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
         : createZigzagPath(finalPoints, 2, 10);
       
-      // Arrow Logic
-      let arrowPath = null;
-      if (cable.arrowMode && cable.arrowMode !== 'none') {
-        const isStart = cable.arrowMode === 'start';
-        const poleId = isStart ? cable.poleIds[0] : cable.poleIds[cable.poleIds.length - 1];
-        const pole = elements.find(e => e.id === poleId);
-        if (pole) {
-          const radius = POLE_RADIUS * poleSizeScale;
-          let arrowPos: Point | null = null;
-          let angle = 0;
-          const tracePoints = isStart ? finalPoints : [...finalPoints].reverse();
-          for (let i = 0; i < tracePoints.length - 1; i++) {
-             const p1 = tracePoints[i];
-             const p2 = tracePoints[i+1];
-             const intersection = getCircleSegmentIntersection(p1, p2, {x: pole.x, y: pole.y}, radius);
-             if (intersection) {
-               arrowPos = intersection;
-               const dx = p2.x - p1.x;
-               const dy = p2.y - p1.y;
-               angle = Math.atan2(dy, dx) * 180 / Math.PI + 180;
-               break;
-             }
-          }
-          if (arrowPos) {
-            const arrowSize = 8; // Fixed size for preview
-            arrowPath = (
-              <path
-                d={`M ${-arrowSize} ${-arrowSize/2} L 0 0 L ${-arrowSize} ${arrowSize/2} Z`}
-                stroke={cable.strokeColor}
-                strokeWidth={cable.strokeWidth}
-                fill={cable.strokeColor}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                transform={`translate(${arrowPos.x}, ${arrowPos.y}) rotate(${angle})`}
-              />
-            );
-          }
-        }
-      }
+      // Arrow Logic (start / end of the cable) and the suggested split marks in red (cableArrows.ts)
+      const arrowSize = 8; // Fixed size for preview
+      const arrowRadius = POLE_RADIUS * poleSizeScale;
+      const endArrow = cableEndArrow(cable, finalPoints, elements, arrowRadius);
+      const arrowPath = endArrow && <CableArrowHead at={endArrow} size={arrowSize} color={cable.strokeColor} strokeWidth={cable.strokeWidth} />;
+      const splitArrows = suggestedSplitArrows(cable, finalPoints, elements, arrowRadius).map((a) => (
+        <CableArrowHead key={a.key} at={a} size={arrowSize} color={SUGGESTED_SPLIT_COLOR} strokeWidth={cable.strokeWidth} suggestedSplit={`${cable.id}:${a.key}`} />
+      ));
 
       return (
         <g key={el.id}>
@@ -411,6 +364,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
             strokeDasharray={cable.cableType === 'ground' ? '8 8' : 'none'}
           />
           {arrowPath}
+          {splitArrows}
         </g>
       );
     } else if (el.type === 'consumer') {
