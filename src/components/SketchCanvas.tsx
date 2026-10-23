@@ -8,6 +8,7 @@ import { DrawnSpanHint, SpanPropertiesSheet } from './SpanPropertiesSheet';
 import { MIN_SCREEN_FONT_PX, VoltageDropOverlay } from './VoltageDropOverlay';
 import { distanceLabelExtraOffset, distanceLabelFontSizes, layoutViewScale } from '../utils/overlayLayout';
 import { CableEndsDialog } from './CableEndsDialog';
+import { CableColorBar } from './CableColorBar';
 import { ProposedConsumerSheet } from './ProposedConsumerSheet';
 import { layoutProposalBoxes, proposalBoxCenter, proposalGeometry } from '../utils/proposalDrawing';
 import { useSmallScreen } from '../utils/smallScreen';
@@ -2832,25 +2833,15 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
         </g>
       </svg>
       
-      {/* Cable Selection Panel */}
-      <div className={`absolute bottom-safe-bottom left-0 right-0 p-2 flex justify-center pointer-events-none ${elements.some(el => el.type === 'cable') ? '' : 'hidden'}`}>
-        <div className="ui-float !rounded-full px-2 py-1.5 flex gap-2 pointer-events-auto overflow-x-auto no-scrollbar max-w-full">
-          {elements.filter(el => el.type === 'cable').map((el) => (
-            <button
-              key={el.id}
-              onClick={() => {
-                setSelectedId(el.id);
-                setActiveCableId(el.id);
-              }}
-              className={`ui-swatch m-0.5 flex items-center justify-center ${selectedId === el.id ? 'is-active' : ''}`}
-              style={{ backgroundColor: el.strokeColor }}
-              aria-label={`Select cable ${el.id}`}
-            >
-              {selectedId === el.id && <div className="w-2 h-2 bg-white rounded-full" />}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Cable Selection Panel: one square per colour, by transformer where that is confirmed (CableColorBar) */}
+      <CableColorBar
+        elements={elements}
+        selectedId={selectedId}
+        onSelectCable={(id) => {
+          setSelectedId(id);
+          setActiveCableId(id);
+        }}
+      />
       {/* Context Menu */}
       {contextMenu.visible && contextMenu.elementId && (
         <ColumnContextMenu

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { normColor } from '../utils/network';
 import { isSmallScreen } from '../utils/smallScreen';
 import { useDrawingStore } from '../store/drawingStore';
 import { Minus, Plus, ChevronDown, ChevronUp } from 'lucide-react';
@@ -15,7 +16,39 @@ const COLORS = [
   '#F97316', // Orange
   '#8B5CF6', // Purple
   '#78350F', // Brown
+  // more, each easy to tell apart from the ones above
+  '#EC4899', // Pink
+  '#14B8A6', // Teal
+  '#84CC16', // Lime
+  '#1E3A8A', // Navy
+  '#7F1D1D', // Maroon
+  '#166534', // Dark Green
+  '#C026D3', // Magenta
+  '#A16207', // Gold
 ];
+
+const sameColour = (a: string | undefined, b: string | undefined) => normColor(a) === normColor(b);
+/** a colour as the colour input needs it (#rrggbb), or black */
+const toHex = (c: string | undefined) => { const v = (c || '').trim(); return /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : /^#[0-9a-f]{3}$/i.test(v) ? `#${[...v.slice(1)].map((x) => x + x).join('')}`.toLowerCase() : '#000000'; };
+
+/** Choose any colour: applied once, when the picker is closed (not on every move of it). */
+const CustomColour: React.FC<{ value: string; active: boolean; onPick: (c: string) => void }> = ({ value, active, onPick }) => {
+  const ref = useRef<HTMLInputElement>(null);
+  const pick = useRef(onPick); pick.current = onPick;
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    const onChange = () => pick.current(el.value.toUpperCase());
+    el.addEventListener('change', onChange);
+    return () => el.removeEventListener('change', onChange);
+  }, []);
+  return (
+    <label className={`ui-swatch relative flex cursor-pointer items-center justify-center overflow-hidden ${active ? 'is-active' : ''}`}
+      style={{ background: 'conic-gradient(#ef4444, #f59e0b, #84cc16, #14b8a6, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }} aria-label="Custom colour">
+      <span className="h-3 w-3 rounded-full bg-white ring-1 ring-black/20" />
+      <input ref={ref} type="color" defaultValue={toHex(value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label="Choose a custom colour" />
+    </label>
+  );
+};
 
 export const StylePanel: React.FC = () => {
   const { style, setStyle, selectedId, elements, updateElement, updateElements, poleSizeScale, setPoleSizeScale, distanceTextScale, setDistanceTextScale, consumerSizeScale, setConsumerSizeScale, showDistanceLabels, setShowDistanceLabels, updateSymbolModifiers } = useDrawingStore();
@@ -248,25 +281,32 @@ export const StylePanel: React.FC = () => {
           </div>
         )}
 
-        {/* Colors */}
+        {/* Colors: the set ones, then the other colours used in the drawing (once each), then any colour */}
         <div className="ui-row overflow-x-auto no-scrollbar">
           <span className="ui-row-label">Color</span>
           <div className="flex gap-3 p-1">
-            {COLORS.map((color) => {
-              const activeColor = selectedElement 
+            {(() => {
+              const activeColor = selectedElement
                 ? (selectedElement.type === 'text' ? selectedElement.fillColor : selectedElement.strokeColor)
                 : style.strokeColor;
-                
+              const used: string[] = [];
+              for (const e of elements) if (e.type === 'cable' && e.strokeColor && !COLORS.some((c) => sameColour(c, e.strokeColor)) && !used.some((c) => sameColour(c, e.strokeColor))) used.push(e.strokeColor);
+              const known = [...COLORS, ...used].some((c) => sameColour(c, activeColor));
               return (
-                <button
-                  key={color}
-                  onClick={() => handleColorChange(color)}
-                  className={`ui-swatch ${activeColor === color ? 'is-active' : ''}`}
-                  style={{ backgroundColor: color }}
-                  aria-label={`Select color ${color}`}
-                />
+                <>
+                  {[...COLORS, ...used].map((color) => (
+                    <button
+                      key={normColor(color)}
+                      onClick={() => handleColorChange(color)}
+                      className={`ui-swatch ${sameColour(activeColor, color) ? 'is-active' : ''}`}
+                      style={{ backgroundColor: color }}
+                      aria-label={`Select color ${color}`}
+                    />
+                  ))}
+                  <CustomColour key={toHex(activeColor)} value={activeColor} active={!known} onPick={handleColorChange} />
+                </>
               );
-            })}
+            })()}
           </div>
         </div>
 
