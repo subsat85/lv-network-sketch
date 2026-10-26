@@ -1,6 +1,10 @@
 import type { CableElement, DrawingElement } from '../types/drawing';
 import { buildNetwork, normColor, terminalKey, type Network } from './network';
 import { poleNamer } from './poleNames';
+import { translate, type TKey, type TParams } from '../i18n';
+
+type Tr = (key: TKey, params?: TParams) => string;
+const AR_TR: Tr = (key, params) => translate('ar', key, params);
 
 // ---------------------------------------------------------------------------
 // Grouping of the cables for the colour bar (a view only: it reads the drawing and
@@ -94,14 +98,15 @@ const withoutColourJunctions = (elements: DrawingElement[], net: Network): Drawi
   });
 };
 
-export const groupCables = (elements: DrawingElement[]): CableGrouping => {
+/** `tr`: the language of the scope names (Arabic without one) */
+export const groupCables = (elements: DrawingElement[], tr: Tr = AR_TR): CableGrouping => {
   const cables = elements.filter((e): e is CableElement => e.type === 'cable');
   const scopeOf = new Map<string, string>();
   if (!cables.length) return { scopes: [], scopeOf };
   const asDrawn = buildNetwork(elements);
   const explicit = withoutColourJunctions(elements, asDrawn);
   const strict = explicit === elements ? asDrawn : buildNetwork(explicit);
-  const name = poleNamer(elements);
+  const name = poleNamer(elements, tr);
   const kinds = new Map<string, 'transformer' | 'manual'>();
   for (const c of cables) {
     const a = sourceOf(asDrawn, c), b = sourceOf(strict, c);
@@ -111,9 +116,9 @@ export const groupCables = (elements: DrawingElement[]): CableGrouping => {
   const order = new Map(elements.map((e, i) => [e.id, i]));
   const scopes: CableScope[] = [...kinds.entries()]
     .sort((x, y) => (order.get(x[0]) ?? 0) - (order.get(y[0]) ?? 0))
-    .map(([pole, kind]) => ({ key: pole, kind, label: kind === 'manual' ? `مصدر: ${name(pole)}` : name(pole), cableIds: cables.filter((c) => scopeOf.get(c.id) === pole).map((c) => c.id) }));
+    .map(([pole, kind]) => ({ key: pole, kind, label: kind === 'manual' ? tr('colourBar.manualSource', { pole: name(pole) }) : name(pole), cableIds: cables.filter((c) => scopeOf.get(c.id) === pole).map((c) => c.id) }));
   const rest = cables.filter((c) => scopeOf.get(c.id) === UNASSIGNED_SCOPE).map((c) => c.id);
-  if (rest.length) scopes.push({ key: UNASSIGNED_SCOPE, kind: 'unassigned', label: 'غير مؤكَّد', cableIds: rest });
+  if (rest.length) scopes.push({ key: UNASSIGNED_SCOPE, kind: 'unassigned', label: tr('colourBar.unassigned'), cableIds: rest });
   return { scopes, scopeOf };
 };
 
@@ -134,10 +139,10 @@ export const colourGroups = (elements: DrawingElement[], cableIds?: Iterable<str
 };
 
 /** a short name for a cable, in two parts: its first and last pole, and its number of spans */
-export const cableLabelParts = (elements: DrawingElement[], c: CableElement, name = poleNamer(elements)) => {
+export const cableLabelParts = (elements: DrawingElement[], c: CableElement, name = poleNamer(elements), tr: Tr = AR_TR) => {
   const spans = Math.max(0, c.poleIds.length - 1);
-  const ends = c.poleIds.length ? `${name(c.poleIds[0])} ← ${name(c.poleIds[c.poleIds.length - 1])}` : 'بدون أعمدة';
-  return { ends, spans: spans === 1 ? 'مقطع واحد' : spans === 2 ? 'مقطعان' : `${spans} مقاطع` };
+  const ends = c.poleIds.length ? `${name(c.poleIds[0])} ← ${name(c.poleIds[c.poleIds.length - 1])}` : tr('picker.noPoles');
+  return { ends, spans: spans === 1 ? tr('picker.spansOne') : spans === 2 ? tr('picker.spansTwo') : tr('picker.spansMany', { n: spans }) };
 };
 
 /** the same as one line */

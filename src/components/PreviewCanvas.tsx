@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { ColumnModifiers } from './ColumnModifiers';
-import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerElement, ArcElement, DrawingElement, ShapeElement } from '../types/drawing';
+import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerElement, ArcElement, DrawingElement, ShapeElement, TransformerTableElement } from '../types/drawing';
 import { calculateCablePath } from '../utils/cableLayout';
 import { cableEndArrow, suggestedSplitArrows, SUGGESTED_SPLIT_COLOR } from '../utils/cableArrows';
 import { CableArrowHead } from './CableArrowHead';
@@ -11,6 +11,8 @@ import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelper
 import { VoltageDropOverlay } from './VoltageDropOverlay';
 import type { VoltageDropResult } from '../utils/voltageDrop';
 import type { DistanceFlag } from '../types/drawing';
+import { useT } from '../store/localeStore';
+import { TransformerTableSvg } from './TransformerTableSvg';
 
 const POLE_RADIUS = 20;
 const CABLE_SPACING = 8;
@@ -112,6 +114,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
   voltageDrop = null,
   distanceFlags
 }) => {
+  const t = useT();
 
   // the same label layout as the canvas (overlayLayout.ts), at the sizes set (no on-screen minimum on paper)
   const layoutCtx = useMemo(() => ({
@@ -583,177 +586,11 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
         </g>
       );
     } else if (el.type === 'transformer_table') {
-      const table = el as any;
-      const { x, y, transformerInfo, scale = 1 } = table;
-      const boxCount = parseInt(transformerInfo.distributionBoxesCount) || 1;
-      const hasPerBox = boxCount > 1 && transformerInfo.perBoxCircuits && transformerInfo.perBoxCircuits.length > 0;
-      
-      // Calculate dynamic height based on number of boxes
-      const baseRows = 8;
-      const perBoxRows = hasPerBox ? boxCount : 0;
-      const totalRows = baseRows + perBoxRows;
-      const rowHeight = 25 * scale;
-      const tableWidth = 300 * scale;
-      const headerHeight = 48 * scale;
-      const tableHeight = (headerHeight + totalRows * rowHeight + 25 * scale);
-
-      const getCableTypeLabel = () => transformerInfo.cableType === 'copper' ? 'نحاسي' : 'ألمونيوم';
-      const getInstallationMethodLabel = () => {
-        switch (transformerInfo.installationMethod) {
-          case 'ground': return 'على الأرض';
-          case 'hanging': return 'معلق';
-          case 'indoor': return 'داخل غرفة';
-          default: return '';
-        }
-      };
-      const getTransformerTypeLabel = () => transformerInfo.transformerType === 'public' ? 'عام' : 'خاص';
-      const getBoxInstallationLabel = () => transformerInfo.boxInstallationMethod === 'ground' ? 'على الأرض' : 'معلق';
-      const getLightingBoxLabel = () => {
-        switch (transformerInfo.lightingBox) {
-          case 'indoor': return 'داخلي';
-          case 'outdoor': return 'خارجي';
-          case 'none': return 'لا يوجد';
-          default: return '';
-        }
-      };
-      const getCapacitorLabel = () => transformerInfo.capacitor === 'yes' ? 'موجود' : 'غير موجود';
-
-      // Build rows array
-      const rows: { label: string; value: string }[] = [
-        { label: 'الكابل الرئيسي', value: `${transformerInfo.mainCable} مم²` },
-        { label: 'عدد الخطوط', value: transformerInfo.mainLinesCount },
-        { label: 'نوع الخط', value: getCableTypeLabel() },
-        { label: 'صناديق التوزيع', value: transformerInfo.distributionBoxesCount },
-      ];
-
-      // Add per-box circuits if multiple boxes
-      if (hasPerBox) {
-        rows.push({ label: 'الدوائر لكل صندوق', value: '' });
-        transformerInfo.perBoxCircuits!.forEach((box: any, i: number) => {
-          rows.push({ 
-            label: `  صندوق ${i + 1}`, 
-            value: `تشغيل: ${box.circuits} | فارغ: ${box.emptyCircuits}` 
-          });
-        });
-      } else {
-        rows.push({ label: 'دوائر لكل صندوق', value: transformerInfo.circuitsPerBox });
-        rows.push({ label: 'دوائر فارغة', value: transformerInfo.emptyCircuitsPerBox });
-      }
-
-      rows.push(
-        { label: 'تركيب المحول', value: getInstallationMethodLabel() },
-        { label: 'نوع المحول', value: getTransformerTypeLabel() },
-        { label: 'تركيب الصندوق', value: getBoxInstallationLabel() },
-        { label: 'صندوق الإنارة', value: getLightingBoxLabel() },
-        { label: 'المكثف', value: getCapacitorLabel() }
-      );
-
-      const title = transformerInfo.transformerNumber ? `محول ${transformerInfo.transformerNumber}` : 'معلومات المحول';
-
+      // the same table drawing as on the canvas (TransformerTableSvg): sizes, colours and rows
+      const table = el as TransformerTableElement;
       return (
-        <g key={el.id} transform={`translate(${x}, ${y})`}>
-          {/* Shadow effect */}
-          <rect
-            x={2 * scale}
-            y={4 * scale}
-            width={tableWidth}
-            height={tableHeight}
-            fill="#00000020"
-            rx={10 * scale}
-          />
-          
-          {/* Main background */}
-          <rect
-            x={0}
-            y={0}
-            width={tableWidth}
-            height={tableHeight}
-            fill="white"
-            stroke="#1e40af"
-            strokeWidth={1.5 * scale}
-            rx={8 * scale}
-          />
-          
-          {/* Header gradient background */}
-          <rect
-            x={1 * scale}
-            y={1 * scale}
-            width={tableWidth - 2 * scale}
-            height={42 * scale}
-            fill="#2563eb"
-            rx={7 * scale}
-          />
-          
-          {/* Transformer icon */}
-          <g transform={`translate(${12 * scale}, ${10 * scale})`}>
-            <circle cx={0} cy={0} r={12 * scale} fill="white" fillOpacity="0.2" />
-            <circle cx={-4 * scale} cy={0} r={6 * scale} fill="white" stroke="white" strokeWidth={1.5 * scale} />
-            <circle cx={4 * scale} cy={0} r={6 * scale} fill="white" stroke="white" strokeWidth={1.5 * scale} />
-            <rect x={0} y={-8 * scale} width={4 * scale} height={16 * scale} fill="white" rx={1 * scale} />
-          </g>
-          
-          {/* Title text */}
-          <text
-            x={tableWidth / 2 + 8 * scale}
-            y={26 * scale}
-            textAnchor="middle"
-            fill="white"
-            fontSize={15 * scale}
-            fontWeight="bold"
-          >
-            {title}
-          </text>
-
-          {/* Decorative line under header */}
-          <line
-            x1={0}
-            y1={44 * scale}
-            x2={tableWidth}
-            y2={44 * scale}
-            stroke="#1e40af"
-            strokeWidth={1}
-          />
-
-          {/* Table rows */}
-          <g transform={`translate(${5 * scale}, ${50 * scale})`}>
-            {rows.map((row, i) => {
-              const isCapacitorRow = row.label === 'المكثف';
-              const isCapacitorYes = row.value === 'موجود';
-              
-              return (
-              <g key={i} transform={`translate(0, ${i * 25 * scale})`}>
-                {/* Row background */}
-                <rect x={0} y={0} width={290 * scale} height={25 * scale} fill={i % 2 === 0 ? '#eff6ff' : 'white'} />
-                
-                {/* Left side - label */}
-                <rect x={0} y={0} width={145 * scale} height={25 * scale} fill={i % 2 === 0 ? '#eff6ff' : 'white'} />
-                
-                {/* Right side - value */}
-                <rect x={145 * scale} y={0} width={145 * scale} height={25 * scale} fill={i % 2 === 0 ? '#eff6ff' : 'white'} />
-                
-                {/* Divider */}
-                <line x1={145 * scale} y1={0} x2={145 * scale} y2={25 * scale} stroke="#bfdbfe" strokeWidth={0.5 * scale} />
-                
-                {/* Label text */}
-                <text x={8 * scale} y={16 * scale} fontSize={9 * scale} fill="#1e40af" fontWeight="600">{row.label}</text>
-                
-                {/* Value with special styling for capacitor */}
-                {isCapacitorRow ? (
-                  <g>
-                    <circle 
-                      cx={165 * scale} 
-                      cy={12 * scale} 
-                      r={5 * scale} 
-                      fill={isCapacitorYes ? '#22c55e' : '#ef4444'} 
-                    />
-                    <text x={175 * scale} y={16 * scale} fontSize={9 * scale} fill={isCapacitorYes ? '#166534' : '#991b1b'} fontWeight="bold">{row.value}</text>
-                  </g>
-                ) : (
-                  <text x={150 * scale} y={16 * scale} fontSize={9 * scale} fill="#1e293b" fontWeight="700">{row.value}</text>
-                )}
-              </g>
-            )})}
-          </g>
+        <g key={el.id} transform={`translate(${table.x}, ${table.y})`} data-transformer-table={el.id}>
+          <TransformerTableSvg info={table.transformerInfo} scale={table.scale} t={t} />
         </g>
       );
     }

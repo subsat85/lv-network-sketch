@@ -4,7 +4,9 @@ import { useDrawingStore } from '../store/drawingStore';
 import type { CableElement, CableEndLink } from '../types/drawing';
 import { buildNetwork } from '../utils/network';
 import { poleNamer } from '../utils/poleNames';
-import { END_LINK_HINT, END_LINK_LABEL } from '../utils/vdLabels';
+import { endLinkHint, endLinkLabel } from '../utils/vdLabels';
+import { useLocale, useT } from '../store/localeStore';
+import { directionOf } from '../i18n';
 import { useBackdropClose } from './SpanPropertiesSheet';
 
 // How the cable ends at one pole connect (Stage 7.9): auto (the drawing's rule),
@@ -31,7 +33,9 @@ export const cableEndsAt = (elements: { type: string }[], poleId: string) => {
 
 export const CableEndsDialog: React.FC<{ poleId: string; onClose: () => void }> = ({ poleId, onClose }) => {
   const { elements, updateElement, saveHistory } = useDrawingStore();
-  const name = useMemo(() => poleNamer(elements), [elements]);
+  const t = useT();
+  const locale = useLocale((st) => st.locale);
+  const name = useMemo(() => poleNamer(elements, t), [elements, t]);
   const { ends, through } = useMemo(() => cableEndsAt(elements, poleId), [elements, poleId]);
   const inferred = useMemo(() => buildNetwork(elements).inferredJunctions.filter((j) => j.poleId === poleId), [elements, poleId]);
   const backdropClose = useBackdropClose(onClose);
@@ -52,14 +56,14 @@ export const CableEndsDialog: React.FC<{ poleId: string; onClose: () => void }> 
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 sm:items-center" {...backdropClose}>
-      <div dir="rtl" role="dialog" aria-label="ربط الكوابل عند العمود" data-cable-ends={poleId} className="w-full max-w-lg max-h-[80vh] supports-[height:100dvh]:max-h-[80dvh] overflow-y-auto rounded-t-[16px] sm:rounded-[16px] bg-white shadow-float pb-[env(safe-area-inset-bottom)]" onClick={(e) => e.stopPropagation()}>
+      <div dir={directionOf(locale)} role="dialog" aria-label={t('ends.dialog')} data-cable-ends={poleId} className="w-full max-w-lg max-h-[80vh] supports-[height:100dvh]:max-h-[80dvh] overflow-y-auto rounded-t-[16px] sm:rounded-[16px] bg-white shadow-float pb-[env(safe-area-inset-bottom)]" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-ios-separator bg-white px-4 py-3">
-          <h2 className="truncate text-[17px] font-semibold text-ios-label">ربط الكوابل عند {name(poleId)}</h2>
-          <button type="button" aria-label="إغلاق" onClick={onClose} className="ui-icon-btn !h-9 !w-9"><X size={20} /></button>
+          <h2 className="truncate text-[17px] font-semibold text-ios-label">{t('ends.title', { pole: name(poleId) })}</h2>
+          <button type="button" aria-label={t('common.close')} data-ends-action="close" onClick={onClose} className="ui-icon-btn !h-9 !w-9"><X size={20} /></button>
         </div>
         <div className="flex flex-col gap-3 px-4 py-3 text-[14px]">
-          <p className="text-[12px] text-ios-secondary">«تلقائي»: يتصل الطرف بالكوابل التي بلونه هنا (كما يُرسم الفرع). اختر «منفصل» إذا كان الكيبل يلتقي هنا بالرسم فقط ولا يتصل كهربائيًا. للربط بين لونين مختلفين استعمل Jumper.</p>
-          {ends.length === 0 && <p className="text-ios-secondary">لا ينتهي أي كيبل عند هذا العمود.</p>}
+          <p className="text-[12px] text-ios-secondary">{t('ends.help')}</p>
+          {ends.length === 0 && <p className="text-ios-secondary">{t('ends.none')}</p>}
           {ends.map(({ cable, end, toward }) => {
             const current: Choice = cable.endLinks?.[end] ?? 'auto';
             const inf = inferred.find((j) => j.cableId === cable.id && j.end === end);
@@ -67,21 +71,21 @@ export const CableEndsDialog: React.FC<{ poleId: string; onClose: () => void }> 
               <div key={`${cable.id}:${end}`} className="rounded-ctl border border-ios-separator px-3 py-2" data-cable-end={`${cable.id}:${end}`}>
                 <div className="mb-2 flex items-center gap-2">
                   <span className="h-3 w-3 flex-shrink-0 rounded-full ring-1 ring-inset ring-black/10" style={{ backgroundColor: cable.strokeColor }} />
-                  <span className="text-ios-label">طرف كيبل باتجاه {toward ? name(toward) : '—'}</span>
+                  <span className="text-ios-label">{t('ends.endToward', { pole: toward ? name(toward) : '—' })}</span>
                 </div>
-                <div className="ui-segment" role="radiogroup" aria-label={`حالة طرف الكيبل باتجاه ${toward ? name(toward) : ''}`}>
+                <div className="ui-segment" role="radiogroup" aria-label={t('ends.stateGroup', { pole: toward ? name(toward) : '' })}>
                   {(['auto', 'connected', 'isolated'] as Choice[]).map((c) => (
-                    <button key={c} type="button" role="radio" aria-checked={current === c} className={`ui-segment-item ${current === c ? 'is-active' : ''}`} onClick={() => setLink(cable, end, c)}>{END_LINK_LABEL[c]}</button>
+                    <button key={c} type="button" role="radio" aria-checked={current === c} className={`ui-segment-item ${current === c ? 'is-active' : ''}`} data-end-link={c} onClick={() => setLink(cable, end, c)}>{endLinkLabel(c, t)}</button>
                   ))}
                 </div>
-                <p className="mt-1 text-[12px] text-ios-secondary">{END_LINK_HINT[current]}{current === 'auto' && inf ? ` — مستنتج: متصل بـ ${inf.withCableIds.length} كيبل` : ''}</p>
+                <p className="mt-1 text-[12px] text-ios-secondary">{endLinkHint(current, t)}{current === 'auto' && inf ? t('ends.inferred', { n: inf.withCableIds.length }) : ''}</p>
               </div>
             );
           })}
           {through.length > 0 && (
-            <p className="text-[12px] text-ios-secondary">{through.length} كيبل يمر عبر هذا العمود دون أن ينتهي عنده (لا يُربط بغيره إلا بطرف كيبل أو Jumper).</p>
+            <p className="text-[12px] text-ios-secondary">{t('ends.through', { n: through.length })}</p>
           )}
-          <button type="button" className="min-h-[44px] rounded-ctl bg-ios-fill text-[17px] text-ios-blue active:bg-ios-fill-strong" onClick={onClose}>تم</button>
+          <button type="button" className="min-h-[44px] rounded-ctl bg-ios-fill text-[17px] text-ios-blue active:bg-ios-fill-strong" data-ends-action="done" onClick={onClose}>{t('ends.done')}</button>
         </div>
       </div>
     </div>

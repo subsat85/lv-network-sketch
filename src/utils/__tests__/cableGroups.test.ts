@@ -39,7 +39,7 @@ describe('scopes by transformer (never from colour or position)', () => {
   it('two transformers with the same colour: two scopes, each with its own cables (ids kept, nothing merged)', () => {
     const els = norm([tr('T1'), pole('A'), tr('T2', 500), pole('B', 600), cable('a', ['T1', 'A']), cable('b', ['T2', 'B'])]);
     const G = groupCables(els);
-    expect(G.scopes.map((s) => [s.key, s.kind, s.label, s.cableIds])).toEqual([['T1', 'transformer', 'محولة 1', ['a']], ['T2', 'transformer', 'محولة 2', ['b']]]);
+    expect(G.scopes.map((s) => [s.key, s.kind, s.label, s.cableIds])).toEqual([['T1', 'transformer', 'محول 1', ['a']], ['T2', 'transformer', 'محول 2', ['b']]]);
     for (const s of G.scopes) expect(colourGroups(els, s.cableIds).map((x) => [x.key, x.cableIds])).toEqual([['#ef4444', s.cableIds]]);
     // all together: the same colour is one square (the view "all"), the cables are still two
     expect(colourGroups(els).map((x) => x.cableIds)).toEqual([['a', 'b']]);
@@ -88,9 +88,9 @@ describe('scopes by transformer (never from colour or position)', () => {
 describe('labels', () => {
   it('a cable is named by its first and last pole (arrow for right-to-left text) and its spans', () => {
     const els = norm([tr('T'), pole('A'), pole('B'), cable('c', ['T', 'A', 'B'])]);
-    expect(cableLabel(els, els.find((e) => e.id === 'c') as CableElement)).toBe('محولة 1 ← عمود 2 · مقطعان');
+    expect(cableLabel(els, els.find((e) => e.id === 'c') as CableElement)).toBe('محول 1 ← عمود 2 · مقطعان');
     const one = norm([tr('T'), pole('A'), cable('d', ['T', 'A'])]);
-    expect(cableLabel(one, one.find((e) => e.id === 'd') as CableElement)).toBe('محولة 1 ← عمود 1 · مقطع واحد');
+    expect(cableLabel(one, one.find((e) => e.id === 'd') as CableElement)).toBe('محول 1 ← عمود 1 · مقطع واحد');
   });
 });
 

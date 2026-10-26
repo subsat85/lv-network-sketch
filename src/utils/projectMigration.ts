@@ -1,5 +1,6 @@
 import type { CableElement, DrawingElement, SpanProps } from '../types/drawing';
 import { GenId, newSpanId, normalizeElements, pruneLegacyJumpers } from './spanModel';
+import { t } from '../store/localeStore';
 
 // ---------------------------------------------------------------------------
 // Reading documents written by other versions of the app.
@@ -52,7 +53,7 @@ export const prepareDocument = (doc: DocumentParts, v2SpanProps?: unknown, genId
   // never drop version-2 span records silently (a saved project is not validated like a file)
   const unplaced = unplacedV2Records(elements, v2SpanProps);
   if (unplaced.length) {
-    throw new ProjectDataError(`لم يُفتح المشروع: فيه خصائص ${unplaced.length} مقطع من الإصدار 2 لا تتبع أي مقطع موجود (${unplaced.slice(0, 3).join('، ')}). لم يتغيّر الرسم الحالي، ولم يُكتب شيء في المشروع المحفوظ.`);
+    throw new ProjectDataError(t('dialogs.v2Unplaced', { n: unplaced.length, list: unplaced.slice(0, 3).join(t('common.listSep')) }));
   }
   if (isObj(v2SpanProps) && Object.keys(v2SpanProps).length) {
     elements = elements.map((el) => {

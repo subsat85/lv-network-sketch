@@ -4,6 +4,8 @@ import { isSmallScreen } from '../utils/smallScreen';
 import { useDrawingStore } from '../store/drawingStore';
 import { Minus, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import { ICON_SM } from './ui/icons';
+import { useLocale, useT } from '../store/localeStore';
+import { directionOf } from '../i18n';
 
 const COLORS = [
   '#000000', // Black
@@ -33,6 +35,7 @@ const toHex = (c: string | undefined) => { const v = (c || '').trim(); return /^
 
 /** Choose any colour: applied once, when the picker is closed (not on every move of it). */
 const CustomColour: React.FC<{ value: string; active: boolean; onPick: (c: string) => void }> = ({ value, active, onPick }) => {
+  const t = useT();
   const ref = useRef<HTMLInputElement>(null);
   const pick = useRef(onPick); pick.current = onPick;
   useEffect(() => {
@@ -43,9 +46,9 @@ const CustomColour: React.FC<{ value: string; active: boolean; onPick: (c: strin
   }, []);
   return (
     <label className={`ui-swatch relative flex cursor-pointer items-center justify-center overflow-hidden ${active ? 'is-active' : ''}`}
-      style={{ background: 'conic-gradient(#ef4444, #f59e0b, #84cc16, #14b8a6, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }} aria-label="Custom colour">
+      style={{ background: 'conic-gradient(#ef4444, #f59e0b, #84cc16, #14b8a6, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }} aria-label={t('style.customColor')} data-style-custom>
       <span className="h-3 w-3 rounded-full bg-white ring-1 ring-black/20" />
-      <input ref={ref} type="color" defaultValue={toHex(value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label="Choose a custom colour" />
+      <input ref={ref} type="color" defaultValue={toHex(value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" aria-label={t('style.chooseCustomColor')} />
     </label>
   );
 };
@@ -58,6 +61,8 @@ export const StylePanel: React.FC = () => {
   // starts folded on a phone (the drawing keeps its room), open on a desktop as before; the user's
   // choice is kept from then on (also through full-screen mode, where the panel stays mounted)
   const [isCollapsed, setIsCollapsed] = useState(isSmallScreen);
+  const t = useT();
+  const locale = useLocale((st) => st.locale);
   // «تنسيق الكيبل» of the cable chooser (SketchCanvas) unfolds this panel; nothing else changes
   useEffect(() => { const open = () => setIsCollapsed(false); window.addEventListener(OPEN_STYLE_PANEL_EVENT, open); return () => window.removeEventListener(OPEN_STYLE_PANEL_EVENT, open); }, []);
 
@@ -151,26 +156,27 @@ export const StylePanel: React.FC = () => {
         className="flex items-center justify-center h-6 cursor-pointer rounded-t-panel active:bg-ios-fill"
         onClick={() => setIsCollapsed(!isCollapsed)}
         role="button"
-        aria-label={isCollapsed ? 'Show properties' : 'Hide properties'}
+        aria-label={isCollapsed ? t('style.show') : t('style.hide')}
+        data-style-toggle
         aria-expanded={!isCollapsed}
       >
         <div className="w-9 h-[5px] bg-ios-fill-strong rounded-full" />
       </div>
 
       {!isCollapsed && (
-        <div className="px-4 pb-3 flex flex-col divide-y divide-ios-separator max-w-mobile mx-auto max-h-[45vh] [@media(max-height:500px)]:max-h-[30vh] overflow-y-auto overscroll-contain">
+        <div dir={directionOf(locale)} data-style-panel className="px-4 pb-3 flex flex-col divide-y divide-ios-separator max-w-mobile mx-auto max-h-[45vh] [@media(max-height:500px)]:max-h-[30vh] overflow-y-auto overscroll-contain">
         
         {/* Pole Size Control */}
         <div className="ui-row">
-          <span className="ui-row-label">Pole Size</span>
+          <span className="ui-row-label">{t('style.poleSize')}</span>
           <div className="flex items-center gap-3">
               <span className="ui-row-value">{Math.round(poleSizeScale * 100)}%</span>
               <div className="ui-stepper">
-                <button onClick={() => handleScaleChange(-0.1)} className="ui-stepper-btn" aria-label="Decrease pole size">
+                <button onClick={() => handleScaleChange(-0.1)} className="ui-stepper-btn" aria-label={t('style.poleSizeDown')} data-style-step="pole-down">
                   <Minus {...ICON_SM} />
                 </button>
                 <div className="ui-stepper-div" aria-hidden="true" />
-                <button onClick={() => handleScaleChange(0.1)} className="ui-stepper-btn" aria-label="Increase pole size">
+                <button onClick={() => handleScaleChange(0.1)} className="ui-stepper-btn" aria-label={t('style.poleSizeUp')} data-style-step="pole-up">
                   <Plus {...ICON_SM} />
                 </button>
               </div>
@@ -179,15 +185,15 @@ export const StylePanel: React.FC = () => {
 
         {/* Consumer Size Control */}
         <div className="ui-row">
-          <span className="ui-row-label">Consumer Size</span>
+          <span className="ui-row-label">{t('style.consumerSize')}</span>
           <div className="flex items-center gap-3">
               <span className="ui-row-value">{Math.round(consumerSizeScale * 100)}%</span>
               <div className="ui-stepper">
-                <button onClick={() => handleConsumerScaleChange(-0.1)} className="ui-stepper-btn" aria-label="Decrease consumer size">
+                <button onClick={() => handleConsumerScaleChange(-0.1)} className="ui-stepper-btn" aria-label={t('style.consumerSizeDown')} data-style-step="consumer-down">
                   <Minus {...ICON_SM} />
                 </button>
                 <div className="ui-stepper-div" aria-hidden="true" />
-                <button onClick={() => handleConsumerScaleChange(0.1)} className="ui-stepper-btn" aria-label="Increase consumer size">
+                <button onClick={() => handleConsumerScaleChange(0.1)} className="ui-stepper-btn" aria-label={t('style.consumerSizeUp')} data-style-step="consumer-up">
                   <Plus {...ICON_SM} />
                 </button>
               </div>
@@ -196,15 +202,15 @@ export const StylePanel: React.FC = () => {
 
         {/* Distance Text Size Control */}
         <div className="ui-row">
-          <span className="ui-row-label">Distance Text</span>
+          <span className="ui-row-label">{t('style.distanceText')}</span>
           <div className="flex items-center gap-3">
               <span className="ui-row-value">{Math.round(distanceTextScale * 100)}%</span>
               <div className="ui-stepper">
-                <button onClick={() => handleDistanceScaleChange(-0.1)} className="ui-stepper-btn" aria-label="Decrease text size">
+                <button onClick={() => handleDistanceScaleChange(-0.1)} className="ui-stepper-btn" aria-label={t('style.distanceTextDown')} data-style-step="distance-down">
                   <Minus {...ICON_SM} />
                 </button>
                 <div className="ui-stepper-div" aria-hidden="true" />
-                <button onClick={() => handleDistanceScaleChange(0.1)} className="ui-stepper-btn" aria-label="Increase text size">
+                <button onClick={() => handleDistanceScaleChange(0.1)} className="ui-stepper-btn" aria-label={t('style.distanceTextUp')} data-style-step="distance-up">
                   <Plus {...ICON_SM} />
                 </button>
               </div>
@@ -213,13 +219,14 @@ export const StylePanel: React.FC = () => {
 
         {/* Show/Hide Distance Labels */}
         <div className="ui-row">
-          <span className="ui-row-label">Show Distances</span>
+          <span className="ui-row-label">{t('style.showDistances')}</span>
           <button
             onClick={() => setShowDistanceLabels(!showDistanceLabels)}
             className="ui-switch"
             role="switch"
             aria-checked={showDistanceLabels}
-            aria-label={showDistanceLabels ? 'Hide distance labels' : 'Show distance labels'}
+            aria-label={showDistanceLabels ? t('style.hideDistanceLabels') : t('style.showDistanceLabels')}
+            data-style-action="distances"
           >
             <span className="ui-switch-knob" />
           </button>
@@ -228,15 +235,15 @@ export const StylePanel: React.FC = () => {
         {/* Text Size Control */}
         {selectedElement?.type === 'text' && (
           <div className="ui-row">
-            <span className="ui-row-label">Text Size</span>
+            <span className="ui-row-label">{t('style.textSize')}</span>
             <div className="flex items-center gap-3">
               <span className="ui-row-value">{(selectedElement as any).fontSize || 16}</span>
               <div className="ui-stepper">
-                <button onClick={() => handleTextSizeChange(-2)} className="ui-stepper-btn" aria-label="Decrease text size">
+                <button onClick={() => handleTextSizeChange(-2)} className="ui-stepper-btn" aria-label={t('style.textSizeDown')} data-style-step="text-down">
                   <Minus {...ICON_SM} />
                 </button>
                 <div className="ui-stepper-div" aria-hidden="true" />
-                <button onClick={() => handleTextSizeChange(2)} className="ui-stepper-btn" aria-label="Increase text size">
+                <button onClick={() => handleTextSizeChange(2)} className="ui-stepper-btn" aria-label={t('style.textSizeUp')} data-style-step="text-up">
                   <Plus {...ICON_SM} />
                 </button>
               </div>
@@ -249,15 +256,15 @@ export const StylePanel: React.FC = () => {
           <div className="flex flex-col">
             {/* Note Font Size (Zoom) */}
             <div className="ui-row">
-              <span className="ui-row-label">Note Size</span>
+              <span className="ui-row-label">{t('style.noteSize')}</span>
               <div className="flex items-center gap-3">
               <span className="ui-row-value">{(selectedElement as any).modifiers?.note?.fontSize || 12}px</span>
               <div className="ui-stepper">
-                <button onClick={() => handleNoteFontSizeChange(-2)} className="ui-stepper-btn" aria-label="Decrease note size">
+                <button onClick={() => handleNoteFontSizeChange(-2)} className="ui-stepper-btn" aria-label={t('style.noteSizeDown')} data-style-step="note-down">
                   <Minus {...ICON_SM} />
                 </button>
                 <div className="ui-stepper-div" aria-hidden="true" />
-                <button onClick={() => handleNoteFontSizeChange(2)} className="ui-stepper-btn" aria-label="Increase note size">
+                <button onClick={() => handleNoteFontSizeChange(2)} className="ui-stepper-btn" aria-label={t('style.noteSizeUp')} data-style-step="note-up">
                   <Plus {...ICON_SM} />
                 </button>
               </div>
@@ -266,7 +273,7 @@ export const StylePanel: React.FC = () => {
 
             {/* Note Color */}
             <div className="flex flex-col gap-1 py-2">
-              <span className="ui-row-label">Note Color</span>
+              <span className="ui-row-label">{t('style.noteColor')}</span>
               <div className="flex flex-wrap gap-3 p-1">
                 {['white', '#E0F2FE', '#DCFCE7', '#FEF3C7', '#FEE2E2', '#F3E8FF', '#E0E7FF'].map(color => (
                   <button
@@ -278,7 +285,8 @@ export const StylePanel: React.FC = () => {
                         : ''
                     }`}
                     style={{ backgroundColor: color }}
-                    aria-label={color}
+                    aria-label={t('style.noteColorName', { color })}
+                    data-style-note-color={color}
                   />
                 ))}
               </div>
@@ -288,7 +296,7 @@ export const StylePanel: React.FC = () => {
 
         {/* Colors: the set ones, then the other colours used in the drawing (once each), then any colour */}
         <div className="ui-row overflow-x-auto no-scrollbar">
-          <span className="ui-row-label">Color</span>
+          <span className="ui-row-label">{t('style.color')}</span>
           <div className="flex gap-3 p-1">
             {(() => {
               const activeColor = selectedElement
@@ -305,7 +313,8 @@ export const StylePanel: React.FC = () => {
                       onClick={() => handleColorChange(color)}
                       className={`ui-swatch ${sameColour(activeColor, color) ? 'is-active' : ''}`}
                       style={{ backgroundColor: color }}
-                      aria-label={`Select color ${color}`}
+                      aria-label={t('style.colorName', { color })}
+                      data-style-color={color}
                     />
                   ))}
                   <CustomColour key={toHex(activeColor)} value={activeColor} active={!known} onPick={handleColorChange} />
@@ -318,7 +327,7 @@ export const StylePanel: React.FC = () => {
         {/* Fill Color for Shapes */}
         {selectedElement?.type === 'shape' && (
           <div className="ui-row overflow-x-auto no-scrollbar">
-            <span className="ui-row-label">Fill</span>
+            <span className="ui-row-label">{t('style.fill')}</span>
             <div className="flex gap-3 p-1">
               {/* Transparent option */}
               <button
@@ -329,7 +338,8 @@ export const StylePanel: React.FC = () => {
                 }}
                 className={`ui-swatch flex items-center justify-center ${(selectedElement as any).fillColor === 'transparent' ? 'is-active' : ''}`}
                 style={{ backgroundColor: 'white' }}
-                aria-label="Transparent fill"
+                aria-label={t('style.transparentFill')}
+                data-style-fill="transparent"
               >
                 <Minus {...ICON_SM} className="text-ios-tertiary" />
               </button>
@@ -345,7 +355,8 @@ export const StylePanel: React.FC = () => {
                     }}
                     className={`ui-swatch ${fillColor === color ? 'is-active' : ''}`}
                     style={{ backgroundColor: color }}
-                    aria-label={`Fill color ${color}`}
+                    aria-label={t('style.fillName', { color })}
+                    data-style-fill={color}
                   />
                 );
               })}
@@ -357,15 +368,15 @@ export const StylePanel: React.FC = () => {
         {selectedElement?.type !== 'text' && (
           <div className="flex flex-col">
             <div className="ui-row">
-              <span className="ui-row-label">Line Width</span>
+              <span className="ui-row-label">{t('style.lineWidth')}</span>
               <div className="flex items-center gap-3">
               <span className="ui-row-value">{selectedElement ? selectedElement.strokeWidth : style.strokeWidth}</span>
               <div className="ui-stepper">
-                <button onClick={() => handleWidthChange(Math.max(0.5, (selectedElement ? selectedElement.strokeWidth : style.strokeWidth) - 0.5))} className="ui-stepper-btn" aria-label="Decrease line width">
+                <button onClick={() => handleWidthChange(Math.max(0.5, (selectedElement ? selectedElement.strokeWidth : style.strokeWidth) - 0.5))} className="ui-stepper-btn" aria-label={t('style.lineWidthDown')} data-style-step="width-down">
                   <Minus {...ICON_SM} />
                 </button>
                 <div className="ui-stepper-div" aria-hidden="true" />
-                <button onClick={() => handleWidthChange(Math.min(20, (selectedElement ? selectedElement.strokeWidth : style.strokeWidth) + 0.5))} className="ui-stepper-btn" aria-label="Increase line width">
+                <button onClick={() => handleWidthChange(Math.min(20, (selectedElement ? selectedElement.strokeWidth : style.strokeWidth) + 0.5))} className="ui-stepper-btn" aria-label={t('style.lineWidthUp')} data-style-step="width-up">
                   <Plus {...ICON_SM} />
                 </button>
               </div>
@@ -381,8 +392,9 @@ export const StylePanel: React.FC = () => {
                   updateElements(updates);
                 }}
                 className="ui-tinted-btn mb-2"
+                data-style-action="width-all"
               >
-                Apply Width to All Cables
+                {t('style.widthToAll')}
               </button>
             )}
           </div>
@@ -393,34 +405,37 @@ export const StylePanel: React.FC = () => {
           <div className="flex flex-col divide-y divide-ios-separator">
             {/* Cable Type */}
             <div className="ui-row">
-              <span className="ui-row-label">Type</span>
+              <span className="ui-row-label">{t('style.type')}</span>
               <div className="ui-segment">
                 <button
                   onClick={() => handleCableTypeChange('overhead')}
                   className={`ui-segment-item ${(selectedElement as any).cableType !== 'ground' ? 'is-active' : ''}`}
+                  data-style-cable-type="overhead"
                 >
-                  Overhead
+                  {t('style.overhead')}
                 </button>
                 <button
                   onClick={() => handleCableTypeChange('ground')}
                   className={`ui-segment-item ${(selectedElement as any).cableType === 'ground' ? 'is-active' : ''}`}
+                  data-style-cable-type="ground"
                 >
-                  Ground
+                  {t('style.ground')}
                 </button>
               </div>
             </div>
 
             {/* Arrow Mode */}
             <div className="ui-row">
-              <span className="ui-row-label">Arrow</span>
+              <span className="ui-row-label">{t('style.arrow')}</span>
             <div className="ui-segment">
               {(['none', 'start', 'end'] as const).map((mode) => (
                 <button
                   key={mode}
                   onClick={() => handleArrowModeChange(mode)}
                   className={`ui-segment-item ${((selectedElement as any).arrowMode === mode || (!(selectedElement as any).arrowMode && mode === 'none')) ? 'is-active' : ''}`}
+                  data-style-arrow={mode}
                 >
-                  {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  {t(mode === 'none' ? 'style.arrowNone' : mode === 'start' ? 'style.arrowStart' : 'style.arrowEnd')}
                 </button>
               ))}
             </div>

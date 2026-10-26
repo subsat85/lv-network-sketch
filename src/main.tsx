@@ -5,7 +5,10 @@ import App from "./App.tsx";
 import { installViewportFix } from "./utils/viewportFix";
 import { initAutosave } from "./utils/autosave";
 import { installHistoryGestureTracking } from "./store/drawingStore";
+import { initLocale } from "./store/localeStore";
 
+// <html lang/dir> from the saved interface language (Arabic by default).
+initLocale();
 installViewportFix();
 // One undo step per pointer gesture (drag, stroke, …).
 installHistoryGestureTracking();

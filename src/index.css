@@ -3,6 +3,13 @@
 @tailwind utilities;
 
 @layer base {
+  /* <html dir> follows the interface language (store/localeStore.ts). The app itself keeps
+     the page's direction of today: the tool columns stay where they are and the drawing SVG
+     never inherits RTL (its text anchors would flip). Panels opt into RTL with their own dir. */
+  #root {
+    direction: ltr;
+  }
+
   /* Fix for Android tablet/browser viewport height issues */
   html, body {
     height: 100%;

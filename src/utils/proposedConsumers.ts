@@ -2,6 +2,7 @@ import type { CableElement, ConsumerElement, ConsumerProposal, DistanceFlag, Dra
 import { consumerLoad } from './loads';
 import { computeVoltageDrop, type CircuitResult, type PoleResult, type VoltageDropResult } from './voltageDrop';
 import { splitSideKey } from './splitStudy';
+import { t } from '../store/localeStore';
 
 // «مشترك مقترح» — a new subscriber proposed at a pole (ConsumerElement.proposal).
 //
@@ -113,13 +114,13 @@ export const compareConnections = (
     const atPole = (r.byPole.get(draft.poleId) ?? []).find((p) => p.consumerIds.includes(draft.id));
     const circuit = atPole ? circuitWithBus(r, atPole.bus) : undefined;
     const base: CandidateResult = { candidate, computable: false, violations: [], atPole, sourcePoleId: circuit?.circuit.sourcePoleId };
-    if (r.settingsMissing.length) return { ...base, reason: 'إعدادات الحساب ناقصة' };
-    if (!atPole || !circuit) return { ...base, reason: 'غير متصل بشبكة' };
-    if (circuit.status !== 'ok') return { ...base, reason: 'الشبكة غير قابلة للحساب' };
-    if (atPole.status === 'na' || circuit.maxPercent === undefined) return { ...base, reason: 'بيانات ناقصة على المسار' };
+    if (r.settingsMissing.length) return { ...base, reason: t('proposal.reasonSettings') };
+    if (!atPole || !circuit) return { ...base, reason: t('proposal.reasonNotConnected') };
+    if (circuit.status !== 'ok') return { ...base, reason: t('proposal.reasonNetwork') };
+    if (atPole.status === 'na' || circuit.maxPercent === undefined) return { ...base, reason: t('proposal.reasonPath') };
     // the network the subscriber joins (only that one) must be computed at every pole
     const incomplete = [...new Set(circuit.poles.filter((p) => p.status === 'na').map((p) => p.poleId))];
-    if (incomplete.length) return { ...base, incompletePoleIds: incomplete, reason: 'جزء من الشبكة غير قابل للحساب (بيانات ناقصة) — لا يمكن التحقق من جميع المشتركين' };
+    if (incomplete.length) return { ...base, incompletePoleIds: incomplete, reason: t('proposal.reasonIncomplete') };
     const prev = circuitWithBus(before, atPole.bus);
     return {
       ...base, computable: true, maxPercent: circuit.maxPercent,
@@ -129,7 +130,7 @@ export const compareConnections = (
   });
   const eligible = results.filter((x) => x.computable && x.violations.length === 0);
   if (!eligible.length) {
-    return { results, noRecommendation: results.some((x) => x.computable) ? 'كل نقاط الربط تُسبّب تجاوزًا لحد الهبوط أو أدنى فولتية' : 'لا توجد نقطة ربط قابلة للحساب' };
+    return { results, noRecommendation: results.some((x) => x.computable) ? t('proposal.allViolate') : t('proposal.noneComputable') };
   }
   const best = eligible.reduce((a, b) => (b.maxPercent! < a.maxPercent! - 1e-12 ? b : a));
   best.recommended = true;
@@ -139,7 +140,7 @@ export const compareConnections = (
 /** The load of a proposed subscriber in words: «3φ 63 A», «1φ ×2 = 8 A». */
 export const proposalLoadText = (c: Pick<ConsumerElement, 'variant' | 'label' | 'count'>) => {
   const l = consumerLoad(c);
-  if (l.invalid) return 'حمل غير صالح';
+  if (l.invalid) return t('proposal.loadInvalid');
   const n = l.count > 1 ? ` ×${l.count}` : '';
   return `${l.kind === 'single' ? '1φ' : '3φ'}${n} ${fmtA(l.amps)} A`;
 };

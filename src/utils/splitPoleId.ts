@@ -1,3 +1,6 @@
+import { ar } from '../i18n/ar';
+import { t } from '../store/localeStore';
+
 // Id for a pole placed on an existing span a–b (Stage 7.11).
 //
 // A span has no stored orientation: its frame is the order of its two pole ids
@@ -54,14 +57,13 @@ export const idBetween = (
 export const splitPoleId = (a: string, b: string, exists: (id: string) => boolean, rand: () => number = Math.random): string | null =>
   a < b ? idBetween(a, b, exists, rand) : idBetween(b, a, exists, rand);
 
-export const MID_POLE_REFUSED =
-  'تعذّرت إضافة عمود على هذا المقطع: معرّفات عمودَي المقطع غير مألوفة (غالبًا من ملف مستورد)، ' +
-  'فلا يمكن ضمان بقاء ترتيب الكوابل المتوازية وجهة رقم المسافة كما هي. لم يتغيّر شيء في الرسم.';
+/** the refusal message, in Arabic (the message given to the user is in the interface language) */
+export const MID_POLE_REFUSED = ar.dialogs.midPoleRefused;
 
 export type MidPoleId = { ok: true; id: string } | { ok: false; message: string };
 
 /** The id to use for a pole placed on span a–b, or a refusal (never a random id that could mirror the cables). */
 export const midPoleId = (a: string, b: string, exists: (id: string) => boolean, rand: () => number = Math.random): MidPoleId => {
   const id = splitPoleId(a, b, exists, rand);
-  return id ? { ok: true, id } : { ok: false, message: MID_POLE_REFUSED };
+  return id ? { ok: true, id } : { ok: false, message: t('dialogs.midPoleRefused') };
 };

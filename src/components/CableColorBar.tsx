@@ -5,6 +5,8 @@ import { normColor } from '../utils/network';
 import { poleNamer } from '../utils/poleNames';
 import { ChevronDown } from 'lucide-react';
 import { ICON_SM } from './ui/icons';
+import { useLocale, useT } from '../store/localeStore';
+import { directionOf } from '../i18n';
 
 // The floating colour bar at the bottom of the canvas: one rounded square per colour
 // (with the number of cables of that colour), optionally limited to one transformer
@@ -28,12 +30,15 @@ const topologyKey = (elements: DrawingElement[]) => JSON.stringify(elements.map(
 }).filter(Boolean));
 
 const SCOPE_MENU = '\u0000scopes';
-const plural = (n: number) => (n === 1 ? 'كيبل واحد' : n === 2 ? 'كيبلان' : `${n} كوابل`);
+const plural = (n: number, t: ReturnType<typeof useT>) => (n === 1 ? t('colourBar.cablesOne') : n === 2 ? t('colourBar.cablesTwo') : t('colourBar.cablesMany', { n }));
 
 export const CableColorBar: React.FC<Props> = ({ elements, selectedId, onSelectCable }) => {
   const key = topologyKey(elements);
+  const t = useT();
+  const locale = useLocale((st) => st.locale);
+  const dir = directionOf(locale);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const grouping = useMemo(() => groupCables(elements), [key]);
+  const grouping = useMemo(() => groupCables(elements, t), [key, locale]);
   const [scope, setScope] = useState<string>(ALL_SCOPE);
   // what the small panel above the bar shows: a colour's cables, the scope choice, or nothing
   const [open, setOpen] = useState<string | null>(null);
@@ -47,7 +52,7 @@ export const CableColorBar: React.FC<Props> = ({ elements, selectedId, onSelectC
   const openGroup = scopesOpen ? null : groups.find((g) => g.key === open) ?? null;
   const selected = elements.find((e) => e.id === selectedId && e.type === 'cable') as CableElement | undefined;
   const selectedColour = selected && (!scopeIds || scopeIds.includes(selected.id)) ? normColor(selected.strokeColor) : null;
-  const name = useMemo(() => poleNamer(elements), [elements]);
+  const name = useMemo(() => poleNamer(elements, t), [elements, t]);
   const cableCount = elements.reduce((n, e) => n + (e.type === 'cable' ? 1 : 0), 0);
 
   // a tap anywhere else closes the panel; the tap itself goes on (drawing, panning, zooming)
@@ -61,7 +66,7 @@ export const CableColorBar: React.FC<Props> = ({ elements, selectedId, onSelectC
 
   if (!cableCount) return null;
   const showScopes = grouping.scopes.some((s) => s.kind !== 'unassigned');
-  const scopeItems = [{ key: ALL_SCOPE, label: 'الكل', n: cableCount }, ...grouping.scopes.map((s) => ({ key: s.key, label: s.label, n: s.cableIds.length }))];
+  const scopeItems = [{ key: ALL_SCOPE, label: t('colourBar.all'), n: cableCount }, ...grouping.scopes.map((s) => ({ key: s.key, label: s.label, n: s.cableIds.length }))];
   const current = scopeItems.find((s) => s.key === activeScope)!;
   const panel = 'ui-float pointer-events-auto w-[min(300px,calc(100vw-124px))] max-h-[min(34vh,220px)] overflow-y-auto overscroll-contain py-1';
 
@@ -71,12 +76,12 @@ export const CableColorBar: React.FC<Props> = ({ elements, selectedId, onSelectC
     <div className="absolute bottom-safe-bottom left-0 right-0 py-2 px-[58px] flex justify-center pointer-events-none" data-cable-colour-bar>
       <div ref={rootRef} className="flex max-w-full flex-col items-center gap-1.5 pointer-events-none">
         {scopesOpen && (
-          <div dir="rtl" role="menu" aria-label="مجموعات المحولات" data-scope-menu className={panel}>
+          <div dir={dir} role="menu" aria-label={t('colourBar.scopes')} data-scope-menu className={panel}>
             {scopeItems.map((s) => (
               <button key={s.key} type="button" role="menuitemradio" aria-checked={activeScope === s.key} data-scope={s.key}
-                aria-label={`${s.label}: ${plural(s.n)}`}
+                aria-label={t('colourBar.scopeItem', { label: s.label, count: plural(s.n, t) })}
                 onClick={() => { setScope(s.key); setOpen(null); }}
-                className={`flex min-h-[40px] w-full items-center justify-between gap-2 px-3 text-right text-[14px] text-ios-label active:bg-ios-fill ${activeScope === s.key ? 'bg-ios-blue/[0.10] font-semibold' : ''}`}>
+                className={`flex min-h-[40px] w-full items-center justify-between gap-2 px-3 text-start text-[14px] text-ios-label active:bg-ios-fill ${activeScope === s.key ? 'bg-ios-blue/[0.10] font-semibold' : ''}`}>
                 <span className="truncate">{s.label}</span>
                 <span className="min-w-[22px] rounded-full bg-black/[0.08] px-1.5 text-center text-[12px] leading-[18px]">{s.n}</span>
               </button>
@@ -84,10 +89,10 @@ export const CableColorBar: React.FC<Props> = ({ elements, selectedId, onSelectC
           </div>
         )}
         {openGroup && (
-          <div dir="rtl" role="listbox" aria-label={`كوابل اللون ${openGroup.color}`} data-cable-list={openGroup.key} className={panel}>
+          <div dir={dir} role="listbox" aria-label={t('colourBar.listName', { color: openGroup.color })} data-cable-list={openGroup.key} className={panel}>
             <div className="flex items-center gap-2 px-3 py-1.5 text-[12px] text-ios-secondary">
               <span className="h-3.5 w-3.5 flex-shrink-0 rounded-[4px] ring-1 ring-inset ring-black/10" style={{ backgroundColor: openGroup.color }} />
-              <span>{plural(openGroup.cableIds.length)} · {openGroup.spans} مقاطع{activeScope !== ALL_SCOPE ? ` · ${current.label}` : ''}</span>
+              <span>{t('colourBar.listHead', { count: plural(openGroup.cableIds.length, t), spans: openGroup.spans, scope: activeScope !== ALL_SCOPE ? ` · ${current.label}` : '' })}</span>
             </div>
             {openGroup.cableIds.map((id) => {
               const c = elements.find((e) => e.id === id) as CableElement;
@@ -95,12 +100,12 @@ export const CableColorBar: React.FC<Props> = ({ elements, selectedId, onSelectC
               return (
                 <button key={id} type="button" role="option" aria-selected={isSel}
                   onClick={() => { onSelectCable(id); setOpen(null); }}
-                  className={`flex min-h-[40px] w-full items-center gap-2 px-3 text-right text-[14px] text-ios-label active:bg-ios-fill ${isSel ? 'bg-ios-blue/[0.10] font-semibold' : ''}`}
-                  aria-label={`Select cable ${id}`} data-cable-item={id}>
+                  className={`flex min-h-[40px] w-full items-center gap-2 px-3 text-start text-[14px] text-ios-label active:bg-ios-fill ${isSel ? 'bg-ios-blue/[0.10] font-semibold' : ''}`}
+                  aria-label={t('colourBar.selectCable', { name: cableLabelParts(elements, c, name, t).ends })} data-cable-item={id}>
                   <span className="h-1 w-5 flex-shrink-0 rounded-full" style={{ backgroundColor: c.strokeColor }} />
                   <span className="flex min-w-0 flex-col items-start py-1 leading-tight">
-                    <span className="max-w-full truncate">{cableLabelParts(elements, c, name).ends}</span>
-                    <span className="text-[12px] font-normal text-ios-secondary">{cableLabelParts(elements, c, name).spans}</span>
+                    <span className="max-w-full truncate">{cableLabelParts(elements, c, name, t).ends}</span>
+                    <span className="text-[12px] font-normal text-ios-secondary">{cableLabelParts(elements, c, name, t).spans}</span>
                   </span>
                 </button>
               );
@@ -108,14 +113,17 @@ export const CableColorBar: React.FC<Props> = ({ elements, selectedId, onSelectC
           </div>
         )}
 
-        <div className="ui-float pointer-events-auto flex max-w-full items-center gap-2 overflow-x-auto no-scrollbar px-2 py-1.5" role="group" aria-label="ألوان الكوابل">
+        <div className="ui-float pointer-events-auto flex max-w-full items-center gap-2 overflow-x-auto no-scrollbar px-2 py-1.5" role="group" aria-label={t('colourBar.bar')}>
           {showScopes && (
             <>
               <button type="button" data-scope-toggle={activeScope} aria-haspopup="menu" aria-expanded={scopesOpen}
-                aria-label={`المجموعة: ${current.label} (${plural(current.n)})`}
+                aria-label={t('colourBar.scopeToggle', { label: current.label, count: plural(current.n, t) })}
                 onClick={() => setOpen(scopesOpen ? null : SCOPE_MENU)}
-                className={`m-0.5 flex h-[30px] flex-shrink-0 items-center gap-1 whitespace-nowrap rounded-[9px] px-2 text-[12px] font-medium ${activeScope === ALL_SCOPE ? 'bg-ios-fill text-ios-label' : 'bg-ios-blue text-white'}`}>
-                <span dir="rtl">{current.label}</span>
+                // fixed width: fits the longest usual names in both languages («Source: Pole 123», «Transformer 123»,
+                // «Not confirmed»), so the colour squares after it keep their places whatever the language or group.
+                // A longer name (e.g. «Source: Transformer 12») is cut with «…»; it is whole in the menu and aria-label.
+                className={`m-0.5 flex h-[30px] w-[132px] flex-shrink-0 items-center justify-between gap-1 whitespace-nowrap rounded-[9px] px-2 text-[12px] font-medium ${activeScope === ALL_SCOPE ? 'bg-ios-fill text-ios-label' : 'bg-ios-blue text-white'}`}>
+                <span dir={dir} className="min-w-0 truncate" title={current.label} data-scope-label>{current.label}</span>
                 <ChevronDown {...ICON_SM} className={scopesOpen ? 'rotate-180' : ''} aria-hidden="true" />
               </button>
               <div className="ui-sep-v !mx-0" aria-hidden="true" />
@@ -125,7 +133,7 @@ export const CableColorBar: React.FC<Props> = ({ elements, selectedId, onSelectC
             const isOpen = open === g.key, isActive = selectedColour === g.key;
             return (
               <button key={g.key} type="button" data-colour-group={g.key} aria-expanded={isOpen}
-                aria-label={`لون ${g.color}: ${plural(g.cableIds.length)}`}
+                aria-label={t('colourBar.colour', { color: g.color, count: plural(g.cableIds.length, t) })}
                 onClick={() => {
                   if (isOpen) { setOpen(null); return; }
                   setOpen(g.key);

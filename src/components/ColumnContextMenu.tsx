@@ -10,6 +10,7 @@ import { useSmallScreen } from '../utils/smallScreen';
 /** the phone sheet's largest height, as a fraction of the visible height */
 export const SHEET_MAX = 0.45;
 import type { ConsumerElement } from '../types/drawing';
+import { useT } from '../store/localeStore';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -28,6 +29,7 @@ interface ColumnContextMenuProps {
 
 export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId, position, onClose, onStartArc, onOpenCableEnds, onProposeConsumer, onSheetTop }) => {
   const { elements, updateSymbolModifiers, updateElement, addElement, saveHistory } = useDrawingStore();
+  const t = useT();
   const element = elements.find(el => el.id === elementId) as SymbolElement;
   const menuRef = useRef<HTMLDivElement>(null);
   const [showCableNumberMenu, setShowCableNumberMenu] = useState(false);
@@ -184,11 +186,11 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
     updateElement(c.id, patch);
     saveHistory();
   };
-  const poleName = poleNamer(elements);
-  const cableLabel = (c: CableElement) => `من ${poleName(c.poleIds[0])} إلى ${poleName(c.poleIds[c.poleIds.length - 1])}`;
+  const poleName = poleNamer(elements, t);
+  const cableLabel = (c: CableElement) => t('columnMenu.cableFromTo', { from: poleName(c.poleIds[0]), to: poleName(c.poleIds[c.poleIds.length - 1]) });
 
   const handleAddCableNumber = (color: string) => {
-    const cableNumber = prompt('أدخل رقم الكابل (ترتيب الكوابل من الأعلى):');
+    const cableNumber = prompt(t('dialogs.cableNumberPrompt'));
     if (cableNumber && cableNumber.trim() !== '') {
       saveHistory();
       const numberText = cableNumber.trim();
@@ -247,36 +249,36 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
         className={`ui-menu-item ${element.isProposed ? 'text-ios-red font-medium' : ''}`}
         role="menuitemcheckbox"
         aria-checked={!!(element.isProposed)}
-        onClick={toggleProposed}
+        data-pole-menu="proposed" onClick={toggleProposed}
       >
-        <span>Proposed Pole</span>
+        <span>{t('columnMenu.proposedPole')}</span>
         {(element.isProposed) && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
       </button>
       <button 
         className={`ui-menu-item ${modifiers.isProposedReplacement ? 'text-ios-red font-medium' : ''}`}
         role="menuitemcheckbox"
         aria-checked={!!(modifiers.isProposedReplacement)}
-        onClick={toggleProposedReplacement}
+        data-pole-menu="proposed-replacement" onClick={toggleProposedReplacement}
       >
-        <span>Proposed Replacement</span>
+        <span>{t('columnMenu.proposedReplacement')}</span>
         {(modifiers.isProposedReplacement) && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
       </button>
       <button 
         className={`ui-menu-item ${modifiers.isTilted ? 'text-ios-red font-medium' : ''}`}
         role="menuitemcheckbox"
         aria-checked={!!(modifiers.isTilted)}
-        onClick={toggleTilted}
+        data-pole-menu="tilted" onClick={toggleTilted}
       >
-        <span>Tilted</span>
+        <span>{t('columnMenu.tilted')}</span>
         {(modifiers.isTilted) && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
       </button>
       <button 
         className={`ui-menu-item ${modifiers.isRusted ? 'text-ios-red font-medium' : ''}`}
         role="menuitemcheckbox"
         aria-checked={!!(modifiers.isRusted)}
-        onClick={toggleRusted}
+        data-pole-menu="rusted" onClick={toggleRusted}
       >
-        <span>Rusted</span>
+        <span>{t('columnMenu.rusted')}</span>
         {(modifiers.isRusted) && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
       </button>
       {element.symbolId !== 'transformer' && (
@@ -284,9 +286,9 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
           className={`ui-menu-item ${modifiers.note ? 'text-ios-blue font-medium' : ''}`}
           role="menuitemcheckbox"
           aria-checked={!!(modifiers.note)}
-          onClick={toggleNote}
+          data-pole-menu="note" onClick={toggleNote}
         >
-          <span>{modifiers.note ? 'Remove Note' : 'Add Note'}</span>
+          <span>{modifiers.note ? t('columnMenu.removeNote') : t('columnMenu.addNote')}</span>
           {(modifiers.note) && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
         </button>
       )}
@@ -297,9 +299,9 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
           className={`ui-menu-item ${modifiers.vdSource ? 'text-ios-blue font-medium' : ''}`}
           role="menuitemcheckbox"
           aria-checked={!!modifiers.vdSource}
-          onClick={() => updateSymbolModifiers(elementId, { vdSource: !modifiers.vdSource })}
+          data-pole-menu="vd-source" onClick={() => updateSymbolModifiers(elementId, { vdSource: !modifiers.vdSource })}
         >
-          <span>مصدر التغذية (هبوط الفولتية)</span>
+          <span>{t('columnMenu.vdSource')}</span>
           {modifiers.vdSource && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
         </button>
       )}
@@ -309,9 +311,10 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
         <button
           className="ui-menu-item"
           role="menuitem"
+          data-pole-menu="cable-ends"
           onClick={() => { onOpenCableEnds(elementId); onClose(); }}
         >
-          ربط الكوابل عند هذا العمود
+          {t('columnMenu.cableEnds')}
         </button>
       )}
 
@@ -323,9 +326,10 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
           role="menuitemcheckbox"
           aria-checked={isSplitHere(connectedCables[0])}
           data-suggested-split-item={connectedCables[0].id}
+          data-pole-menu="split"
           onClick={() => toggleSplit(connectedCables[0])}
         >
-          <span>نقطة فصل مقترحة</span>
+          <span>{t('columnMenu.split')}</span>
           {isSplitHere(connectedCables[0]) && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
         </button>
       )}
@@ -335,14 +339,15 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
             className={`ui-menu-item ${connectedCables.some(isSplitHere) ? 'text-ios-red font-medium' : ''}`}
             role="menuitem"
             aria-expanded={showSplitMenu}
+            data-pole-menu="split-more"
             onClick={() => setShowSplitMenu(!showSplitMenu)}
           >
-            <span>نقطة فصل مقترحة…</span>
+            <span>{t('columnMenu.splitMore')}</span>
             <span className="text-[13px] text-ios-secondary">{connectedCables.filter(isSplitHere).length || ''}</span>
           </button>
           {showSplitMenu && (
-            <div className="flex flex-col border-t border-ios-separator" role="group" aria-label="اختر الكيبل لنقطة الفصل المقترحة">
-              <div className="px-4 py-1.5 text-[12px] text-ios-secondary">اختر الكيبل:</div>
+            <div className="flex flex-col border-t border-ios-separator" role="group" aria-label={t('columnMenu.splitGroup')}>
+              <div className="px-4 py-1.5 text-[12px] text-ios-secondary">{t('columnMenu.chooseCable')}</div>
               {connectedCables.map((c) => (
                 <button
                   key={c.id}
@@ -353,7 +358,7 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
                   onClick={() => toggleSplit(c)}
                 >
                   <span className="h-4 w-4 flex-shrink-0 rounded-full ring-1 ring-inset ring-black/10" style={{ backgroundColor: c.strokeColor }} />
-                  <span className="flex-1 truncate">كيبل {cableLabel(c)}</span>
+                  <span className="flex-1 truncate">{cableLabel(c)}</span>
                   {isSplitHere(c) && <Check size={18} strokeWidth={2.25} aria-hidden="true" />}
                 </button>
               ))}
@@ -365,13 +370,13 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
       {/* «مشترك مقترح»: propose a new subscriber here / edit the ones proposed here */}
       {onProposeConsumer && connectedCables.length > 0 && (
         <button className="ui-menu-item" role="menuitem" data-propose-consumer="new" onClick={() => { onProposeConsumer(elementId); onClose(); }}>
-          اقتراح مشترك جديد
+          {t('columnMenu.proposeNew')}
         </button>
       )}
       {onProposeConsumer && elements.filter((e): e is ConsumerElement => e.type === 'consumer' && e.poleId === elementId && !!e.proposal).map((pc) => (
         <button key={pc.id} className="ui-menu-item" role="menuitem" data-propose-consumer={pc.id} onClick={() => { onProposeConsumer(elementId, pc.id); onClose(); }}>
-          <span>تعديل المشترك المقترح</span>
-          <span className="text-[13px] text-ios-secondary">{proposalLoadText(pc)}{pc.proposal!.status === 'confirmed' ? ' · معتمد' : ''}</span>
+          <span>{t('columnMenu.proposeEdit')}</span>
+          <span className="text-[13px] text-ios-secondary">{proposalLoadText(pc)}{pc.proposal!.status === 'confirmed' ? t('columnMenu.confirmedSuffix') : ''}</span>
         </button>
       ))}
 
@@ -380,9 +385,10 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
         <button
           className="ui-menu-item"
           role="menuitem"
+          data-pole-menu="jumper"
           onClick={() => { onStartArc(elementId); onClose(); }}
         >
-          Jumper — وصلة ربط
+          {t('jumper.name')}
         </button>
       )}
 
@@ -393,15 +399,16 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
             className="ui-menu-item"
             role="menuitem"
             aria-expanded={showCableNumberMenu}
+            data-pole-menu="cable-numbering"
             onClick={() => setShowCableNumberMenu(!showCableNumberMenu)}
           >
-            ترقيم الكوابل
+            {t('columnMenu.cableNumbering')}
           </button>
           
           {showCableNumberMenu && (
             <div className="absolute left-0 top-full mt-1 ui-float !rounded-[14px] py-1 flex flex-col z-50 min-w-[180px]">
               <div className="text-[13px] text-ios-secondary px-4 py-2 border-b border-ios-separator">
-                اختر لون الكابل:
+                {t('columnMenu.chooseColour')}
               </div>
               {cableColors.map((color, index) => (
                 <button
@@ -413,7 +420,7 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
                     className="w-4 h-4 rounded-full ring-1 ring-inset ring-black/10" 
                     style={{ backgroundColor: color }}
                   />
-                  <span>لون الكابل</span>
+                  <span>{t('columnMenu.cableColour')}</span>
                 </button>
               ))}
             </div>

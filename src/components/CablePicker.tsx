@@ -2,6 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { X } from 'lucide-react';
 import { ICON_SM } from './ui/icons';
 import type { CableChoice } from '../utils/cableHits';
+import { useLocale, useT } from '../store/localeStore';
+import { directionOf } from '../i18n';
 
 // Choosing among cables that lie under one touch (cableHits.ts), and then reaching the
 // two separate pages of the chosen cable: its look (the properties panel: colour, width,
@@ -62,6 +64,8 @@ interface PickerProps {
 
 export const CablePicker: React.FC<PickerProps> = ({ at, bounds, choices, selectedId, onPick, onClose }) => {
   const ref = useRef<HTMLDivElement>(null);
+  const t = useT();
+  const locale = useLocale((st) => st.locale);
   // the touch that closes the list on the drawing only closes it
   useOutside(true, ref, onClose, true);
   const B = band(bounds);
@@ -78,17 +82,17 @@ export const CablePicker: React.FC<PickerProps> = ({ at, bounds, choices, select
   const h = Math.max(96, Math.min(want, above ? roomAbove : roomBelow));
   const top = above ? at.y - 18 - h : at.y + 18;
   return (
-    <div ref={ref} dir="rtl" role="listbox" aria-label="اختر الكيبل" data-cable-picker
+    <div ref={ref} dir={directionOf(locale)} role="listbox" aria-label={t('picker.list')} data-cable-picker
       className="ui-float fixed z-40 overflow-y-auto overscroll-contain py-1"
       style={{ left, top: Math.max(ceil, top), width: w, maxHeight: h }}>
-      <div className="px-3 py-1.5 text-[12px] text-ios-secondary">{choices.length} كوابل هنا — اختر واحداً</div>
+      <div className="px-3 py-1.5 text-[12px] text-ios-secondary">{t('picker.count', { n: choices.length })}</div>
       {choices.map((c) => {
         const isSel = c.cableId === selectedId;
         return (
           <button key={c.cableId} type="button" role="option" aria-selected={isSel} data-pick-cable={c.cableId}
-            aria-label={`اختيار الكيبل ${c.ends}${c.extra ? ` (${c.extra})` : ''}`}
+            aria-label={t('picker.choose', { ends: c.ends, extra: c.extra ? ` (${c.extra})` : '' })}
             onClick={() => onPick(c)}
-            className={`flex min-h-[52px] w-full items-center gap-2.5 px-3 text-right active:bg-ios-fill ${isSel ? 'bg-ios-blue/[0.10]' : ''}`}>
+            className={`flex min-h-[52px] w-full items-center gap-2.5 px-3 text-start active:bg-ios-fill ${isSel ? 'bg-ios-blue/[0.10]' : ''}`}>
             {/* a cable that would read the same as another one carries its number in its colour square */}
             <span className="relative h-7 w-7 flex-shrink-0 rounded-[7px] ring-1 ring-inset ring-black/10" style={{ backgroundColor: c.color }}>
               {c.extra && <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-white [text-shadow:0_0_2px_rgba(0,0,0,0.9)]">{c.extra.replace(/\D+/g, '')}</span>}
@@ -96,10 +100,10 @@ export const CablePicker: React.FC<PickerProps> = ({ at, bounds, choices, select
             <span className="flex min-w-0 flex-1 flex-col items-start leading-tight">
               <span className={`max-w-full truncate text-[14px] text-ios-label ${isSel ? 'font-semibold' : ''}`}>{c.ends}</span>
               <span className="max-w-full whitespace-normal break-words text-[12px] text-ios-secondary">
-                {c.spans}{c.spanHere ? ` · هنا: ${c.spanHere}` : ''}{c.extra ? ` · ${c.extra}` : ''}
+                {c.spans}{c.spanHere ? t('picker.here', { span: c.spanHere }) : ''}{c.extra ? ` · ${c.extra}` : ''}
               </span>
             </span>
-            {isSel && <span className="flex-shrink-0 text-[12px] font-semibold text-ios-blue">محدَّد</span>}
+            {isSel && <span className="flex-shrink-0 text-[12px] font-semibold text-ios-blue">{t('picker.selected')}</span>}
           </button>
         );
       })}
@@ -120,29 +124,31 @@ interface ActionsProps {
 /** The chosen cable and its two pages, kept apart: «تنسيق الكيبل» and «خصائص الهبوط». */
 export const CableActions: React.FC<ActionsProps> = ({ bounds, choice, styleAvailable, onStyle, onDrop, onClose }) => {
   const ref = useRef<HTMLDivElement>(null);
+  const t = useT();
+  const locale = useLocale((st) => st.locale);
   useOutside(true, ref, onClose);
   const B = band(bounds);
   const w = Math.min(320, B.right - B.left);
   const left = (B.left + B.right) / 2 - w / 2;
   return (
-    <div ref={ref} dir="rtl" role="toolbar" aria-label="الكيبل المحدد" data-cable-actions={choice.cableId}
+    <div ref={ref} dir={directionOf(locale)} role="toolbar" aria-label={t('picker.actions')} data-cable-actions={choice.cableId}
       className="ui-float fixed z-40 px-3 py-2" style={{ left, top: bounds.top + 8, width: w }}>
       <div className="flex items-center gap-2">
         <span className="h-4 w-4 flex-shrink-0 rounded-[5px] ring-1 ring-inset ring-black/10" style={{ backgroundColor: choice.color }} />
         <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ios-label">{choice.ends}{choice.extra ? ` · ${choice.extra}` : ''}</span>
-        <button type="button" onClick={onClose} aria-label="إغلاق" className="ui-icon-btn h-7 w-7 flex-shrink-0"><X {...ICON_SM} /></button>
+        <button type="button" onClick={onClose} aria-label={t('common.close')} data-cable-actions-close className="ui-icon-btn h-7 w-7 flex-shrink-0"><X {...ICON_SM} /></button>
       </div>
       <div className="mt-2 flex gap-2">
         <button type="button" onClick={onStyle} disabled={!styleAvailable} data-open-style className="ui-tinted-btn !min-h-[40px] flex-1 !px-2 text-[14px] disabled:opacity-40">
           <span className="flex flex-col items-center leading-tight">
-            <span>تنسيق الكيبل</span>
-            {!styleAvailable ? <span className="text-[11px] font-normal">غير متاح بوضع الرسم الكامل</span> : null}
+            <span>{t('picker.style')}</span>
+            {!styleAvailable ? <span className="text-[11px] font-normal">{t('picker.styleUnavailable')}</span> : null}
           </span>
         </button>
         <button type="button" onClick={onDrop} disabled={!choice.span} data-open-drop
           className="ui-tinted-btn !min-h-[40px] flex-1 !px-2 text-[14px] disabled:opacity-40">
           <span className="flex flex-col items-center leading-tight">
-            <span>خصائص الهبوط</span>
+            <span>{t('picker.drop')}</span>
             {choice.spanHere ? <span className="text-[11px] font-normal">{choice.spanHere}</span> : null}
           </span>
         </button>

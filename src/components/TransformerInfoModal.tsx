@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, ChevronDown, Download, Move, ZoomIn, ZoomOut, Trash2, Plus, Minus } from 'lucide-react';
+import { useLocale, useT } from '../store/localeStore';
+import { directionOf } from '../i18n';
 
 interface BoxCircuits {
   circuits: string;
@@ -30,6 +32,8 @@ interface TransformerInfoModalProps {
 }
 
 export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOpen, onClose, onSave, onAddToCanvas }) => {
+  const t = useT();
+  const locale = useLocale((st) => st.locale);
   const [info, setInfo] = useState<TransformerInfo>({
     transformerNumber: '',
     mainCable: '300',
@@ -113,45 +117,41 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
   };
 
   const getCableLabel = () => {
-    if (showCustomInput && customCable) return `${customCable} مم²`;
-    switch (info.mainCable) {
-      case '300': return '300 مم²';
-      case '185': return '185 مم²';
-      case '120': return '120 مم²';
-      case '70': return '70 مم²';
-      default: return info.mainCable ? `${info.mainCable} مم²` : 'اختر المقاس';
-    }
+    if (showCustomInput && customCable) return t('tf.mm2', { n: customCable });
+    return info.mainCable ? t('tf.mm2', { n: info.mainCable }) : t('tf.chooseSize');
   };
 
-  const getCableTypeLabel = () => info.cableType === 'copper' ? 'نحاسي' : 'ألمنيوم';
+  const getCableTypeLabel = () => info.cableType === 'copper' ? t('tf.copper') : t('tf.aluminium');
   const getInstallationMethodLabel = () => {
     switch (info.installationMethod) {
-      case 'ground': return 'على الأرض';
-      case 'hanging': return 'معلق';
-      case 'indoor': return 'داخل غرفة';
+      case 'ground': return t('tf.ground');
+      case 'hanging': return t('tf.hanging');
+      case 'indoor': return t('tf.indoorRoom');
       default: return '';
     }
   };
-  const getTransformerTypeLabel = () => info.transformerType === 'public' ? 'عام' : 'خاص';
-  const getBoxInstallationLabel = () => info.boxInstallationMethod === 'ground' ? 'على الأرض' : 'معلق';
+  const getTransformerTypeLabel = () => info.transformerType === 'public' ? t('tf.public') : t('tf.private');
+  const getBoxInstallationLabel = () => info.boxInstallationMethod === 'ground' ? t('tf.ground') : t('tf.hanging');
   const getLightingBoxLabel = () => {
     switch (info.lightingBox) {
-      case 'indoor': return 'داخلي';
-      case 'outdoor': return 'خارجي';
-      case 'none': return 'لا يوجد';
+      case 'indoor': return t('tf.indoor');
+      case 'outdoor': return t('tf.outdoor');
+      case 'none': return t('tf.none');
       default: return '';
     }
   };
-  const getCapacitorLabel = () => info.capacitor === 'yes' ? 'موجود' : 'غير موجود';
+  const getCapacitorLabel = () => info.capacitor === 'yes' ? t('tf.present') : t('tf.absent');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] supports-[height:100dvh]:max-h-[90dvh] overflow-hidden flex flex-col">
+      <div dir={directionOf(locale)} role="dialog" aria-label={t('tf.title')} data-tf-modal className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] supports-[height:100dvh]:max-h-[90dvh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gradient-to-l from-blue-600 to-blue-700">
-          <h2 className="text-xl font-bold text-white">معلومات المحول</h2>
+          <h2 className="text-xl font-bold text-white">{t('tf.title')}</h2>
           <button
             onClick={onClose}
+            aria-label={t('tf.close')}
+            data-tf-action="close"
             className="p-2 rounded-full hover:bg-white/20 text-white transition-colors"
           >
             <X size={20} />
@@ -163,59 +163,59 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
           <div className="space-y-4">
             {/* رقم المحول */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">رقم المحول</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">{t('tf.number')}</label>
               <input
                 type="text"
                 value={info.transformerNumber}
                 onChange={(e) => setInfo({ ...info, transformerNumber: e.target.value })}
-                placeholder="أدخل رقم المحول"
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-right"
+                placeholder={t('tf.numberPlaceholder')}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-start"
               />
             </div>
 
             {/* الكيبل الرئيسي */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">الكابل الرئيسي (مم²)</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">{t('tf.mainCable')}</label>
               <div className="relative">
                 <select
                   value={showCustomInput ? 'custom' : info.mainCable}
                   onChange={(e) => handleCableChange(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white text-right"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none bg-white text-start"
                 >
-                  <option value="300">300 مم²</option>
-                  <option value="185">185 مم²</option>
-                  <option value="120">120 مم²</option>
-                  <option value="70">70 مم²</option>
-                  <option value="custom">أخرى (إدخال يدوي)</option>
+                  <option value="300">{t('tf.mm2', { n: 300 })}</option>
+                  <option value="185">{t('tf.mm2', { n: 185 })}</option>
+                  <option value="120">{t('tf.mm2', { n: 120 })}</option>
+                  <option value="70">{t('tf.mm2', { n: 70 })}</option>
+                  <option value="custom">{t('tf.other')}</option>
                 </select>
-                <ChevronDown className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={20} />
+                <ChevronDown className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" size={20} />
               </div>
               {showCustomInput && (
                 <input
                   type="number"
                   value={customCable}
                   onChange={(e) => handleCustomCableChange(e.target.value)}
-                  placeholder="أدخل المقاس المطلوب"
-                  className="w-full mt-2 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-right"
+                  placeholder={t('tf.customPlaceholder')}
+                  className="w-full mt-2 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-start"
                 />
               )}
             </div>
 
             {/* عدد الخطوط الرئيسية */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">عدد الخطوط الرئيسية</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">{t('tf.mainLines')}</label>
               <input
                 type="number"
                 min="1"
                 value={info.mainLinesCount}
                 onChange={(e) => setInfo({ ...info, mainLinesCount: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-right"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-start"
               />
             </div>
 
             {/* نوع الخط */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">نوع الخط</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">{t('tf.lineType')}</label>
               <div className="flex gap-3">
                 <button
                   onClick={() => setInfo({ ...info, cableType: 'copper' })}
@@ -225,7 +225,7 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
                       : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}
                 >
-                  نحاسي
+                  {t('tf.copper')}
                 </button>
                 <button
                   onClick={() => setInfo({ ...info, cableType: 'aluminum' })}
@@ -235,32 +235,32 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
                       : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}
                 >
-                  ألمنيوم
+                  {t('tf.aluminium')}
                 </button>
               </div>
             </div>
 
             {/* عدد صناديق التوزيع */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">عدد صناديق التوزيع</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">{t('tf.boxes')}</label>
               <input
                 type="number"
                 min="1"
                 value={info.distributionBoxesCount}
                 onChange={(e) => setInfo({ ...info, distributionBoxesCount: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-right"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-start"
               />
             </div>
 
             {/*Per-box circuits inputs when multiple boxes */}
             {parseInt(info.distributionBoxesCount) > 1 && info.perBoxCircuits ? (
               <div className="space-y-3">
-                <label className="block text-sm font-semibold text-gray-700">الدوائر لكل صندوق على حدة</label>
+                <label className="block text-sm font-semibold text-gray-700">{t('tf.perBox')}</label>
                 {info.perBoxCircuits.map((box, index) => (
                   <div key={index} className="flex items-center gap-2 p-3 bg-blue-50 rounded-xl">
-                    <span className="text-sm font-bold text-blue-700 min-w-[80px]">صندوق {index + 1}</span>
+                    <span className="text-sm font-bold text-blue-700 min-w-[80px]">{t('tf.box', { n: index + 1 })}</span>
                     <div className="flex-1">
-                      <label className="block text-xs text-gray-500">الدوائر</label>
+                      <label className="block text-xs text-gray-500">{t('tf.circuits')}</label>
                       <input
                         type="number"
                         min="1"
@@ -274,7 +274,7 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
                       />
                     </div>
                     <div className="flex-1">
-                      <label className="block text-xs text-gray-500">الفارغة</label>
+                      <label className="block text-xs text-gray-500">{t('tf.empty')}</label>
                       <input
                         type="number"
                         min="0"
@@ -294,25 +294,25 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
               <>
             {/* عدد الدوائر لكل صندوق */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">عدد الدوائر لكل صندوق</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">{t('tf.circuitsPerBox')}</label>
               <input
                 type="number"
                 min="1"
                 value={info.circuitsPerBox}
                 onChange={(e) => setInfo({ ...info, circuitsPerBox: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-right"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-start"
               />
             </div>
 
             {/* عدد الدوائر الفارغة لكل صندوق */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">عدد الدوائر الفارغة بكل صندوق</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">{t('tf.emptyPerBox')}</label>
               <input
                 type="number"
                 min="0"
                 value={info.emptyCircuitsPerBox}
                 onChange={(e) => setInfo({ ...info, emptyCircuitsPerBox: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-right"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-start"
               />
             </div>
               </>
@@ -320,12 +320,12 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
 
             {/* طريقة تركيب المحول */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">طريقة تركيب المحول</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">{t('tf.installation')}</label>
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { value: 'ground', label: 'على الأرض' },
-                  { value: 'hanging', label: 'معلق' },
-                  { value: 'indoor', label: 'داخل غرفة' },
+                  { value: 'ground', label: t('tf.ground') },
+                  { value: 'hanging', label: t('tf.hanging') },
+                  { value: 'indoor', label: t('tf.indoorRoom') },
                 ].map((opt) => (
                   <button
                     key={opt.value}
@@ -344,7 +344,7 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
 
             {/* نوع المحول */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">نوع المحول</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">{t('tf.type')}</label>
               <div className="flex gap-3">
                 <button
                   onClick={() => setInfo({ ...info, transformerType: 'public' })}
@@ -354,7 +354,7 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
                       : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}
                 >
-                  عام
+                  {t('tf.public')}
                 </button>
                 <button
                   onClick={() => setInfo({ ...info, transformerType: 'private' })}
@@ -364,14 +364,14 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
                       : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}
                 >
-                  خاص
+                  {t('tf.private')}
                 </button>
               </div>
             </div>
 
             {/* طريقة تركيب صندوق التوزيع */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">طريقة تركيب صندوق التوزيع</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">{t('tf.boxInstallation')}</label>
               <div className="flex gap-3">
                 <button
                   onClick={() => setInfo({ ...info, boxInstallationMethod: 'ground' })}
@@ -381,7 +381,7 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
                       : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}
                 >
-                  على الأرض
+                  {t('tf.ground')}
                 </button>
                 <button
                   onClick={() => setInfo({ ...info, boxInstallationMethod: 'hanging' })}
@@ -391,19 +391,19 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
                       : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}
                 >
-                  معلق
+                  {t('tf.hanging')}
                 </button>
               </div>
             </div>
 
             {/* صندوق الإنارة */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">صندوق الإنارة</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">{t('tf.lighting')}</label>
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { value: 'indoor', label: 'داخلي' },
-                  { value: 'outdoor', label: 'خارجي' },
-                  { value: 'none', label: 'لا يوجد' },
+                  { value: 'indoor', label: t('tf.indoor') },
+                  { value: 'outdoor', label: t('tf.outdoor') },
+                  { value: 'none', label: t('tf.none') },
                 ].map((opt) => (
                   <button
                     key={opt.value}
@@ -422,7 +422,7 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
 
             {/* المكثف */}
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">المكثف</label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">{t('tf.capacitor')}</label>
               <div className="flex gap-3">
                 <button
                   onClick={() => setInfo({ ...info, capacitor: 'yes' })}
@@ -432,7 +432,7 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
                       : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}
                 >
-                  موجود
+                  {t('tf.present')}
                 </button>
                 <button
                   onClick={() => setInfo({ ...info, capacitor: 'no' })}
@@ -442,7 +442,7 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
                       : 'border-gray-200 text-gray-600 hover:border-gray-300'
                   }`}
                 >
-                  غير موجود
+                  {t('tf.absent')}
                 </button>
               </div>
             </div>
@@ -454,16 +454,18 @@ export const TransformerInfoModal: React.FC<TransformerInfoModalProps> = ({ isOp
           <div className="flex gap-3">
             <button
               onClick={handleAddToCanvas}
+              data-tf-action="add"
               className="flex-1 py-3 px-6 bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold rounded-xl hover:from-green-600 hover:to-green-700 transition-all shadow-lg flex items-center justify-center gap-2"
             >
               <Download size={18} />
-              إضافة للرسم
+              {t('tf.addToDrawing')}
             </button>
             <button
               onClick={handleSave}
+              data-tf-action="save"
               className="flex-1 py-3 px-6 bg-gradient-to-l from-blue-600 to-blue-700 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all shadow-lg"
             >
-              حفظ
+              {t('tf.save')}
             </button>
           </div>
         </div>

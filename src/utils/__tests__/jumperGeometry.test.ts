@@ -233,8 +233,11 @@ describe('cables, renderers, naming, compatibility', () => {
     }
   });
   it('the tool is still named «Jumper — وصلة ربط»', () => {
-    expect(src('src/components/ColumnContextMenu.tsx')).toContain('Jumper — وصلة ربط');
-    expect(src('src/components/SketchCanvas.tsx')).toContain('aria-label="أداة وصلة الربط"');
+    // the texts now come from the interface dictionary (src/i18n); the Arabic ones are unchanged
+    expect(src('src/i18n/ar.ts')).toContain("name: 'Jumper — وصلة ربط'");
+    expect(src('src/i18n/ar.ts')).toContain("toolbar: 'أداة وصلة الربط'");
+    expect(src('src/components/ColumnContextMenu.tsx')).toContain("{t('jumper.name')}");
+    expect(src('src/components/SketchCanvas.tsx')).toContain("aria-label={tr('jumper.toolbar')}");
   });
   it('a project saved with earlier jumpers (type cable_arc) opens, saves again without loss, and draws with the new clearance', () => {
     const legacyJumper = { id: 'old1', type: 'cable_arc', poleId: 'P', from: { cableId: 't', side: 'prev', occurrence: 0 }, to: { cableId: 'br', side: 'next', occurrence: 0 }, x: 0, y: 0, strokeColor: '#123456', fillColor: 'none', strokeWidth: 3 };

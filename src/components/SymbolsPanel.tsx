@@ -2,22 +2,25 @@ import React from 'react';
 import { Home, Square, Type, Spline } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import { ICON_LG } from './ui/icons';
+import { useT } from '../store/localeStore';
 
 export const SymbolsPanel: React.FC = () => {
   const { activeSymbolId, setActiveSymbolId, tool, setTool, consumerVariant, setConsumerVariant } = useDrawingStore();
 
   const isSymbolActive = (id: string) => tool === 'symbol' && activeSymbolId === id;
+  const t = useT();
 
   return (
     <div className="flex flex-col w-14 md:w-16 bg-white/95 border-r border-b border-ios-separator items-center py-2 gap-1 z-10 flex-shrink-0 overflow-y-auto no-scrollbar self-start max-h-[calc(100%-80px)] rounded-br-panel shadow-float touch-manipulation">
-      <div className="text-[10px] font-semibold text-ios-secondary uppercase tracking-wide pt-1 hidden md:block">Tools</div>
+      <div className="text-[10px] font-semibold text-ios-secondary uppercase tracking-wide pt-1 hidden md:block">{t('symbols.tools')}</div>
 
       {/* Text Tool */}
       <button 
         onClick={() => setTool('text')}
         className={`ui-icon-btn ${tool === 'text' ? 'is-active' : ''}`}
-        title="Text"
-        aria-label="Text"
+        title={t('symbols.text')}
+        aria-label={t('symbols.text')}
+        data-symbol-tool="text"
       >
         <Type {...ICON_LG} />
       </button>
@@ -26,22 +29,24 @@ export const SymbolsPanel: React.FC = () => {
       <button 
         onClick={() => setTool('arc')}
         className={`ui-icon-btn ${tool === 'arc' ? 'is-active' : ''}`}
-        title="Arc"
-        aria-label="Arc"
+        title={t('symbols.arc')}
+        aria-label={t('symbols.arc')}
+        data-symbol-tool="arc"
       >
         <Spline {...ICON_LG} />
       </button>
 
       <div className="ui-sep-h" aria-hidden="true" />
 
-      <div className="text-[10px] font-semibold text-ios-secondary uppercase tracking-wide pt-1 hidden md:block">Sym</div>
+      <div className="text-[10px] font-semibold text-ios-secondary uppercase tracking-wide pt-1 hidden md:block">{t('symbols.symbolsHeading')}</div>
       
       {/* Consumer (Circle) */}
       <button 
         onClick={() => { setTool('consumer'); setConsumerVariant('circle'); }}
         className={`ui-icon-btn is-symbol ${tool === 'consumer' && consumerVariant === 'circle' ? 'is-active' : ''}`}
-        title="Consumer (Circle)"
-        aria-label="Consumer (Circle)"
+        title={t('symbols.consumerCircle')}
+        aria-label={t('symbols.consumerCircle')}
+        data-symbol-tool="consumer-circle"
       >
         <Home {...ICON_LG} />
       </button>
@@ -50,8 +55,9 @@ export const SymbolsPanel: React.FC = () => {
       <button 
         onClick={() => { setTool('consumer'); setConsumerVariant('square'); }}
         className={`ui-icon-btn is-symbol ${tool === 'consumer' && consumerVariant === 'square' ? 'is-active' : ''}`}
-        title="Consumer (Square)"
-        aria-label="Consumer (Square)"
+        title={t('symbols.consumerSquare')}
+        aria-label={t('symbols.consumerSquare')}
+        data-symbol-tool="consumer-square"
       >
         <Square {...ICON_LG} />
       </button>
@@ -62,8 +68,9 @@ export const SymbolsPanel: React.FC = () => {
       <button 
         onClick={() => setActiveSymbolId('lv-pole')}
         className={`ui-icon-btn is-symbol ${isSymbolActive('lv-pole') ? 'is-active' : ''}`}
-        title="LV Pole"
-        aria-label="LV Pole"
+        title={t('symbols.lvPole')}
+        aria-label={t('symbols.lvPole')}
+        data-symbol-tool="lv-pole"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="12" cy="12" r="8" stroke="black" strokeWidth="2" fill="white" />
@@ -74,8 +81,9 @@ export const SymbolsPanel: React.FC = () => {
       <button 
         onClick={() => setActiveSymbolId('mv-pole')}
         className={`ui-icon-btn is-symbol ${isSymbolActive('mv-pole') ? 'is-active' : ''}`}
-        title="MV Pole"
-        aria-label="MV Pole"
+        title={t('symbols.mvPole')}
+        aria-label={t('symbols.mvPole')}
+        data-symbol-tool="mv-pole"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="12" cy="12" r="8" fill="black" />
@@ -86,8 +94,9 @@ export const SymbolsPanel: React.FC = () => {
       <button 
         onClick={() => setActiveSymbolId('transformer')}
         className={`ui-icon-btn is-symbol ${isSymbolActive('transformer') ? 'is-active' : ''}`}
-        title="Transformer"
-        aria-label="Transformer"
+        title={t('symbols.transformer')}
+        aria-label={t('symbols.transformer')}
+        data-symbol-tool="transformer"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="8" cy="9" r="5" stroke="black" strokeWidth="1.5" />
@@ -100,8 +109,9 @@ export const SymbolsPanel: React.FC = () => {
       <button 
         onClick={() => setActiveSymbolId('lattice-iron-pole')}
         className={`ui-icon-btn is-symbol ${isSymbolActive('lattice-iron-pole') ? 'is-active' : ''}`}
-        title="Lattice Iron Pole"
-        aria-label="Lattice Iron Pole"
+        title={t('symbols.latticePole')}
+        aria-label={t('symbols.latticePole')}
+        data-symbol-tool="lattice-iron-pole"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect x="4" y="4" width="16" height="16" stroke="black" strokeWidth="2" fill="white" />
@@ -114,8 +124,9 @@ export const SymbolsPanel: React.FC = () => {
       <button 
         onClick={() => setActiveSymbolId('distribution-box')}
         className={`ui-icon-btn is-symbol ${isSymbolActive('distribution-box') ? 'is-active' : ''}`}
-        title="Distribution Box"
-        aria-label="Distribution Box"
+        title={t('symbols.distributionBox')}
+        aria-label={t('symbols.distributionBox')}
+        data-symbol-tool="distribution-box"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <rect x="2" y="8" width="20" height="8" rx="1" stroke="#2563eb" strokeWidth="2" fill="white" />
@@ -126,8 +137,9 @@ export const SymbolsPanel: React.FC = () => {
       <button 
         onClick={() => setActiveSymbolId('small-dot-pole')}
         className={`ui-icon-btn is-symbol ${isSymbolActive('small-dot-pole') ? 'is-active' : ''}`}
-        title="Small Dot Pole"
-        aria-label="Small Dot Pole"
+        title={t('symbols.smallDotPole')}
+        aria-label={t('symbols.smallDotPole')}
+        data-symbol-tool="small-dot-pole"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           {/* Invisible touch area circle */}

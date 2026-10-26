@@ -2,6 +2,10 @@ import type { CableElement, DrawingElement, Point } from '../types/drawing';
 import { calculateCablePath } from './cableLayout';
 import { pathSegmentSpans, type SpanRef } from './cableSegments';
 import { poleNamer } from './poleNames';
+import { translate, type TKey, type TParams } from '../i18n';
+
+type Tr = (key: TKey, params?: TParams) => string;
+const AR_TR: Tr = (key, params) => translate('ar', key, params);
 
 // Which cables a touch could mean (a view-only helper: it reads the drawn geometry and
 // changes nothing). Uses the same drawn path and span assignment as the canvas
@@ -72,11 +76,12 @@ export interface CableChoice {
   extra: string | null;
 }
 
-const spansText = (n: number) => (n === 1 ? 'مقطع واحد' : n === 2 ? 'مقطعان' : `${n} مقاطع`);
+const spansText = (n: number, tr: Tr) => (n === 1 ? tr('picker.spansOne') : n === 2 ? tr('picker.spansTwo') : tr('picker.spansMany', { n }));
 
-/** Rows of the picker: what is really known about each cable, made distinct when needed. */
-export const cableChoices = (elements: DrawingElement[], hits: CableHit[]): CableChoice[] => {
-  const name = poleNamer(elements);
+/** Rows of the picker: what is really known about each cable, made distinct when needed (texts in the
+ *  language of `tr`; Arabic without one). */
+export const cableChoices = (elements: DrawingElement[], hits: CableHit[], tr: Tr = AR_TR): CableChoice[] => {
+  const name = poleNamer(elements, tr);
   const cables = elements.filter((e): e is CableElement => e.type === 'cable');
   const number = new Map(cables.map((c, i) => [c.id, i + 1]));
   const rows = hits.map((h) => {
@@ -85,8 +90,8 @@ export const cableChoices = (elements: DrawingElement[], hits: CableHit[]): Cabl
     return {
       cableId: c.id,
       color: c.strokeColor || '#000000',
-      ends: c.poleIds.length ? `${name(c.poleIds[0])} ← ${name(c.poleIds[c.poleIds.length - 1])}` : 'بدون أعمدة',
-      spans: spansText(n),
+      ends: c.poleIds.length ? `${name(c.poleIds[0])} ← ${name(c.poleIds[c.poleIds.length - 1])}` : tr('picker.noPoles'),
+      spans: spansText(n, tr),
       spanHere: h.span ? `${name(h.span.fromId)} ← ${name(h.span.toId)}` : null,
       span: h.span,
       extra: null as string | null,
@@ -95,6 +100,6 @@ export const cableChoices = (elements: DrawingElement[], hits: CableHit[]): Cabl
   const sig = (r: CableChoice) => `${r.color.trim().toLowerCase()}|${r.ends}|${r.spans}|${r.spanHere}`;
   const count = new Map<string, number>();
   for (const r of rows) count.set(sig(r), (count.get(sig(r)) ?? 0) + 1);
-  for (const r of rows) if ((count.get(sig(r)) ?? 0) > 1) r.extra = `كيبل رقم ${number.get(r.cableId)}`;
+  for (const r of rows) if ((count.get(sig(r)) ?? 0) > 1) r.extra = tr('picker.number', { n: number.get(r.cableId) ?? 0 });
   return rows;
 };

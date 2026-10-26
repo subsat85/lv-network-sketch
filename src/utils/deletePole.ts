@@ -1,5 +1,6 @@
 import type { CableElement, DistanceFlag, DrawingElement } from '../types/drawing';
 import { addExact, isPlainDistance } from './distances';
+import { t } from '../store/localeStore';
 
 /**
  * Deleting a pole (any `symbol` element, incl. transformers) and everything that
@@ -71,8 +72,8 @@ export function deletePoleCascade(
   distanceFlags: Record<string, DistanceFlag> = {},
 ): DeletePoleResult {
   const pole = elements.find(e => e.id === poleId);
-  if (!pole) return { ok: false, reason: 'Pole not found.' };
-  if (pole.type !== 'symbol') return { ok: false, reason: 'Selected element is not a pole.' };
+  if (!pole) return { ok: false, reason: t('dialogs.poleNotFound') };
+  if (pole.type !== 'symbol') return { ok: false, reason: t('dialogs.notAPole') };
 
   const existing = new Set(elements.map(e => e.id));
   existing.delete(poleId);
@@ -189,11 +190,11 @@ export function deletePoleCascade(
   for (const el of nextElements) {
     if (el.type === 'cable' && changedCableIds.includes(el.id)) {
       if (el.poleIds.length < 2 || el.poleIds.some(id => !finalIds.has(id))) {
-        return { ok: false, reason: 'Could not update the cables connected to this pole safely. Nothing was changed.' };
+        return { ok: false, reason: t('dialogs.poleCablesFailed') };
       }
     }
     if (el.type === 'consumer' && el.poleId === poleId) {
-      return { ok: false, reason: 'Could not remove the subscribers of this pole safely. Nothing was changed.' };
+      return { ok: false, reason: t('dialogs.poleConsumersFailed') };
     }
   }
 

@@ -12,6 +12,9 @@ import { CableColorBar } from './CableColorBar';
 import { OPEN_STYLE_PANEL_EVENT } from './StylePanel';
 import { CableActions, CablePicker } from './CablePicker';
 import { cableChoices, cablesNear, isAmbiguous, type CableChoice, type CableHit } from '../utils/cableHits';
+import { t as tCurrent, useT, useLocale } from '../store/localeStore';
+import { directionOf } from '../i18n';
+import { TransformerTableSvg, transformerTableRows, transformerTableSize } from './TransformerTableSvg';
 import { ProposedConsumerSheet } from './ProposedConsumerSheet';
 import { layoutProposalBoxes, proposalBoxCenter, proposalGeometry } from '../utils/proposalDrawing';
 import { useSmallScreen } from '../utils/smallScreen';
@@ -58,6 +61,9 @@ type PendingConsumerState = {
 } | null;
 
 export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = false }) => {
+  // interface texts that follow a language switch at once (the jumper bar and its points)
+  const tr = useT();
+  const uiDir = directionOf(useLocale((st) => st.locale));
   const svgRef = useRef<SVGSVGElement>(null);
   const rawPointsRef = useRef<Point[]>([]); // Store raw points for snapping
   const lastTapRef = useRef<number>(0); // For double tap detection
@@ -920,7 +926,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
        if (dist < 5) {
           const element = elements.find(el => el.id === draggingNote.elementId) as SymbolElement;
           if (element && element.modifiers?.note) {
-             const newText = prompt('Edit Note:', element.modifiers.note.text);
+             const newText = prompt(tCurrent('dialogs.editNotePrompt'), element.modifiers.note.text);
              if (newText !== null) {
                 updateSymbolModifiers(draggingNote.elementId, {
                    note: { ...element.modifiers.note, text: newText }
@@ -937,7 +943,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
           const coords = getWorldCoordinates(e.clientX, e.clientY);
           
           if (tool === 'text') {
-            const text = prompt('Enter text:', '');
+            const text = prompt(tCurrent('dialogs.enterTextPrompt'), '');
             if (text) {
               saveHistory();
               const newText: TextElement = {
@@ -1038,7 +1044,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
                 if (pole) {
                   let label = '';
                   if (consumerVariant === 'square') {
-                     label = prompt('Enter label number:', '') || '';
+                     label = prompt(tCurrent('dialogs.labelNumberPrompt'), '') || '';
                   }
 
                   const newConsumer: ConsumerElement = {
@@ -1360,7 +1366,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
       if (cancelled || !svgRef.current) return;
       const r = svgRef.current.getBoundingClientRect();
       setCableActions(null);
-      setCablePick({ at: { x: start.x, y: start.y }, bounds: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, choices: cableChoices(elements, hits) });
+      setCablePick({ at: { x: start.x, y: start.y }, bounds: { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, choices: cableChoices(elements, hits, tCurrent) });
     };
     window.addEventListener('pointermove', onMove, true);
     window.addEventListener('pointerdown', onDown, true);
@@ -2048,7 +2054,8 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
               <circle cx={p.position.x} cy={p.position.y} r={3.5 * k} fill={p.color} className="pointer-events-none" />
               <g
                 role="button"
-                aria-label={`نقطة اتصال ${p.number}`}
+                aria-label={tr('jumper.point', { n: p.number })}
+                data-jumper-point={p.number}
                 aria-pressed={isFirst}
                 style={{ cursor: 'pointer' }}
                 onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); dispatchArcPick({ type: 'pick', end: p.end }); }}
@@ -2348,70 +2355,9 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
 
   const renderTransformerTable = (el: any, isSelected: boolean) => {
     const { x, y, transformerInfo, scale = 1 } = el;
-    const boxCount = parseInt(transformerInfo.distributionBoxesCount) || 1;
-    const hasPerBox = boxCount > 1 && transformerInfo.perBoxCircuits && transformerInfo.perBoxCircuits.length > 0;
-    
-    // Calculate dynamic height based on number of boxes
-    const baseRows = 8; // Base info rows
-    const perBoxRows = hasPerBox ? boxCount : 0;
-    const totalRows = baseRows + perBoxRows;
-    const rowHeight = 25 * scale;
-    const tableWidth = 300 * scale;
-    const headerHeight = 48 * scale;
-    const tableHeight = (headerHeight + totalRows * rowHeight + 25 * scale);
-
-    const getCableTypeLabel = () => transformerInfo.cableType === 'copper' ? 'نحاسي' : 'ألمونيوم';
-    const getInstallationMethodLabel = () => {
-      switch (transformerInfo.installationMethod) {
-        case 'ground': return 'على الأرض';
-        case 'hanging': return 'معلق';
-        case 'indoor': return 'داخل غرفة';
-        default: return '';
-      }
-    };
-    const getTransformerTypeLabel = () => transformerInfo.transformerType === 'public' ? 'عام' : 'خاص';
-    const getBoxInstallationLabel = () => transformerInfo.boxInstallationMethod === 'ground' ? 'على الأرض' : 'معلق';
-    const getLightingBoxLabel = () => {
-      switch (transformerInfo.lightingBox) {
-        case 'indoor': return 'داخلي';
-        case 'outdoor': return 'خارجي';
-        case 'none': return 'لا يوجد';
-        default: return '';
-      }
-    };
-    const getCapacitorLabel = () => transformerInfo.capacitor === 'yes' ? 'موجود' : 'غير موجود';
-
-    // Build rows array
-    const rows: { label: string; value: string }[] = [
-      { label: 'الكابل الرئيسي', value: `${transformerInfo.mainCable} مم²` },
-      { label: 'عدد الخطوط', value: transformerInfo.mainLinesCount },
-      { label: 'نوع الخط', value: getCableTypeLabel() },
-      { label: 'صناديق التوزيع', value: transformerInfo.distributionBoxesCount },
-    ];
-
-    // Add per-box circuits if multiple boxes
-    if (hasPerBox) {
-      rows.push({ label: 'الدوائر لكل صندوق', value: '' }); // Header row (will be filled by per-box)
-      transformerInfo.perBoxCircuits!.forEach((box, i) => {
-        rows.push({ 
-          label: `  صندوق ${i + 1}`, 
-          value: `تشغيل: ${box.circuits} | فارغ: ${box.emptyCircuits}` 
-        });
-      });
-    } else {
-      rows.push({ label: 'دوائر لكل صندوق', value: transformerInfo.circuitsPerBox });
-      rows.push({ label: 'دوائر فارغة', value: transformerInfo.emptyCircuitsPerBox });
-    }
-
-    rows.push(
-      { label: 'تركيب المحول', value: getInstallationMethodLabel() },
-      { label: 'نوع المحول', value: getTransformerTypeLabel() },
-      { label: 'تركيب الصندوق', value: getBoxInstallationLabel() },
-      { label: 'صندوق الإنارة', value: getLightingBoxLabel() },
-      { label: 'المكثف', value: getCapacitorLabel() }
-    );
-
-    const title = transformerInfo.transformerNumber ? `محول ${transformerInfo.transformerNumber}` : 'معلومات المحول';
+    // the drawing itself is shared with the share preview / PDF (TransformerTableSvg); this wrapper adds
+    // the interaction: drag (pointer down anywhere on the table), the zoom buttons and the selection outline
+    const { width: tableWidth, height: tableHeight } = transformerTableSize(transformerTableRows(transformerInfo, tr).length, scale);
 
     const handleZoomIn = (e: React.PointerEvent) => {
       e.stopPropagation();
@@ -2432,79 +2378,14 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
         className={tool === 'select' ? 'cursor-move' : ''}
         onPointerDown={(e) => handleElementPointerDown(e, el.id)}
         style={{ pointerEvents: tool === 'select' ? 'all' : 'none' }}
+        data-transformer-table={el.id}
       >
-        {/* Shadow effect */}
-        <rect
-          x={2 * scale}
-          y={4 * scale}
-          width={tableWidth}
-          height={tableHeight}
-          fill="#00000020"
-          rx={10 * scale}
-        />
-        
-        {/* Main background */}
-        <rect
-          x={0}
-          y={0}
-          width={tableWidth}
-          height={tableHeight}
-          fill="white"
-          stroke="#1e40af"
-          strokeWidth={1.5 * scale}
-          rx={8 * scale}
-        />
-        
-        {/* Header gradient background */}
-        <rect
-          x={1 * scale}
-          y={1 * scale}
-          width={tableWidth - 2 * scale}
-          height={42 * scale}
-          fill="url(#headerGradient)"
-          rx={7 * scale}
-        />
-        <defs>
-          <linearGradient id="headerGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#1d4ed8" />
-            <stop offset="50%" stopColor="#2563eb" />
-            <stop offset="100%" stopColor="#1d4ed8" />
-          </linearGradient>
-        </defs>
-        
-        {/* Transformer icon */}
-        <g transform={`translate(${12 * scale}, ${10 * scale})`}>
-          <circle cx={0} cy={0} r={12 * scale} fill="white" fillOpacity="0.2" />
-          <circle cx={-4 * scale} cy={0} r={6 * scale} fill="white" stroke="white" strokeWidth={1.5 * scale} />
-          <circle cx={4 * scale} cy={0} r={6 * scale} fill="white" stroke="white" strokeWidth={1.5 * scale} />
-          <rect x={0} y={-8 * scale} width={4 * scale} height={16 * scale} fill="white" rx={1 * scale} />
-        </g>
-        
-        {/* Title text */}
-        <text
-          x={tableWidth / 2 + 8 * scale}
-          y={26 * scale}
-          textAnchor="middle"
-          fill="white"
-          fontSize={15 * scale}
-          fontWeight="bold"
-        >
-          {title}
-        </text>
+        <TransformerTableSvg info={transformerInfo} scale={scale} t={tr} />
 
-        {/* Decorative line under header */}
-        <line
-          x1={0}
-          y1={44 * scale}
-          x2={tableWidth}
-          y2={44 * scale}
-          stroke="#1e40af"
-          strokeWidth={1}
-        />
-
-        {/* Zoom controls - only show when selected */}
+        {/* Zoom controls - only show when selected: at the table's top right corner (the y offset was
+            written as the text "5 * scale", an invalid transform, so the buttons were drawn at 0, 0) */}
         {isSelected && (
-          <g transform={`translate(${tableWidth - 5 * scale}, 5 * scale)`}>
+          <g transform={`translate(${tableWidth - 5 * scale}, ${5 * scale})`} data-transformer-table-zoom>
             {/* Zoom out */}
             <g 
               onPointerDown={handleZoomOut}
@@ -2525,47 +2406,6 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
           </g>
         )}
 
-        {/* Table rows */}
-        <g transform={`translate(${5 * scale}, ${50 * scale})`}>
-          {rows.map((row, i) => {
-            const isCapacitorRow = row.label === 'المكثف';
-            const isCapacitorYes = row.value === 'موجود';
-            
-            return (
-            <g key={i} transform={`translate(0, ${i * 25 * scale})`}>
-              {/* Row background */}
-              <rect x={0} y={0} width={290 * scale} height={25 * scale} fill={i % 2 === 0 ? '#eff6ff' : 'white'} />
-              
-              {/* Left side - label */}
-              <rect x={0} y={0} width={145 * scale} height={25 * scale} fill={i % 2 === 0 ? '#eff6ff' : 'white'} />
-              
-              {/* Right side - value */}
-              <rect x={145 * scale} y={0} width={145 * scale} height={25 * scale} fill={i % 2 === 0 ? '#eff6ff' : 'white'} />
-              
-              {/* Divider */}
-              <line x1={145 * scale} y1={0} x2={145 * scale} y2={25 * scale} stroke="#bfdbfe" strokeWidth={0.5 * scale} />
-              
-              {/* Label text */}
-              <text x={8 * scale} y={16 * scale} fontSize={9 * scale} fill="#1e40af" fontWeight="600">{row.label}</text>
-              
-              {/* Value with special styling for capacitor */}
-              {isCapacitorRow ? (
-                <g>
-                  <circle 
-                    cx={165 * scale} 
-                    cy={12 * scale} 
-                    r={5 * scale} 
-                    fill={isCapacitorYes ? '#22c55e' : '#ef4444'} 
-                  />
-                  <text x={175 * scale} y={16 * scale} fontSize={9 * scale} fill={isCapacitorYes ? '#166534' : '#991b1b'} fontWeight="bold">{row.value}</text>
-                </g>
-              ) : (
-                <text x={150 * scale} y={16 * scale} fontSize={9 * scale} fill="#1e293b" fontWeight="700">{row.value}</text>
-              )}
-            </g>
-          )})}
-        </g>
-        
         {/* Selection highlight */}
         {isSelected && (
           <rect
@@ -2945,12 +2785,12 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
       )}
 
       {arcPickState && (
-        <div dir="rtl" role="toolbar" aria-label="أداة وصلة الربط" className="ui-float absolute left-1/2 bottom-16 z-40 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-2 overflow-x-auto no-scrollbar whitespace-nowrap px-3 py-2 text-[13px]">
-          <span className="flex-shrink-0 font-semibold text-ios-label">Jumper — وصلة ربط</span>
+        <div dir={uiDir} role="toolbar" aria-label={tr('jumper.toolbar')} data-jumper-bar className="ui-float absolute left-1/2 bottom-16 z-40 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-2 overflow-x-auto no-scrollbar whitespace-nowrap px-3 py-2 text-[13px]">
+          <span className="flex-shrink-0 font-semibold text-ios-label">{tr('jumper.name')}</span>
           <span className="flex-shrink-0 text-ios-secondary">
             {arcPickState.first
-              ? `النقطة الثانية (الأولى: ${arcPoints.find(p => sameEnd(p.end, arcPickState.first!))?.number ?? '—'})`
-              : 'اختر النقطة الأولى'}
+              ? tr('jumper.chooseSecond', { n: arcPoints.find(p => sameEnd(p.end, arcPickState.first!))?.number ?? '—' })
+              : tr('jumper.chooseFirst')}
           </span>
           <div className="flex flex-shrink-0 gap-1">
             {arcPoints.map(p => {
@@ -2959,7 +2799,8 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
                 <button
                   key={`${p.end.cableId}:${p.end.side}:${p.end.occurrence}`}
                   type="button"
-                  aria-label={`اختيار النقطة ${p.number}`}
+                  aria-label={tr('jumper.pickPoint', { n: p.number })}
+                  data-jumper-pick={p.number}
                   aria-pressed={isFirst}
                   onClick={() => dispatchArcPick({ type: 'pick', end: p.end })}
                   className={`flex h-8 min-w-8 items-center justify-center gap-1 rounded-full px-2 font-semibold ring-1 ring-inset ring-ios-separator ${isFirst ? 'text-white' : 'text-ios-label bg-white'}`}
@@ -2971,18 +2812,20 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
               );
             })}
           </div>
-          <button type="button" aria-label="إنهاء وصلة الربط" onClick={() => dispatchArcPick({ type: 'cancel' })} className="ui-tinted-btn !w-auto !min-h-[32px] flex-shrink-0 !px-3">تم</button>
+          <button type="button" aria-label={tr('jumper.finish')} data-jumper-done onClick={() => dispatchArcPick({ type: 'cancel' })} className="ui-tinted-btn !w-auto !min-h-[32px] flex-shrink-0 !px-3">{tr('jumper.done')}</button>
         </div>
       )}
 
       {editingDistance && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setEditingDistance(null)}>
           <div className="bg-white rounded-[14px] p-4 shadow-float w-72 max-w-[calc(100vw-32px)]" onClick={e => e.stopPropagation()}>
-            <h3 className="text-[17px] font-semibold text-ios-label text-center mb-3">Edit Distance</h3>
+            <h3 className="text-[17px] font-semibold text-ios-label text-center mb-3">{tCurrent('distance.title')}</h3>
             <input
               type="number"
               inputMode="decimal"
               className="ui-field w-full h-11 mb-4 text-[17px]"
+              aria-label={tCurrent('distance.value')}
+              data-distance-field
               value={editingDistance.value}
               onChange={e => setEditingDistance({ ...editingDistance, value: e.target.value })}
               autoFocus
@@ -2997,8 +2840,9 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
               <button
                 className="min-h-[44px] rounded-ctl bg-ios-fill text-[17px] text-ios-blue active:bg-ios-fill-strong"
                 onClick={() => setEditingDistance(null)}
+                data-distance-action="cancel"
               >
-                Cancel
+                {tCurrent('distance.cancel')}
               </button>
               <button
                 className="min-h-[44px] rounded-ctl bg-ios-blue text-[17px] font-semibold text-white active:bg-ios-blue-pressed"
@@ -3006,8 +2850,9 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
                   updateConnectionDistance(editingDistance.key, editingDistance.value || '1');
                   setEditingDistance(null);
                 }}
+                data-distance-action="save"
               >
-                Save
+                {tCurrent('distance.save')}
               </button>
             </div>
           </div>

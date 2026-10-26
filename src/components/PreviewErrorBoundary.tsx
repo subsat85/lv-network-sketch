@@ -2,6 +2,8 @@ import React, { Component, ErrorInfo } from 'react';
 import { AlertTriangle, RefreshCw, Download, X } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import { serializeProject } from '../utils/projectSerialization';
+import { t as tCurrent, useLocale, useT } from '../store/localeStore';
+import { directionOf } from '../i18n';
 
 interface Props {
   children: React.ReactNode;
@@ -15,6 +17,8 @@ interface State {
 
 const RecoveryActions: React.FC<{ error: Error | null, onReset: () => void, onClose: () => void }> = ({ error, onReset, onClose }) => {
   const { elements, style, poleSizeScale, consumerVariant, connectionDistances, connectionLabelOffsets, currentProjectId, currentProjectName, distanceTextScale, consumerSizeScale, electrical, distanceFlags } = useDrawingStore();
+  const t = useT();
+  const locale = useLocale((st) => st.locale);
 
   const handleDownloadBackup = () => {
     try {
@@ -44,23 +48,22 @@ const RecoveryActions: React.FC<{ error: Error | null, onReset: () => void, onCl
       URL.revokeObjectURL(url);
     } catch (e) {
       console.error('Failed to create backup:', e);
-      alert('Failed to create backup. Please try taking a screenshot instead.');
+      alert(tCurrent('dialogs.backupFailed'));
     }
   };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-red-100">
+      <div dir={directionOf(locale)} role="alertdialog" aria-label={t('recovery.title')} data-preview-recovery className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border border-red-100">
         <div className="flex items-center gap-3 text-red-600 mb-4">
           <div className="p-3 bg-red-50 rounded-full">
             <AlertTriangle size={24} />
           </div>
-          <h2 className="text-xl font-bold">Something went wrong</h2>
+          <h2 className="text-xl font-bold">{t('recovery.title')}</h2>
         </div>
         
         <p className="text-gray-600 mb-6">
-          The preview screen encountered an error. Don't worry, your work is safe.
-          You can download a backup of your project or try to reload the preview.
+          {t('recovery.body')}
         </p>
 
         {error && (
@@ -75,7 +78,7 @@ const RecoveryActions: React.FC<{ error: Error | null, onReset: () => void, onCl
             className="flex items-center justify-center gap-2 w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
           >
             <Download size={18} />
-            Download Project Backup
+            {t('recovery.backup')}
           </button>
           
           <div className="flex gap-3">
@@ -84,14 +87,14 @@ const RecoveryActions: React.FC<{ error: Error | null, onReset: () => void, onCl
               className="flex-1 flex items-center justify-center gap-2 py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors"
             >
               <RefreshCw size={18} />
-              Reload Preview
+              {t('recovery.reload')}
             </button>
             <button
               onClick={onClose}
               className="flex-1 flex items-center justify-center gap-2 py-3 px-4 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-lg font-medium transition-colors"
             >
               <X size={18} />
-              Close
+              {t('recovery.close')}
             </button>
           </div>
         </div>

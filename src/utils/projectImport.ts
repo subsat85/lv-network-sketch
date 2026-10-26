@@ -1,6 +1,7 @@
 import { useDrawingStore } from '../store/drawingStore';
 import { parseProjectFile, ProjectExportData } from './projectSerialization';
 import { getProjectsMeta, saveProject, Project, ProjectMetadata } from './projectStorage';
+import { t } from '../store/localeStore';
 
 // Importing a project file, in two steps so nothing is written before the user decides:
 //   1. planImport  — parse + validate the whole file and look for a saved project with
@@ -48,7 +49,7 @@ export const planImport = async (json: string, deps: Partial<ImportDeps> = {}): 
   const d = { ...defaultDeps, ...deps };
   const parsed = parseProjectFile(json);
   if (!parsed.ok) {
-    return { ok: false, message: 'لم يتم الاستيراد، الملف غير صالح:\n• ' + (parsed as { errors: string[] }).errors.join('\n• ') + '\nلم يتغيّر الرسم الحالي ولا المشاريع المحفوظة.' };
+    return { ok: false, message: t('dialogs.importInvalid') + '\n• ' + (parsed as { errors: string[] }).errors.join('\n• ') + '\n' + t('dialogs.importNothingChanged') };
   }
   const data = parsed.data;
   const fileId = data.metadata?.id ?? null;
@@ -58,7 +59,7 @@ export const planImport = async (json: string, deps: Partial<ImportDeps> = {}): 
     try {
       conflict = (await d.getMeta()).find((p) => p.id === fileId) ?? null;
     } catch {
-      return { ok: false, message: 'تعذّر قراءة المشاريع المحفوظة للتحقق من الملف. لم يتغيّر أي شيء.' };
+      return { ok: false, message: t('dialogs.importReadSaved') };
     }
   }
   return { ok: true, plan: { data, fileId, name, conflict } };
@@ -99,12 +100,12 @@ export const applyImport = async (plan: ImportPlan, choice: ImportChoice, deps: 
   if (choice === 'cancel') return { ok: true, status: 'cancelled' };
 
   if (choice === 'open') {
-    if (plan.conflict) return { ok: false, message: 'يوجد مشروع محفوظ بنفس المعرّف؛ اختر الاستبدال أو الحفظ كنسخة.' };
+    if (plan.conflict) return { ok: false, message: t('dialogs.importConflict') };
     loadIntoCanvas(plan.data, plan.fileId, plan.name);
     return { ok: true, status: 'opened', projectId: plan.fileId, projectName: plan.name };
   }
 
-  if (choice === 'replace' && !plan.conflict) return { ok: false, message: 'لا يوجد مشروع محفوظ لاستبداله.' };
+  if (choice === 'replace' && !plan.conflict) return { ok: false, message: t('dialogs.importNoTarget') };
 
   const now = d.now();
   const project: Project = choice === 'replace'
@@ -114,7 +115,7 @@ export const applyImport = async (plan: ImportPlan, choice: ImportChoice, deps: 
     await d.save(project);
   } catch (e) {
     console.error('Import save failed', e);
-    return { ok: false, message: 'تعذّر حفظ المشروع المستورد على الجهاز، فلم يتم الاستيراد. لم يتغيّر الرسم الحالي ولا المشاريع المحفوظة.' };
+    return { ok: false, message: t('dialogs.importSaveFailed') };
   }
   loadIntoCanvas(plan.data, project.id, project.name);
   return { ok: true, status: choice === 'replace' ? 'replaced' : 'copied', projectId: project.id, projectName: project.name };

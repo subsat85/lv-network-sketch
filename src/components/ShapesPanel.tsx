@@ -5,18 +5,20 @@ import {
 } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import { ShapeType } from '../types/drawing';
+import { useT } from '../store/localeStore';
 
 export const ShapesPanel: React.FC = () => {
   const { tool, setTool, activeShapeType, setActiveShapeType, style } = useDrawingStore();
   const [isExpanded, setIsExpanded] = React.useState(false);
+  const t = useT();
 
   const shapes: { id: ShapeType; icon: React.ReactNode; label: string }[] = [
-    { id: 'rectangle', icon: <Square size={20} />, label: 'مربع' },
-    { id: 'circle', icon: <Circle size={20} />, label: 'دائرة' },
-    { id: 'triangle', icon: <Triangle size={20} />, label: 'مثلث' },
-    { id: 'arrow', icon: <ArrowRight size={20} />, label: 'سهم' },
-    { id: 'compass', icon: <Compass size={20} />, label: 'بوصلة N' },
-    { id: 'curved_arrow', icon: <Spline size={20} />, label: 'سهم منحني' },
+    { id: 'rectangle', icon: <Square size={20} />, label: t('shapes.rectangle') },
+    { id: 'circle', icon: <Circle size={20} />, label: t('shapes.circle') },
+    { id: 'triangle', icon: <Triangle size={20} />, label: t('shapes.triangle') },
+    { id: 'arrow', icon: <ArrowRight size={20} />, label: t('shapes.arrow') },
+    { id: 'compass', icon: <Compass size={20} />, label: t('shapes.compass') },
+    { id: 'curved_arrow', icon: <Spline size={20} />, label: t('shapes.curved_arrow') },
   ];
 
   const isShapeActive = (id: ShapeType) => tool === 'shape' && activeShapeType === id;
@@ -35,7 +37,7 @@ export const ShapesPanel: React.FC = () => {
       >
         <span className="flex items-center gap-2">
           <Pencil size={16} />
-          <span>أشكال الرسم</span>
+          <span>{t('shapes.heading')}</span>
         </span>
         {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
       </button>
@@ -52,10 +54,10 @@ export const ShapesPanel: React.FC = () => {
                   ? 'bg-blue-100 ring-2 ring-blue-500 text-blue-600'
                   : 'hover:bg-gray-100 text-gray-700'
               }`}
-              title="قلم حر"
+              title={t('shapes.freeDraw')}
             >
               <Pencil size={20} />
-              <span className="text-[10px] mt-1">حر</span>
+              <span className="text-[10px] mt-1">{t('shapes.freeShort')}</span>
             </button>
 
             {shapes.map((shape) => (

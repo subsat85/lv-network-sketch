@@ -6,6 +6,9 @@ import { LoadReportModal } from './LoadReportModal';
 import { VoltageDropPanel } from './VoltageDropPanel';
 import { ICON_LG } from './ui/icons';
 import { consumerIncluded } from '../utils/network';
+import { useLocale, useT } from '../store/localeStore';
+import { directionOf } from '../i18n';
+import { LanguageSwitch } from './LanguageSwitch';
 
 interface ToolbarProps {
   onOpenProjects?: () => void;
@@ -28,6 +31,8 @@ interface ConsumerElement {
 export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, onOpenTransformerInfo, onEnterFullScreen }) => {
   const [showLoadReport, setShowLoadReport] = useState(false);
   const [showVoltageDrop, setShowVoltageDropPanel] = useState(false);
+  const t = useT();
+  const locale = useLocale((s) => s.locale);
   
   const { 
     tool, setTool, clearCanvas, activeCableId, setActiveCableId, history, selectedId, deleteElement, cableVariant, setCableVariant, elements, updateElement,
@@ -43,7 +48,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       id: 'projects', 
       group: 'file',
       icon: <Folder {...ICON_LG} />, 
-      label: 'Projects',
+      label: t('toolbar.projects'),
       onClick: () => onOpenProjects?.(),
       isActive: false
     },
@@ -51,7 +56,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       id: 'share', 
       group: 'file',
       icon: <Share {...ICON_LG} />, 
-      label: 'Share',
+      label: t('toolbar.share'),
       onClick: () => onOpenShare?.(),
       isActive: false
     },
@@ -60,7 +65,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       id: 'fullScreen',
       group: 'file',
       icon: <Maximize {...ICON_LG} />,
-      label: 'وضع الرسم الكامل',
+      label: t('toolbar.fullScreen'),
       onClick: () => onEnterFullScreen?.(),
       isActive: false
     },
@@ -68,7 +73,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       id: 'select', 
       group: 'draw',
       icon: <MousePointer2 {...ICON_LG} />, 
-      label: 'Select',
+      label: t('toolbar.select'),
       onClick: () => setTool('select'),
       isActive: tool === 'select'
     },
@@ -77,7 +82,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       id: 'cable', 
       group: 'draw',
       icon: <Activity {...ICON_LG} />, 
-      label: 'Cable',
+      label: t('toolbar.cable'),
       onClick: () => setTool('cable'),
       isActive: tool === 'cable'
     },
@@ -85,7 +90,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       id: 'cable_straight', 
       group: 'draw',
       icon: <Minus {...ICON_LG} />, 
-      label: 'Straight Cable',
+      label: t('toolbar.cableStraight'),
       onClick: () => setTool('cable_straight'),
       isActive: tool === 'cable_straight'
     },
@@ -93,7 +98,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       id: 'transformer', 
       group: 'info',
       icon: <Zap {...ICON_LG} />, 
-      label: 'معلومات المحول',
+      label: t('toolbar.transformerInfo'),
       onClick: () => onOpenTransformerInfo?.(),
       isActive: false
     },
@@ -101,7 +106,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       id: 'loadReport', 
       group: 'info',
       icon: <BarChart3 {...ICON_LG} />, 
-      label: 'تقرير الاحمال',
+      label: t('toolbar.loadReport'),
       onClick: () => setShowLoadReport(true),
       isActive: false
     },
@@ -109,29 +114,31 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       id: 'voltageDrop', 
       group: 'info',
       icon: <Gauge {...ICON_LG} />, 
-      label: 'هبوط الفولتية',
+      label: t('toolbar.voltageDrop'),
       onClick: () => setShowVoltageDropPanel(true),
       isActive: false
     },
   ];
 
-  const renderTool = (t: typeof tools[number]) => (
-    <React.Fragment key={t.id}>
+  const renderTool = (tl: typeof tools[number]) => (
+    <React.Fragment key={tl.id}>
       <button
-        onClick={t.onClick}
-        className={`ui-icon-btn ${t.isActive ? 'is-active' : ''}`}
-        aria-label={t.label}
-        aria-pressed={t.group === 'draw' ? t.isActive : undefined}
-        title={t.label}
+        onClick={tl.onClick}
+        className={`ui-icon-btn ${tl.isActive ? 'is-active' : ''}`}
+        aria-label={tl.label}
+        aria-pressed={tl.group === 'draw' ? tl.isActive : undefined}
+        title={tl.label}
+        data-toolbar-tool={tl.id}
       >
-        {t.icon}
+        {tl.icon}
       </button>
-      {t.id === tool && activeCableId && (t.id === 'cable' || t.id === 'cable_straight') && (
+      {tl.id === tool && activeCableId && (tl.id === 'cable' || tl.id === 'cable_straight') && (
         <button
           onClick={() => setActiveCableId(null)}
           className="ui-icon-btn is-confirm"
-          aria-label="Finish Cable"
-          title="Finish Cable"
+          aria-label={t('toolbar.finishCable')}
+          title={t('toolbar.finishCable')}
+          data-toolbar-tool="finishCable"
         >
           <Check {...ICON_LG} strokeWidth={2.25} />
         </button>
@@ -139,7 +146,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
     </React.Fragment>
   );
 
-  const group = (g: 'file' | 'draw' | 'info') => tools.filter(t => t.group === g).map(renderTool);
+  const group = (g: 'file' | 'draw' | 'info') => tools.filter(x => x.group === g).map(renderTool);
 
   return (
     <>
@@ -158,13 +165,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
               type="text"
               value={currentProjectName || ''}
               onChange={(e) => setProjectInfo(currentProjectId, e.target.value)}
-              placeholder="Project Name"
-              aria-label="Project Name"
+              placeholder={t('toolbar.projectName')}
+              aria-label={t('toolbar.projectName')}
+              dir={directionOf(locale)}
+              data-toolbar-field="projectName"
               className="ui-field w-36"
             />
           </div>
           
           <div className="flex items-center">
+            <LanguageSwitch />
             <button
               onClick={() => {
                 if (selectedId) {
@@ -174,8 +184,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
               }}
               disabled={!selectedId}
               className="ui-icon-btn is-destructive"
-              aria-label="Delete Selected"
-              title="Delete Selected"
+              aria-label={t('toolbar.deleteSelected')}
+              title={t('toolbar.deleteSelected')}
+              data-toolbar-tool="deleteSelected"
             >
               <Trash2 {...ICON_LG} />
             </button>

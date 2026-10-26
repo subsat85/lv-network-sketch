@@ -13,8 +13,10 @@ import { useDrawingStore } from './store/drawingStore';
 import { TransformerTableElement } from './types/drawing';
 import { Check, Minimize } from 'lucide-react';
 import { ICON_LG } from './components/ui/icons';
+import { useT } from './store/localeStore';
 
 function App() {
+  const t = useT();
   const [showProjectManager, setShowProjectManager] = useState(false);
   const [showSharePreview, setShowSharePreview] = useState(false);
   const [showTransformerInfo, setShowTransformerInfo] = useState(false);
@@ -74,8 +76,8 @@ function App() {
                 type="button"
                 onClick={() => setFullScreen(false)}
                 className="ui-float ui-icon-btn text-ios-blue"
-                aria-label="استعادة الواجهة"
-                title="استعادة الواجهة"
+                aria-label={t('fullscreen.exit')}
+                title={t('fullscreen.exit')}
                 data-exit-fullscreen
               >
                 <Minimize {...ICON_LG} />
@@ -86,8 +88,8 @@ function App() {
                   type="button"
                   onClick={() => setActiveCableId(null)}
                   className="ui-float ui-icon-btn is-confirm"
-                  aria-label="إنهاء الكابل"
-                  title="Finish Cable"
+                  aria-label={t('fullscreen.finishCable')}
+                  title={t('fullscreen.finishCable')}
                   data-fullscreen-finish-cable
                 >
                   <Check {...ICON_LG} strokeWidth={2.25} />

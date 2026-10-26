@@ -63,14 +63,14 @@ describe('rows of the choice', () => {
     const els = NET();
     const rows = cableChoices(els, cablesNear(els, { x: 300, y: 0 }, 14, 'c1'));
     const c1 = rows.find((r) => r.cableId === 'c1')!, c3 = rows.find((r) => r.cableId === 'c3')!;
-    expect([c1.color, c1.ends, c1.spans, c1.spanHere, c1.extra]).toEqual(['#EF4444', 'محولة 1 ← عمود 2', 'مقطعان', 'عمود 1 ← عمود 2', null]);
+    expect([c1.color, c1.ends, c1.spans, c1.spanHere, c1.extra]).toEqual(['#EF4444', 'محول 1 ← عمود 2', 'مقطعان', 'عمود 1 ← عمود 2', null]);
     expect([c3.color, c3.ends, c3.spans, c3.spanHere, c3.extra]).toEqual(['#3B82F6', 'عمود 1 ← عمود 2', 'مقطع واحد', 'عمود 1 ← عمود 2', null]);
   });
 
   it('same colour and same poles: told apart by their number, not hidden', () => {
     const els = norm([pole('A', 0, 0), pole('B', 300, 0), cable('x', ['A', 'B'], '#EF4444', 0), cable('y', ['A', 'B'], '#ef4444', 5)]);
     const rows = cableChoices(els, cablesNear(els, { x: 150, y: 2 }, 14, 'x'));
-    expect(rows.map((r) => r.extra).sort()).toEqual(['كيبل رقم 1', 'كيبل رقم 2']);
+    expect(rows.map((r) => r.extra).sort()).toEqual(['كابل رقم 1', 'كابل رقم 2']); // approved term «كابل»
     expect(new Set(rows.map((r) => r.cableId)).size).toBe(2);
   });
 });

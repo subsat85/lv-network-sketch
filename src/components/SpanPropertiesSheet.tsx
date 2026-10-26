@@ -5,10 +5,12 @@ import type { CableElement, CableKind, ConductorMaterial, DrawingElement, SpanPr
 import { hasElectrical, spanAt, withSpanProps } from '../utils/spanModel';
 import { pairKey } from '../utils/cableSegments';
 import { computeVoltageDrop, spanKey } from '../utils/voltageDrop';
-import { tableSections, companySections, CONDUCTOR_TABLE_SOURCE, COMPANY_TABLE_SOURCE } from '../data/conductors';
+import { tableSections, companySections, CONDUCTOR_TABLE_SOURCE } from '../data/conductors';
 import { DEFAULT_DATA_SOURCE, fillMissingSpanDefaults, followNeutralTable, followPhaseTable, neutralTableState, phaseTableState } from '../utils/spanDefaults';
 import { effectiveSettings } from '../utils/electricalSettings';
-import { CABLE_KIND_LABEL, fmt, INHERITED_LABEL, MISSING_LABEL, PROVISIONAL_LABEL, REVIEW_LABEL, SETTING_MISSING_LABEL } from '../utils/vdLabels';
+import { AR_TR, CABLE_KIND_LABEL, cableKindLabel, fmt, missingLabel, provisionalLabel, reviewLabel, settingMissingLabel, type Tr } from '../utils/vdLabels';
+import { useLocale, useT } from '../store/localeStore';
+import { directionOf } from '../i18n';
 import { isPlainDistance } from '../utils/distances';
 import { poleNamer } from '../utils/poleNames';
 
@@ -39,7 +41,7 @@ const num = (s: string) => { const v = Number(s.trim().replace(',', '.')); retur
 const posOrUndef = (s: string) => { const v = num(s); return v !== undefined && Number.isFinite(v) && v > 0 ? v : undefined; };
 
 /** Form → properties (only valid values are kept); returns field errors too. */
-const fromForm = (f: Form, poles: [string, string], keep: SpanProps | undefined): { props: SpanProps; errors: string[] } => {
+const fromForm = (f: Form, poles: [string, string], keep: SpanProps | undefined, tr: Tr): { props: SpanProps; errors: string[] } => {
   const errors: string[] = [];
   const check = (label: string, s: string, allowZero = false) => {
     const v = num(s);
@@ -47,14 +49,14 @@ const fromForm = (f: Form, poles: [string, string], keep: SpanProps | undefined)
     if (!Number.isFinite(v) || v < 0 || (!allowZero && v === 0)) { errors.push(label); return undefined; }
     return v;
   };
-  const parallel = check('الموصلات المتوازية', f.parallel);
-  if (parallel !== undefined && !Number.isInteger(parallel)) errors.push('الموصلات المتوازية (عدد صحيح)');
+  const parallel = check(tr('span.parallel'), f.parallel);
+  if (parallel !== undefined && !Number.isInteger(parallel)) errors.push(tr('span.parallelInteger'));
   const props: SpanProps = { poles };
   if (f.system) props.system = f.system;
   if (f.cableKind) props.cableKind = f.cableKind;
   if (f.material) props.material = f.material;
-  const sec = check('مقطع الطور', f.section); if (sec !== undefined) props.crossSectionMm2 = sec;
-  const neu = check('مقطع المحايد', f.neutral); if (neu !== undefined) props.neutralCrossSectionMm2 = neu;
+  const sec = check(tr('span.sectionName'), f.section); if (sec !== undefined) props.crossSectionMm2 = sec;
+  const neu = check(tr('span.neutralName'), f.neutral); if (neu !== undefined) props.neutralCrossSectionMm2 = neu;
   if (f.neutralMaterial) props.neutralMaterial = f.neutralMaterial;
   if (parallel !== undefined && Number.isInteger(parallel)) props.parallel = parallel;
   const r = check('R', f.r); if (r !== undefined) props.rOhmPerKm = r;
@@ -121,7 +123,9 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
   const lengthEstimated = !!lengthFlag?.estimated;
   // an estimated length becomes a measured one only when it is changed or explicitly confirmed
   const [confirmMeasured, setConfirmMeasured] = useState(false);
-  const name = useMemo(() => poleNamer(elements), [elements]);
+  const t = useT();
+  const locale = useLocale((st) => st.locale);
+  const name = useMemo(() => poleNamer(elements, t), [elements, t]);
   const backdropClose = useBackdropClose(onClose);
 
   // the span disappeared (undo, delete…): close
@@ -132,7 +136,7 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const draft = useMemo(() => (a && b ? fromForm(form, [a, b], stored) : null), [form, a, b, stored]);
+  const draft = useMemo(() => (a && b ? fromForm(form, [a, b], stored, t) : null), [form, a, b, stored, t]);
   // live check of this span with the values in the form (nothing saved)
   const preview = useMemo(() => {
     if (!cable || !draft || !spanId) return null;
@@ -184,152 +188,152 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
   const s = preview?.span;
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 sm:items-center" {...backdropClose}>
-      <div dir="rtl" role="dialog" aria-label="خصائص المقطع" data-span={`${cable.id}#${index}`} className="w-full max-w-lg max-h-[85vh] supports-[height:100dvh]:max-h-[85dvh] overflow-y-auto rounded-t-[16px] sm:rounded-[16px] bg-white shadow-float pb-[env(safe-area-inset-bottom)]" onClick={(e) => e.stopPropagation()}>
+      <div dir={directionOf(locale)} role="dialog" aria-label={t('span.dialog')} data-span-sheet data-span={`${cable.id}#${index}`} className="w-full max-w-lg max-h-[85vh] supports-[height:100dvh]:max-h-[85dvh] overflow-y-auto rounded-t-[16px] sm:rounded-[16px] bg-white shadow-float pb-[env(safe-area-inset-bottom)]" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-ios-separator bg-white px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <span className="h-3.5 w-3.5 flex-shrink-0 rounded-full ring-1 ring-inset ring-black/10" style={{ backgroundColor: cable.strokeColor }} />
-            <h2 className="truncate text-[17px] font-semibold text-ios-label">خصائص المقطع {name(a)} ← {name(b)}</h2>
+            <h2 className="truncate text-[17px] font-semibold text-ios-label">{t('span.title', { a: name(a), b: name(b) })}</h2>
           </div>
-          <button type="button" aria-label="إغلاق" onClick={onClose} className="ui-icon-btn !h-9 !w-9"><X size={20} /></button>
+          <button type="button" aria-label={t('common.close')} data-span-action="close" onClick={onClose} className="ui-icon-btn !h-9 !w-9"><X size={20} /></button>
         </div>
 
         <div className="flex flex-col gap-3 px-4 py-3">
-          {stored?.inherited && <p className="rounded-ctl bg-ios-blue/[0.08] px-3 py-2 text-[13px] text-ios-label">{INHERITED_LABEL}</p>}
-          {(stored?.review ?? []).map((r) => <p key={r} className="rounded-ctl bg-amber-50 px-3 py-2 text-[13px] text-amber-900">⚠ {REVIEW_LABEL[r]}</p>)}
+          {stored?.inherited && <p className="rounded-ctl bg-ios-blue/[0.08] px-3 py-2 text-[13px] text-ios-label">{t('vd.inheritedLabel')}</p>}
+          {(stored?.review ?? []).map((r) => <p key={r} className="rounded-ctl bg-amber-50 px-3 py-2 text-[13px] text-amber-900">⚠ {reviewLabel(r, t)}</p>)}
           {stored?.mergedFrom && (
             <div className="rounded-ctl border border-amber-200 px-3 py-2 text-[13px] text-amber-900" data-merged-from>
-              <p className="font-medium">القيم الأصلية للمقاطع المدموجة (تُحذف هذه القائمة عند الحفظ):</p>
-              <ol className="list-decimal pr-5">{stored.mergedFrom.map((m, i) => <li key={i}>{m ? spanSummary({ ...m, poles: ['', ''] }) + (m.xOhmPerKm !== undefined ? ` · X ${m.xOhmPerKm}` : '') + (m.dataSource ? ` · ${m.dataSource}` : '') : 'بدون خصائص'}</li>)}</ol>
+              <p className="font-medium">{t('span.mergedOriginals')}</p>
+              <ol className="list-decimal ps-5">{stored.mergedFrom.map((m, i) => <li key={i}>{m ? spanSummary({ ...m, poles: ['', ''] }, t) + (m.xOhmPerKm !== undefined ? ` · X ${m.xOhmPerKm}` : '') + (m.dataSource ? ` · ${m.dataSource}` : '') : t('span.noProps')}</li>)}</ol>
             </div>
           )}
 
-          <Field label="طول المقطع (م)" hint={parallelCables ? `مشترك مع ${parallelCables} كيبل على نفس العمودين` : 'رقم المسافة على الرسم'}>
-            <input className="ui-field h-11" type="text" inputMode="decimal" value={form.length} onChange={(e) => set('length', e.target.value)} aria-label="طول المقطع" />
+          <Field label={t('span.length')} hint={parallelCables ? t('span.lengthShared', { n: parallelCables }) : t('span.lengthHint')}>
+            <input className="ui-field h-11" type="text" inputMode="decimal" value={form.length} onChange={(e) => set('length', e.target.value)} aria-label={t('span.lengthName')} data-span-field="length" />
           </Field>
           {lengthEstimated && form.length.trim() === (connectionDistances[distKey] ?? '') && (
             <div className="rounded-ctl bg-amber-50 px-3 py-2 text-[13px] text-amber-900" data-length-estimated>
-              ⚠ هذا الطول تقديري: نصف طول المقطع قبل إضافة العمود ({lengthFlag?.splitFrom?.value} م)، وليس قياسًا. أدخل الطول المقاس، أو أكّده:
+              {t('span.estimated', { value: lengthFlag?.splitFrom?.value ?? '' })}
               <label className="mt-1 flex items-center gap-2">
-                <input type="checkbox" checked={confirmMeasured} onChange={(e) => setConfirmMeasured(e.target.checked)} aria-label="الطول مقاس فعليًا" />
-                <span>الطول مقاس فعليًا</span>
+                <input type="checkbox" checked={confirmMeasured} onChange={(e) => setConfirmMeasured(e.target.checked)} aria-label={t('span.measured')} data-span-field="measured" />
+                <span>{t('span.measured')}</span>
               </label>
             </div>
           )}
           {!connectionDistances[distKey] && lengthFlag?.splitFrom && (
-            <p className="rounded-ctl bg-amber-50 px-3 py-2 text-[13px] text-amber-900">⚠ قُسم هذا المقطع من مقطع مسافته «{lengthFlag.splitFrom.value}» (ليست رقمًا)، فلم يُقدَّر طوله — أدخله.</p>
+            <p className="rounded-ctl bg-amber-50 px-3 py-2 text-[13px] text-amber-900">{t('span.splitFromText', { value: lengthFlag.splitFrom.value })}</p>
           )}
 
-          <Field label="نظام التغذية" group>
-            <div className="ui-segment self-start" role="radiogroup" aria-label="نظام التغذية">
-              {([['3ph4w', '3 أطوار + N (400/230 V)'], ['1ph2w', 'طور + N (230 V)']] as const).map(([v, l]) => (
-                <button key={v} type="button" role="radio" aria-checked={form.system === v} className={`ui-segment-item ${form.system === v ? 'is-active' : ''}`} onClick={() => set('system', form.system === v ? '' : v)}>{l}</button>
+          <Field label={t('span.system')} group>
+            <div className="ui-segment self-start" role="radiogroup" aria-label={t('span.system')}>
+              {([['3ph4w', t('span.system3')], ['1ph2w', t('span.system1')]] as const).map(([v, l]) => (
+                <button key={v} type="button" role="radio" aria-checked={form.system === v} data-span-system={v} className={`ui-segment-item ${form.system === v ? 'is-active' : ''}`} onClick={() => set('system', form.system === v ? '' : v)}>{l}</button>
               ))}
             </div>
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="نوع الكيبل">
-              <select className="ui-field h-11" value={form.cableKind} onChange={(e) => set('cableKind', e.target.value as Form['cableKind'])} aria-label="نوع الكيبل">
+            <Field label={t('span.cableKind')}>
+              <select className="ui-field h-11" value={form.cableKind} onChange={(e) => set('cableKind', e.target.value as Form['cableKind'])} aria-label={t('span.cableKind')} data-span-field="cableKind">
                 <option value="">—</option>
-                {(Object.keys(CABLE_KIND_LABEL) as CableKind[]).map((k) => <option key={k} value={k}>{CABLE_KIND_LABEL[k]}</option>)}
+                {(Object.keys(CABLE_KIND_LABEL) as CableKind[]).map((k) => <option key={k} value={k}>{cableKindLabel(k, t)}</option>)}
               </select>
             </Field>
-            <Field label="مادة الموصل">
-              <select className="ui-field h-11" value={form.material} onChange={(e) => setPhase('material', e.target.value)} aria-label="مادة الموصل">
+            <Field label={t('span.material')}>
+              <select className="ui-field h-11" value={form.material} onChange={(e) => setPhase('material', e.target.value)} aria-label={t('span.material')} data-span-field="material">
                 <option value="">—</option>
-                <option value="al">ألمنيوم</option>
-                <option value="cu">نحاس</option>
+                <option value="al">{t('span.aluminium')}</option>
+                <option value="cu">{t('span.copper')}</option>
               </select>
             </Field>
-            <Field label="مقطع الطور (mm²)">
-              <input className="ui-field h-11" type="text" inputMode="decimal" list="vd-sections" value={form.section} onChange={(e) => setPhase('section', e.target.value)} aria-label="مقطع الطور" />
+            <Field label={t('span.section')}>
+              <input className="ui-field h-11" type="text" inputMode="decimal" list="vd-sections" value={form.section} onChange={(e) => setPhase('section', e.target.value)} aria-label={t('span.sectionName')} data-span-field="section" />
             </Field>
-            <Field label="مقطع المحايد (mm²)">
-              <input className="ui-field h-11" type="text" inputMode="decimal" list="vd-sections" value={form.neutral} onChange={(e) => setNeutral('neutral', e.target.value)} aria-label="مقطع المحايد" />
+            <Field label={t('span.neutral')}>
+              <input className="ui-field h-11" type="text" inputMode="decimal" list="vd-sections" value={form.neutral} onChange={(e) => setNeutral('neutral', e.target.value)} aria-label={t('span.neutralName')} data-span-field="neutral" />
             </Field>
-            <Field label="مادة المحايد" hint="لا تُفترض مثل الطور">
-              <select className="ui-field h-11" value={form.neutralMaterial} onChange={(e) => setNeutral('neutralMaterial', e.target.value)} aria-label="مادة المحايد">
+            <Field label={t('span.neutralMaterial')} hint={t('span.neutralMaterialHint')}>
+              <select className="ui-field h-11" value={form.neutralMaterial} onChange={(e) => setNeutral('neutralMaterial', e.target.value)} aria-label={t('span.neutralMaterial')} data-span-field="neutralMaterial">
                 <option value="">—</option>
-                <option value="al">ألمنيوم</option>
-                <option value="cu">نحاس</option>
-                <option value="alloy">سبيكة ألمنيوم (حامل ABC)</option>
+                <option value="al">{t('span.aluminium')}</option>
+                <option value="cu">{t('span.copper')}</option>
+                <option value="alloy">{t('span.alloy')}</option>
               </select>
             </Field>
             <datalist id="vd-sections">{sections.map((v) => <option key={v} value={v} />)}</datalist>
-            <Field label="الموصلات المتوازية" hint="لكل طور">
-              <input className="ui-field h-11" type="text" inputMode="numeric" placeholder="1" value={form.parallel} onChange={(e) => set('parallel', e.target.value)} aria-label="الموصلات المتوازية" />
+            <Field label={t('span.parallel')} hint={t('span.parallelHint')}>
+              <input className="ui-field h-11" type="text" inputMode="numeric" placeholder="1" value={form.parallel} onChange={(e) => set('parallel', e.target.value)} aria-label={t('span.parallel')} data-span-field="parallel" />
             </Field>
-            <Field label="X (Ω/km)" hint="من بيانات الكيبل">
-              <input className="ui-field h-11" type="text" inputMode="decimal" value={form.x} onChange={(e) => set('x', e.target.value)} aria-label="المفاعلة X" />
+            <Field label={t('span.x')} hint={t('span.xHint')}>
+              <input className="ui-field h-11" type="text" inputMode="decimal" value={form.x} onChange={(e) => set('x', e.target.value)} aria-label={t('span.xName')} data-span-field="x" />
             </Field>
-            <Field label="R طور (Ω/km)" hint="اختياري، يحل محل الجدول">
-              <input className="ui-field h-11" type="text" inputMode="decimal" value={form.r} onChange={(e) => set('r', e.target.value)} aria-label="مقاومة الطور R" />
+            <Field label={t('span.r')} hint={t('span.rHint')}>
+              <input className="ui-field h-11" type="text" inputMode="decimal" value={form.r} onChange={(e) => set('r', e.target.value)} aria-label={t('span.rName')} data-span-field="r" />
             </Field>
-            <Field label="Rn محايد (Ω/km)" hint="اختياري">
-              <input className="ui-field h-11" type="text" inputMode="decimal" value={form.rn} onChange={(e) => set('rn', e.target.value)} aria-label="مقاومة المحايد Rn" />
+            <Field label={t('span.rn')} hint={t('span.rnHint')}>
+              <input className="ui-field h-11" type="text" inputMode="decimal" value={form.rn} onChange={(e) => set('rn', e.target.value)} aria-label={t('span.rnName')} data-span-field="rn" />
             </Field>
           </div>
           {/* how R / X / Rn relate to the company table for the chosen material and section (Stage 7.12) */}
           <div className="flex flex-col gap-1 rounded-ctl bg-ios-fill px-3 py-2 text-[13px] text-ios-label" data-company-table>
             {phaseTable.table ? (
               <p data-company-phase={phaseTable.matches ? 'table' : rxTyped ? 'typed' : 'empty'}>
-                {COMPANY_TABLE_SOURCE} ({form.material === 'cu' ? 'Cu' : 'Al'} {form.section} mm²): R {phaseTable.table.r} · X {phaseTable.table.x} Ω/km —{' '}
-                {phaseTable.matches ? '✓ R و X منه' : rxTyped ? 'R / X الحالية مُدخلة يدويًا ولم تُستبدل' : 'غير مستعملة'}
-                {!phaseTable.matches && <button type="button" className="ui-tinted-btn !mr-2 !inline-flex !w-auto !min-h-[30px] !px-3" onClick={useCompanyPhase}>استخدام قيم جدول الشركة</button>}
+                {t('span.companyTable')} ({form.material === 'cu' ? 'Cu' : 'Al'} {form.section} mm²): R {phaseTable.table.r} · X {phaseTable.table.x} Ω/km —{' '}
+                {phaseTable.matches ? t('span.phaseFromTable') : rxTyped ? t('span.phaseTyped') : t('span.unused')}
+                {!phaseTable.matches && <button type="button" className="ui-tinted-btn !ms-2 !inline-flex !w-auto !min-h-[30px] !px-3" data-span-action="use-company-phase" onClick={useCompanyPhase}>{t('span.useCompanyPhase')}</button>}
               </p>
             ) : (
-              form.material && form.section.trim() && <p data-company-phase="none">المقطع {form.section} mm² غير موجود في {COMPANY_TABLE_SOURCE}: أدخل R و X من مصدر موثق{form.r.trim() ? '' : ' (بدون R تُؤخذ المقاومة من IEC 60228 إن انطبق)'}.</p>
+              form.material && form.section.trim() && <p data-company-phase="none">{t('span.phaseNotInTable', { section: form.section, table: t('span.companyTable'), note: form.r.trim() ? '' : t('span.phaseNotInTableNote') })}</p>
             )}
             {neutralTable.table ? (
               <p data-company-neutral={neutralTable.matches ? 'table' : rnTyped ? 'typed' : 'empty'}>
-                المحايد ({form.neutralMaterial === 'cu' ? 'Cu' : 'Al'} {form.neutral} mm²): Rn {neutralTable.table.r} Ω/km من {COMPANY_TABLE_SOURCE} —{' '}
-                {neutralTable.matches ? '✓ مستعملة' : rnTyped ? 'Rn الحالية مُدخلة يدويًا ولم تُستبدل' : 'غير مستعملة'}
-                {!neutralTable.matches && <button type="button" className="ui-tinted-btn !mr-2 !inline-flex !w-auto !min-h-[30px] !px-3" onClick={useCompanyNeutral}>استخدام Rn من الجدول</button>}
+                {t('span.neutralTable', { material: form.neutralMaterial === 'cu' ? 'Cu' : 'Al', section: form.neutral, r: neutralTable.table.r, table: t('span.companyTable') })}
+                {neutralTable.matches ? t('span.neutralUsed') : rnTyped ? t('span.neutralTyped') : t('span.unused')}
+                {!neutralTable.matches && <button type="button" className="ui-tinted-btn !ms-2 !inline-flex !w-auto !min-h-[30px] !px-3" data-span-action="use-company-neutral" onClick={useCompanyNeutral}>{t('span.useCompanyNeutral')}</button>}
               </p>
             ) : (
-              form.neutral.trim() && form.neutralMaterial && <p data-company-neutral="none">المحايد {form.neutralMaterial === 'alloy' ? 'من سبيكة ألمنيوم' : `${form.neutral} mm²`} غير موجود في {COMPANY_TABLE_SOURCE}: أدخل Rn من كتالوج الكيبل.</p>
+              form.neutral.trim() && form.neutralMaterial && <p data-company-neutral="none">{t('span.neutralNotInTable', { what: form.neutralMaterial === 'alloy' ? t('span.neutralAlloy') : `${form.neutral} mm²`, table: t('span.companyTable') })}</p>
             )}
           </div>
-          <Field label="مصدر البيانات" hint="كتالوج / تقرير / قياس">
-            <input className="ui-field h-11" type="text" value={form.source} onChange={(e) => set('source', e.target.value)} aria-label="مصدر البيانات" />
+          <Field label={t('span.source')} hint={t('span.sourceHint')}>
+            <input className="ui-field h-11" type="text" value={form.source} onChange={(e) => set('source', e.target.value)} aria-label={t('span.source')} data-span-field="source" />
           </Field>
-          <p className="text-[12px] text-ios-tertiary">عند تغيير المادة أو المقطع تتبع R و X (و Rn للمحايد) {COMPANY_TABLE_SOURCE} ما دامت قيمه أو فارغة؛ القيمة المُدخلة يدويًا لا تُستبدل إلا بزر «استخدام قيم جدول الشركة». بدون R تُؤخذ المقاومة من {CONDUCTOR_TABLE_SOURCE} مصححة لحرارة التشغيل — للكوابل المعزولة فقط (ABC أو أرضي)، ولموصلات الألمنيوم أو النحاس العادي. الموصلات العارية والمحايد من سبيكة: أدخل R / Rn من مصدر موثق. المفاعلة لا تُستنتج من المقطع، واذكر مصدر كل قيمة تُدخلها.</p>
+          <p className="text-[12px] text-ios-tertiary">{t('span.help', { company: t('span.companyTable'), table: CONDUCTOR_TABLE_SOURCE })}</p>
 
           {/* live check */}
           <div className="rounded-ctl border border-ios-separator px-3 py-2 text-[13px]" aria-live="polite" data-span-check>
-            {draft.errors.length > 0 && <p className="text-ios-red">قيم غير صالحة: {draft.errors.join('، ')}</p>}
-            {lengthBad && <p className="text-ios-red">الطول غير صالح</p>}
-            {preview?.circuit && preview.circuit.status !== 'ok' && <p className="text-amber-900">⚠ الشبكة غير قابلة للحساب (راجع لوحة هبوط الفولتية)</p>}
+            {draft.errors.length > 0 && <p className="text-ios-red">{t('span.invalid', { list: draft.errors.join(t('common.listSep')) })}</p>}
+            {lengthBad && <p className="text-ios-red">{t('span.lengthInvalid')}</p>}
+            {preview?.circuit && preview.circuit.status !== 'ok' && <p className="text-amber-900">{t('span.networkNotComputable')}</p>}
             {s && s.missing.length === 0 && preview?.settingsMissing.length === 0 && s.computable && (
-              <p className="text-ios-label">✓ البيانات مكتملة: هبوط هذا المقطع {fmt(s.dropV, 2)} V عند تيار طور {fmt(s.phaseCurrentA, 1)} A{s.cumulativeDropV !== undefined ? ` — التراكمي عند نهايته ${fmt(s.cumulativeDropV, 2)} V` : ''}</p>
+              <p className="text-ios-label">{t('span.complete', { drop: fmt(s.dropV, 2), current: fmt(s.phaseCurrentA, 1), cumulative: s.cumulativeDropV !== undefined ? t('span.cumulative', { v: fmt(s.cumulativeDropV, 2) }) : '' })}</p>
             )}
             {s && s.computable && s.provisional.length > 0 && (
-              <ul className="list-disc pr-5 text-amber-900" data-span-provisional>{s.provisional.map((r) => <li key={r}>تقديري: {PROVISIONAL_LABEL[r]}</li>)}</ul>
+              <ul className="list-disc ps-5 text-amber-900" data-span-provisional>{s.provisional.map((r) => <li key={r}>{t('span.provisional', { reason: provisionalLabel(r, t) })}</li>)}</ul>
             )}
             {s && s.missing.length > 0 && (
               <div>
-                <p className="font-medium text-ios-label">البيانات الناقصة للحساب:</p>
-                <ul className="list-disc pr-5 text-ios-secondary">{s.missing.map((m) => <li key={m}>{MISSING_LABEL[m]}</li>)}</ul>
+                <p className="font-medium text-ios-label">{t('span.missingTitle')}</p>
+                <ul className="list-disc ps-5 text-ios-secondary">{s.missing.map((m) => <li key={m}>{missingLabel(m, t)}</li>)}</ul>
               </div>
             )}
             {preview && preview.settingsMissing.length > 0 && (
-              <ul className="list-disc pr-5 text-ios-secondary">{preview.settingsMissing.map((m) => <li key={m}>{SETTING_MISSING_LABEL[m]}</li>)}</ul>
+              <ul className="list-disc ps-5 text-ios-secondary">{preview.settingsMissing.map((m) => <li key={m}>{settingMissingLabel(m, t)}</li>)}</ul>
             )}
-            {!s && <p className="text-ios-secondary">هذا المقطع ليس ضمن شبكة متصلة.</p>}
+            {!s && <p className="text-ios-secondary">{t('span.notInNetwork')}</p>}
           </div>
 
           <div className="flex flex-wrap gap-2">
             {filledDraft && draft.props.legacyV2 === undefined && (
-              <button type="button" className="ui-tinted-btn !w-auto" onClick={fillFormDefaults} data-fill-defaults>تعبئة الحقول الناقصة بالقيم الافتراضية</button>
+              <button type="button" className="ui-tinted-btn !w-auto" onClick={fillFormDefaults} data-fill-defaults>{t('span.fillDefaults')}</button>
             )}
             {prevSpan && (
-              <button type="button" className="ui-tinted-btn !w-auto" onClick={() => setForm((f) => ({ ...toForm(prevSpan, f.length) }))}>نسخ من المقطع السابق</button>
+              <button type="button" className="ui-tinted-btn !w-auto" data-span-action="copy-previous" onClick={() => setForm((f) => ({ ...toForm(prevSpan, f.length) }))}>{t('span.copyPrevious')}</button>
             )}
-            {stored && <button type="button" className="ui-tinted-btn !w-auto !bg-ios-fill !text-ios-red" onClick={clearProps}>مسح الخصائص</button>}
+            {stored && <button type="button" className="ui-tinted-btn !w-auto !bg-ios-fill !text-ios-red" data-span-action="clear" onClick={clearProps}>{t('span.clear')}</button>}
           </div>
           <div className="grid grid-cols-2 gap-2 pt-1">
-            <button type="button" className="min-h-[44px] rounded-ctl bg-ios-fill text-[17px] text-ios-blue active:bg-ios-fill-strong" onClick={onClose}>إلغاء</button>
-            <button type="button" disabled={!canSave} className="min-h-[44px] rounded-ctl bg-ios-blue text-[17px] font-semibold text-white active:bg-ios-blue-pressed disabled:opacity-40" onClick={save}>حفظ</button>
+            <button type="button" className="min-h-[44px] rounded-ctl bg-ios-fill text-[17px] text-ios-blue active:bg-ios-fill-strong" data-span-action="cancel" onClick={onClose}>{t('common.cancel')}</button>
+            <button type="button" disabled={!canSave} className="min-h-[44px] rounded-ctl bg-ios-blue text-[17px] font-semibold text-white active:bg-ios-blue-pressed disabled:opacity-40" data-span-action="save" onClick={save}>{t('span.save')}</button>
           </div>
         </div>
       </div>
@@ -338,30 +342,32 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
 };
 
 /** One-line summary of a span's properties, e.g. "Al 95 mm² ×2 · 3φ+N". */
-export const spanSummary = (p: SpanProps | undefined): string => {
-  if (!p) return 'بدون خصائص كهربائية';
+export const spanSummary = (p: SpanProps | undefined, tr: Tr = AR_TR): string => {
+  if (!p) return tr('span.summaryNone');
   const parts: string[] = [];
   if (p.material || p.crossSectionMm2) parts.push(`${p.material === 'cu' ? 'Cu' : p.material === 'al' ? 'Al' : ''} ${p.crossSectionMm2 ?? '?'} mm²`.trim());
   if (p.parallel && p.parallel > 1) parts.push(`×${p.parallel}`);
   if (p.system) parts.push(p.system === '3ph4w' ? '3φ+N' : '1φ+N');
   if (p.rOhmPerKm) parts.push(`R ${p.rOhmPerKm}`);
-  return parts.length ? parts.join(' · ') : 'خصائص غير مكتملة';
+  return parts.length ? parts.join(' · ') : tr('span.summaryIncomplete');
 };
 
 /** Small hint shown while drawing: the span just added and its (suggested) properties. At the top of
  *  the canvas, and only its two buttons take taps, so it does not get in the way of tapping poles. */
 export const DrawnSpanHint: React.FC<{ elements: DrawingElement[]; span: { cableId: string; index: number }; onEdit: () => void; onDismiss: () => void }> = ({ elements, span, onEdit, onDismiss }) => {
+  const t = useT();
+  const locale = useLocale((st) => st.locale);
   const cable = elements.find((e) => e.id === span.cableId && e.type === 'cable') as CableElement | undefined;
   if (!cable || span.index >= cable.poleIds.length - 1) return null;
   const { props } = spanAt(cable, span.index);
   return (
-    <div dir="rtl" role="status" aria-label="المقطع الجديد" data-drawn-span className="ui-float pointer-events-none absolute left-1/2 top-2 z-30 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-2 whitespace-nowrap px-3 py-1 text-[13px] opacity-95">
+    <div dir={directionOf(locale)} role="status" aria-label={t('span.newSpan')} data-drawn-span className="ui-float pointer-events-none absolute left-1/2 top-2 z-30 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-2 whitespace-nowrap px-3 py-1 text-[13px] opacity-95">
       <span className="h-3 w-3 flex-shrink-0 rounded-full ring-1 ring-inset ring-black/10" style={{ backgroundColor: cable.strokeColor }} />
       <span className="min-w-0 truncate text-ios-label">
-        المقطع الجديد: {spanSummary(props)}{props?.inherited ? ' (منسوخة من السابق)' : ''}
+        {t('span.newSpanText', { summary: spanSummary(props, t), inherited: props?.inherited ? t('span.newSpanInherited') : '' })}
       </span>
-      <button type="button" onClick={onEdit} className="ui-tinted-btn pointer-events-auto !w-auto !min-h-[30px] flex-shrink-0 !px-3">{props ? 'تعديل' : 'إدخال الخصائص'}</button>
-      <button type="button" aria-label="إخفاء" onClick={onDismiss} className="pointer-events-auto flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-ios-secondary active:bg-ios-fill"><X size={16} /></button>
+      <button type="button" onClick={onEdit} data-drawn-span-action="edit" className="ui-tinted-btn pointer-events-auto !w-auto !min-h-[30px] flex-shrink-0 !px-3">{props ? t('common.edit') : t('span.enterProps')}</button>
+      <button type="button" aria-label={t('span.hide')} data-drawn-span-action="hide" onClick={onDismiss} className="pointer-events-auto flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-ios-secondary active:bg-ios-fill"><X size={16} /></button>
     </div>
   );
 };

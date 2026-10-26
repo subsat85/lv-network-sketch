@@ -3,6 +3,7 @@ import { Undo2, Redo2, History, GripHorizontal, Minimize2, Pencil, Square, Circl
 import { useDrawingStore } from '../store/drawingStore';
 import { ShapeType } from '../types/drawing';
 import { ICON_MD } from './ui/icons';
+import { useT } from '../store/localeStore';
 
 const SHAPES: { id: ShapeType; icon: React.ReactNode }[] = [
   { id: 'rectangle', icon: <Square {...ICON_MD} /> },
@@ -27,6 +28,7 @@ const overlaps = (x: number, y: number, w: number, h: number, a: DOMRect) =>
   x < a.right + AVOID_GAP && x + w > a.left - AVOID_GAP && y < a.bottom + AVOID_GAP && y + h > a.top - AVOID_GAP;
 
 export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = ({ fullScreen = false, avoidRef, avoidLayoutKey }) => {
+  const t = useT();
   const { undo, redo, history, redoStack, tool, setTool, activeShapeType, setActiveShapeType } = useDrawingStore();
   const [position, setPosition] = useState({ x: window.innerWidth - 60, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
@@ -159,8 +161,9 @@ export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = (
         <button
           onClick={() => setIsExpanded(true)}
           className="ui-icon-btn !rounded-full text-ios-blue"
-          aria-label="Show Controls"
-          title="Show Controls"
+          aria-label={t('history.show')}
+          title={t('history.show')}
+          data-history-action="show"
         >
           <History {...ICON_MD} />
         </button>
@@ -186,8 +189,9 @@ export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = (
         <button
           onClick={() => setTool('draw')}
           className={`ui-icon-btn ${tool === 'draw' ? 'is-active' : ''}`}
-          title="قلم حر"
-          aria-label="قلم حر"
+          title={t('shapes.freeDraw')}
+          aria-label={t('shapes.freeDraw')}
+          data-history-action="draw"
           aria-pressed={tool === 'draw'}
         >
           <Pencil {...ICON_MD} />
@@ -196,8 +200,9 @@ export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = (
         <button
           onClick={() => setShowShapesMenu(!showShapesMenu)}
           className={`ui-icon-btn ${tool === 'shape' || showShapesMenu ? 'is-active' : ''}`}
-          title="أشكال"
-          aria-label="أشكال"
+          title={t('shapes.shapes')}
+          aria-label={t('shapes.shapes')}
+          data-history-action="shapes"
           aria-expanded={showShapesMenu}
         >
           <Shapes {...ICON_MD} />
@@ -209,8 +214,9 @@ export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = (
           onClick={undo}
           disabled={history.length === 0}
           className="ui-icon-btn"
-          title="تراجع"
-          aria-label="تراجع"
+          title={t('history.undo')}
+          aria-label={t('history.undo')}
+          data-history-action="undo"
         >
           <Undo2 {...ICON_MD} />
         </button>
@@ -219,8 +225,9 @@ export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = (
           onClick={redo}
           disabled={redoStack.length === 0}
           className="ui-icon-btn"
-          title="إعادة"
-          aria-label="إعادة"
+          title={t('history.redo')}
+          aria-label={t('history.redo')}
+          data-history-action="redo"
         >
           <Redo2 {...ICON_MD} />
         </button>
@@ -230,8 +237,9 @@ export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = (
         <button
           onClick={() => setIsExpanded(false)}
           className="ui-icon-btn text-ios-secondary"
-          title="تصغير"
-          aria-label="تصغير"
+          title={t('history.minimize')}
+          aria-label={t('history.minimize')}
+          data-history-action="minimize"
         >
           <Minimize2 size={18} strokeWidth={1.75} />
         </button>
@@ -253,8 +261,9 @@ export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = (
               key={shape.id}
               onClick={() => handleShapeClick(shape.id)}
               className={`ui-icon-btn ${tool === 'shape' && activeShapeType === shape.id ? 'is-active' : ''}`}
-              title={shape.id}
-              aria-label={shape.id}
+              title={t(`shapes.${shape.id}`)}
+              aria-label={t(`shapes.${shape.id}`)}
+              data-shape={shape.id}
             >
               {shape.icon}
             </button>
