@@ -10,6 +10,7 @@ import jsPDF from 'jspdf';
 import { t as tCurrent, useLocale, useT } from '../store/localeStore';
 import { directionOf } from '../i18n';
 import { EMPTY_BOX, elementBoxes, fitToPage as pageFit, isEmptyBox, tableBoxes, unionBox } from '../utils/pageFit';
+import { drawingPointAt, panTransform, pinchTransform, transformAbout, type PinchStart, type ViewTransform } from '../utils/viewTransform';
 
 interface SharePreviewProps {
   onClose: () => void;
@@ -31,7 +32,13 @@ export const SharePreview: React.FC<SharePreviewProps> = ({ onClose }) => {
   const electrical = useDrawingStore((st) => st.electrical);
   const t = useT();
   const locale = useLocale((st) => st.locale);
-  const [transform, setTransform] = useState({ x: A4_WIDTH / 2, y: A4_HEIGHT / 2, scale: 1, rotation: 0 });
+  const [transform, setTransformState] = useState<ViewTransform>({ x: A4_WIDTH / 2, y: A4_HEIGHT / 2, scale: 1, rotation: 0 });
+  // the latest view transform, readable at once inside pointer events (the state is only read at the
+  // next render); every change goes through setTransform, which keeps both the same
+  const transformRef = useRef<ViewTransform>(transform);
+  const setTransform = (next: ViewTransform) => { transformRef.current = next; setTransformState(next); };
+  // the centre of the drawing (drawing units): zoom and rotation turn around it (measured with the fit)
+  const pivotRef = useRef<{ x: number; y: number } | null>(null);
   const [isGesturing, setIsGesturing] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -69,6 +76,7 @@ export const SharePreview: React.FC<SharePreviewProps> = ({ onClose }) => {
       const lb = legendRef.current?.getBBox();
       if (lb && lb.height > 0) reservedBottom = A4_HEIGHT - (lb.y - LEGEND_GAP);
     } catch { /* no legend */ }
+    pivotRef.current = { x: (content.minX + content.maxX) / 2, y: (content.minY + content.maxY) / 2 };
     fitRef.current = pageFit(content, A4_WIDTH, A4_HEIGHT, reservedBottom);
     setTransform({ ...fitRef.current, rotation: 0 });
   };
@@ -78,10 +86,15 @@ export const SharePreview: React.FC<SharePreviewProps> = ({ onClose }) => {
     fitToPage();
   }, []);
 
-  const handleZoomIn = () => setTransform(prev => ({ ...prev, scale: prev.scale * 1.1 }));
-  const handleZoomOut = () => setTransform(prev => ({ ...prev, scale: prev.scale * 0.9 }));
-  const handleRotateLeft = () => setTransform(prev => ({ ...prev, rotation: prev.rotation - 5 }));
-  const handleRotateRight = () => setTransform(prev => ({ ...prev, rotation: prev.rotation + 5 }));
+  // the drawing point the view turns around: the drawing's centre, or (nothing measured) the point
+  // now at the middle of the page
+  const pivot = () => pivotRef.current ?? drawingPointAt(transformRef.current, { x: A4_WIDTH / 2, y: A4_HEIGHT / 2 });
+  const zoomBy = (f: number) => { const t0 = transformRef.current; setTransform(transformAbout(t0, pivot(), t0.scale * f, t0.rotation)); };
+  const rotateBy = (deg: number) => { const t0 = transformRef.current; setTransform(transformAbout(t0, pivot(), t0.scale, t0.rotation + deg)); };
+  const handleZoomIn = () => zoomBy(1.1);
+  const handleZoomOut = () => zoomBy(0.9);
+  const handleRotateLeft = () => rotateBy(-5);
+  const handleRotateRight = () => rotateBy(5);
   const handleReset = fitToPage;
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -103,91 +116,58 @@ export const SharePreview: React.FC<SharePreviewProps> = ({ onClose }) => {
   };
 
   // Gesture Handling
+  // One finger moves the view, two fingers zoom and turn it around the drawing's centre. Every new
+  // transform is computed here, inside the event, from the gesture's own start values (a local copy):
+  // nothing is read later from the gesture ref, which the next pointerup / pointercancel may already
+  // have cleared (on Safari a quick pinch ended that way: "null is not an object (… startTransform)").
   const pointersRef = useRef<Map<number, { x: number, y: number }>>(new Map());
-  const gestureRef = useRef<{
-    startDist: number;
-    startAngle: number;
-    startTransform: typeof transform;
-    startCenter: { x: number, y: number };
-  } | null>(null);
+  const gestureRef = useRef<
+    | { kind: 'pan'; start: ViewTransform; from: { x: number; y: number } }
+    | ({ kind: 'pinch' } & PinchStart)
+    | null
+  >(null);
+
+  // (re)start the gesture from the fingers now down and the transform now shown
+  const beginGesture = () => {
+    const points = Array.from(pointersRef.current.values());
+    const start = { ...transformRef.current };
+    if (points.length >= 2) {
+      const [p1, p2] = points;
+      gestureRef.current = { kind: 'pinch', start, dist: Math.hypot(p2.x - p1.x, p2.y - p1.y), angle: Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI };
+    } else if (points.length === 1) {
+      gestureRef.current = { kind: 'pan', start, from: { ...points[0] } };
+    } else {
+      gestureRef.current = null;
+    }
+  };
 
   const handlePointerDown = (e: React.PointerEvent) => {
-    containerRef.current?.setPointerCapture(e.pointerId);
+    try { containerRef.current?.setPointerCapture(e.pointerId); } catch { /* the pointer is already gone */ }
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     setIsGesturing(true);
-    
-    if (pointersRef.current.size === 2) {
-      const points = Array.from(pointersRef.current.values());
-      const p1 = points[0];
-      const p2 = points[1];
-      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-      const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
-      
-      gestureRef.current = {
-        startDist: dist,
-        startAngle: angle,
-        startTransform: { ...transform },
-        startCenter: { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }
-      };
-    } else if (pointersRef.current.size === 1) {
-      gestureRef.current = {
-        startDist: 0,
-        startAngle: 0,
-        startTransform: { ...transform },
-        startCenter: { x: e.clientX, y: e.clientY }
-      };
-    }
+    if (pointersRef.current.size <= 2) beginGesture();
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
     if (!pointersRef.current.has(e.pointerId)) return;
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    
-    if (!gestureRef.current) return;
-
-    if (pointersRef.current.size === 2) {
-      const points = Array.from(pointersRef.current.values());
-      const p1 = points[0];
-      const p2 = points[1];
-      const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-      const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
-      
-      const scaleFactor = dist / gestureRef.current.startDist;
-      const angleDiff = angle - gestureRef.current.startAngle;
-      
-      setTransform(prev => ({
-        ...prev,
-        scale: gestureRef.current!.startTransform.scale * scaleFactor,
-        rotation: gestureRef.current!.startTransform.rotation + angleDiff,
-      }));
-    } else if (pointersRef.current.size === 1) {
-      const dx = e.clientX - gestureRef.current.startCenter.x;
-      const dy = e.clientY - gestureRef.current.startCenter.y;
-      
-      setTransform(prev => ({
-        ...prev,
-        x: gestureRef.current!.startTransform.x + dx,
-        y: gestureRef.current!.startTransform.y + dy,
-      }));
+    const g = gestureRef.current;
+    if (!g) return;
+    const points = Array.from(pointersRef.current.values());
+    if (g.kind === 'pinch' && points.length >= 2) {
+      const [p1, p2] = points;
+      setTransform(pinchTransform(g, Math.hypot(p2.x - p1.x, p2.y - p1.y), Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI, pivot()));
+    } else if (g.kind === 'pan' && points.length === 1) {
+      setTransform(panTransform(g.start, g.from, points[0]));
     }
   };
 
+  // pointerup and pointercancel (the system took the touch): the gesture goes on with the fingers left
   const handlePointerUp = (e: React.PointerEvent) => {
-    containerRef.current?.releasePointerCapture(e.pointerId);
-    pointersRef.current.delete(e.pointerId);
-    
-    if (pointersRef.current.size === 0) {
-      setIsGesturing(false);
-      gestureRef.current = null;
-    } else if (pointersRef.current.size === 1) {
-      const p = Array.from(pointersRef.current.values())[0];
-      gestureRef.current = {
-        startDist: 0,
-        startAngle: 0,
-        startTransform: { ...transform },
-        startCenter: { x: p.x, y: p.y }
-      };
-    }
+    try { containerRef.current?.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
+    if (!pointersRef.current.delete(e.pointerId)) return;
+    if (pointersRef.current.size === 0) setIsGesturing(false);
+    beginGesture();
   };
 
   const handleExport = async (type: 'pdf' | 'share') => {

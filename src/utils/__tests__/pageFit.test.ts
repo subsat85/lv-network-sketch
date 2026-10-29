@@ -59,6 +59,7 @@ describe('page fit', () => {
     expect(c).toContain('const handleReset = fitToPage;');
     // «Reset» re-applies the fit measured when the preview opened (the same place every time)
     expect(c).toContain('if (fitRef.current) { setTransform({ ...fitRef.current, rotation: 0 }); return; }');
-    expect(c).toContain('const handleZoomIn = () => setTransform(prev => ({ ...prev, scale: prev.scale * 1.1 }));');
+    // the manual zoom is still there (it now turns around the drawing's centre: viewTransform.test.ts)
+    expect(c).toContain('const handleZoomIn = () => zoomBy(1.1);');
   });
 });
