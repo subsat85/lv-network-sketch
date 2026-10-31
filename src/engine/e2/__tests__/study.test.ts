@@ -209,7 +209,7 @@ describe('purity and consistency on the golden networks', () => {
         else { expect(q.value).toBeUndefined(); expect(q.reason).toBeDefined(); }
         if (q.status === 'computed') expect(q.warnings).toEqual([]);
         if (q.status === 'provisional') expect(q.warnings.length).toBeGreaterThan(0);
-        // XN never comes from anywhere but a catalogue (the app's catalogue is empty)
+        // XN never comes from anywhere but a catalogue (the app's catalogue is empty) — never from X (Stage A)
         expect(q.inputs.some((i) => i.name === 'XN')).toBe(false);
       }
       // no single-phase load gets a phase current without an allocation

@@ -2,9 +2,17 @@
 // Order (first one present wins), design section 5:
 //   R  — the span's R  → catalogue rAc  → catalogue rDc20 or IEC 60228 (DC 20 °C, F8) → missing
 //   X  — the span's X  → catalogue x    → missing (also at pf = 1)
-//   RN — the span's RN → catalogue rnAc → catalogue rnDc20 or IEC 60228 (al / cu only) → missing
-//   XN — catalogue xn  → missing (never X)
-// np and nN (D10): nN is never derived from np, nor from a value that is not there.
+//   RN — the span's RN → catalogue rnAc → catalogue rnDc20 (al / cu, F8) → IEC 60228 for the span's
+//        al / cu neutral (F8) → missing
+//   XN — catalogue xn → missing
+// Stage A (final decision): the neutral is never taken from the phase — RN is never R, XN is never X.
+// Each of the four values is resolved on its own; a missing RN or XN is reported (neutral:resistance-missing,
+// neutral:reactance-missing) and blocks only what needs the neutral (the sweep decides: an unbalanced circuit).
+// F8 (D9) is used only for al / cu with the operating temperature of the settings; an alloy neutral has no
+// documented conversion: its DC value is not used, nothing replaces it.
+// np and nN (D10): nN is never derived from np, nor from a value that is not there — except for a
+// documented ABC cable, whose construction gives both: one cable = one complete set (np = nN = 1,
+// 'cable-construction'); `parallel` = n complete ABC sets (np = nN = n), each with its own neutral.
 // The company table (COMPANY_RX_OHM_PER_KM) is not used (D5).
 
 import type { ElectricalSettings, SpanProps } from '../../../types/drawing';
@@ -26,6 +34,9 @@ export interface ResolvedSpan {
 }
 
 const TABLE_KINDS: ReadonlySet<string> = new Set(['abc', 'underground']);
+
+/** a documented ABC cable is one complete set: its three phases and its neutral */
+export const CABLE_CONSTRUCTION_RULE = 'One ABC cable assembly is one complete set: three phase conductors and one neutral conductor (not parallel conductors).';
 const isPos = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0;
 
 const ok = (name: InputName, element: string, value: number, provenance: InputProvenance, warnings: WarningCode[], ref?: string): Resolved =>
@@ -48,6 +59,12 @@ export const resolveSpan = (
 ): ResolvedSpan => {
   const T = settings.conductorTempC;
   const sourced = !!props?.dataSource?.trim();
+  // a documented ABC cable with its neutral: from the selected catalogue entry, or typed on the span
+  // (used only for its construction: np = nN — never for its impedances)
+  const spanNeutralDocumented = (isPos(props?.neutralCrossSectionMm2) && !!props?.neutralMaterial) || (isPos(props?.rNeutralOhmPerKm) && sourced);
+  const abc = entry
+    ? entry.cableKind === 'abc' && !!entry.neutral
+    : props?.cableKind === 'abc' && props.system === '3ph4w' && spanNeutralDocumented;
   const own: WarningCode[] = sourced ? [] : ['source-unknown'];
   const tableKind = !!props?.cableKind && TABLE_KINDS.has(props.cableKind);
   const issues: DataIssue[] = [];
@@ -70,7 +87,7 @@ export const resolveSpan = (
 
   // the neutral
   const entryWithoutNeutral = !!entry && !entry.neutral;
-  const neutralDocumented = !!entry?.neutral || (isPos(props?.neutralCrossSectionMm2) && !!props?.neutralMaterial) || (isPos(props?.rNeutralOhmPerKm) && sourced);
+  const neutralDocumented = !!entry?.neutral || spanNeutralDocumented;
   let rn: Resolved;
   if (isPos(props?.rNeutralOhmPerKm)) rn = ok('RN', key, props!.rNeutralOhmPerKm, 'project', own);
   else if (entryWithoutNeutral) rn = no('neutral-conductor-missing');
@@ -78,18 +95,29 @@ export const resolveSpan = (
   else if (entry?.rnDc20 && entry.neutral && entry.neutral.material !== 'alloy') {
     const m = entry.neutral.material;
     rn = T === undefined ? no('settings-missing') : fromEntry('RN', key, entry, entry.rnDc20, ['dc-resistance-used'], atTemp(entry.rnDc20.value, m, T));
+  } else if (entry?.rnDc20 && entry.neutral?.material === 'alloy') {
+    // a DC value of an alloy neutral: no documented conversion to the operating temperature (no α for
+    // alloy) — not used, and nothing is put in its place: an explicit RN is needed
+    rn = no('neutral-impedance-missing');
   } else if ((props?.neutralMaterial === 'al' || props?.neutralMaterial === 'cu') && isPos(props.neutralCrossSectionMm2) && tableKind) {
     const m = props.neutralMaterial;
     const r20 = R20_OHM_PER_KM[m]?.[props.neutralCrossSectionMm2!];
     rn = r20 === undefined ? no('neutral-impedance-missing') : T === undefined ? no('settings-missing') : ok('RN', key, atTemp(r20, m, T), 'iec-table', ['dc-resistance-used'], `IEC 60228 ${m} ${props.neutralCrossSectionMm2} mm2`);
   } else rn = no('neutral-impedance-missing');
+  // XN: only an explicit value (never X)
   const xn: Resolved = entryWithoutNeutral ? no('neutral-conductor-missing') : entry?.xn ? fromEntry('XN', key, entry, entry.xn) : no('neutral-impedance-missing');
+  // the exact neutral value that is missing, each on its own (reported; it blocks only what needs the neutral)
+  if (rn.reason === 'neutral-impedance-missing') issues.push({ code: 'neutral:resistance-missing', severity: 'reported', target: { kind: 'span', id: key }, params: { property: 'RN' } });
+  if (xn.reason === 'neutral-impedance-missing') issues.push({ code: 'neutral:reactance-missing', severity: 'reported', target: { kind: 'span', id: key }, params: { property: 'XN' } });
 
   // np (D10)
   const parallel = props?.parallel;
   const parallelValid = parallel !== undefined && Number.isInteger(parallel) && parallel >= 1;
   let np: Resolved;
-  if (parallel !== undefined) {
+  if (abc && parallel === undefined) {
+    // Q-N3: one documented ABC cable = one complete set — no parallel count is needed, nothing is defaulted
+    np = ok('np', key, 1, 'cable-construction', [], CABLE_CONSTRUCTION_RULE);
+  } else if (parallel !== undefined) {
     np = parallelValid ? ok('np', key, parallel, 'project', []) : no('parallel-invalid');
     // F5: an invalid parallel is never corrected; it is reported and blocks the span
     if (!parallelValid) issues.push({ code: 'parallel-invalid', severity: 'blocks', target: { kind: 'span', id: key }, params: { value: String(parallel) } });
@@ -101,7 +129,13 @@ export const resolveSpan = (
 
   // nN (D10): its own rules, never np
   let nN: Resolved;
-  if (entryWithoutNeutral) nN = no('neutral-conductor-missing');
+  if (abc && (parallel === undefined || parallelValid)) {
+    // Q-N3 / Q-N4: complete ABC sets, each with its three phases and its neutral: nN = np (never from the four conductors)
+    const n = parallel ?? 1;
+    nN = selection?.completeSets !== undefined && selection.completeSets !== n
+      ? no('parallel-conflict')
+      : ok('nN', key, n, 'cable-construction', [], n === 1 ? CABLE_CONSTRUCTION_RULE : `${n} complete ABC sets in parallel, each with its three phases and its neutral (parallel = ${n})`);
+  } else if (entryWithoutNeutral) nN = no('neutral-conductor-missing');
   else if (!neutralDocumented) nN = no('neutral-impedance-missing');
   else if (selection?.completeSets !== undefined) {
     const n = selection.completeSets;

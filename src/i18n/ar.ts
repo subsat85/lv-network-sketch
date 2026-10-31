@@ -952,6 +952,8 @@ export const ar = {
       default: 'قيمة افتراضية',
       'legacy-default': 'افتراضي المشروع القائم',
       allocation: 'من توزيع الأطوار',
+      'cable-construction': 'من تركيب الكابل (مجموعة كاملة)',
+      'company-engineering-default': 'افتراض هندسي معتمد من الشركة (المحايد مثل الطور)',
     },
     method: {
       topology: 'صفر بالطوبولوجيا: لا حمل بعد المقطع (ليس ناتج الحل)',
@@ -1111,6 +1113,10 @@ export const ar = {
       },
       allocation: {
         'approval-incomplete': 'اعتماد توزيع الأطوار ناقص (يلزم by و on)',
+      },
+      neutral: {
+        'resistance-missing': 'مقاومة المحايد Rn غير مُدخلة: الحسابات اللي بتعتمد على تيار المحايد ما بتنحسب (Rn لا تُؤخذ من R)',
+        'reactance-missing': 'مفاعلة المحايد Xn غير مُدخلة: الحسابات اللي بتعتمد على تيار المحايد ما بتنحسب (Xn لا تُؤخذ من X)',
       },
       plain: {
         'length-suspect': 'طول المقطع ١ م أو أقل: لم يُستعمل',

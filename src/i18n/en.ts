@@ -921,6 +921,8 @@ export const en: Dict = {
       default: 'default value',
       'legacy-default': 'existing-project default',
       allocation: 'from the phase allocation',
+      'cable-construction': 'from the cable construction (complete set)',
+      'company-engineering-default': 'company engineering default (neutral as phase)',
     },
     method: {
       topology: 'Zero by topology: no load beyond the span (not a solve result)',
@@ -1080,6 +1082,10 @@ export const en: Dict = {
       },
       allocation: {
         'approval-incomplete': 'Phase allocation approval is incomplete (by and on are required)',
+      },
+      neutral: {
+        'resistance-missing': 'Neutral resistance Rn not entered: results that depend on the neutral current are not calculated (Rn is never taken from R)',
+        'reactance-missing': 'Neutral reactance Xn not entered: results that depend on the neutral current are not calculated (Xn is never taken from X)',
       },
       plain: {
         'length-suspect': 'Span length of 1 m or less: not used',

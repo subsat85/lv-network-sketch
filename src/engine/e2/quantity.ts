@@ -67,7 +67,8 @@ export type UnavailableReason =
   | 'upstream-unavailable';
 
 export type InputName = 'R' | 'X' | 'RN' | 'XN' | 'L' | 'np' | 'nN' | 'I' | 'S' | 'pf' | 'phase' | 'Vph' | 'system';
-export type InputProvenance = 'project' | 'catalogue' | 'iec-table' | 'default' | 'legacy-default' | 'allocation';
+/** 'cable-construction': np = nN from a documented ABC cable (one cable = one complete set: three phases and its neutral) */
+export type InputProvenance = 'project' | 'catalogue' | 'iec-table' | 'default' | 'legacy-default' | 'allocation' | 'cable-construction';
 export interface InputRef {
   name: InputName;
   /** span key, consumer id, or 'settings' */

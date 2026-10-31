@@ -1,6 +1,8 @@
 // E2: cable catalogue schema. Every number carries its unit, its measuring conditions
 // and the page it was read from; a value the catalogue does not print is left out
 // (never 0, never copied from another field: xn is not x, rnAc is not rAc).
+// The neutral is never taken from the phase (final decision, Stage A): an entry without its own
+// rnAc / rnDc20 / xn has no neutral impedance, and what needs it is not calculated.
 
 export interface CatalogueDocument {
   id: string;
