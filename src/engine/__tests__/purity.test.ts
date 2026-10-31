@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync, statSync } from 'fs';
-import { join, relative, resolve } from 'path';
+import { join, relative, resolve, sep } from 'path';
 import type { CableElement, ConsumerElement, DistanceFlag, DrawingElement, ElectricalSettings } from '../../types/drawing';
 import { goldenCases, goldenTreeCases, type GoldenCase } from '../../utils/__tests__/vdGoldenNetworks';
 import { serializeProject, validateProjectFile } from '../../utils/projectSerialization';
@@ -99,8 +99,9 @@ const filesUnder = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
 
 describe('N4. the core\'s own source: no randomness, no clock, no UI', () => {
   it('src/engine (tests excluded)', () => {
-    const files = filesUnder(ENGINE_DIR).filter((f) => !f.includes(`${join('engine', '__tests__')}`));
-    expect(files.map((f) => relative(ENGINE_DIR, f)).sort()).toEqual(['adapter.ts', 'index.ts', 'issues.ts', 'model.ts', 'solver.ts', join('solvers', 'legacy.ts'), 'version.ts'].sort());
+    const files = filesUnder(ENGINE_DIR).filter((f) => relative(ENGINE_DIR, f).split(sep).includes('__tests__') === false);
+    expect(files.map((f) => relative(ENGINE_DIR, f)).sort()).toEqual(['adapter.ts', 'index.ts', 'issues.ts', 'model.ts', 'solver.ts', join('solvers', 'legacy.ts'), 'version.ts',
+      ...['index.ts', 'version.ts', 'quantity.ts', 'assumptions.ts', 'complex.ts', join('catalogue', 'schema.ts'), join('catalogue', 'entries.ts'), join('catalogue', 'resolve.ts'), 'phases.ts', 'model.ts', 'build.ts', 'sweep.ts', 'losses.ts', 'limits.ts'].map((f) => join('e2', f))].sort());
     for (const f of files) {
       const code = readFileSync(f, 'utf8');
       expect(code, f).not.toMatch(/Math\.random|Date\.now|new Date\(/);
@@ -111,13 +112,24 @@ describe('N4. the core\'s own source: no randomness, no clock, no UI', () => {
   });
 });
 
-describe('N5. the app does not import the core in E1', () => {
-  it('no file of src outside src/engine imports it', () => {
+// N5 — approved exception (E2 UI integration, decision D-A): exactly ONE file of the app,
+// src/utils/e2Presentation.ts, may import the core, and only E2 (src/engine/e2…). No other
+// file imports src/engine, and no file outside src/engine imports E1 (src/engine/*.ts).
+const N5_E2_ADAPTER = join('utils', 'e2Presentation.ts');
+const engineSpecifiers = (code: string): string[] =>
+  [...code.matchAll(/(?:from|import)\s*\(?\s*['"]([^'"]*\/engine(?:\/[^'"]*)?)['"]/g)].map((m) => m[1]);
+describe('N5. the app does not import the core (one approved E2 adapter only)', () => {
+  it('no file of src outside src/engine imports it, except the E2 presentation adapter', () => {
     // (compared with false instead of negated: Tailwind scans source text for class names)
     const outside = filesUnder(SRC_DIR).filter((f) => relative(SRC_DIR, f).startsWith(`engine`) === false);
     expect(outside.length).toBeGreaterThan(50);
     const importers = outside.filter((f) => /(from|import)\s*\(?\s*['"][^'"]*\/engine(\/[^'"]*)?['"]/.test(readFileSync(f, 'utf8')));
-    expect(importers).toEqual([]);
+    expect(importers.map((f) => relative(SRC_DIR, f))).toEqual([N5_E2_ADAPTER]);
+  });
+  it('the adapter imports E2 only, never E1', () => {
+    const specs = engineSpecifiers(readFileSync(join(SRC_DIR, N5_E2_ADAPTER), 'utf8'));
+    expect(specs.length).toBeGreaterThan(0);
+    for (const s of specs) expect(s, s).toMatch(/^\.\.\/engine\/e2(\/[^/]+)*$/);
   });
 });
 

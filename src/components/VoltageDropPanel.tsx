@@ -23,6 +23,7 @@ import { DEFAULT_POWER_FACTOR, isPowerFactorDefault } from '../utils/electricalS
 import { planMissingDefaults } from '../utils/spanDefaults';
 import { ALPHA_SOURCE, CONDUCTOR_TABLE_SOURCE } from '../data/conductors';
 import { ProposedConsumerSheet } from './ProposedConsumerSheet';
+import { E2ResultsPanel } from './E2ResultsPanel';
 import { proposalLoadText, proposedConsumers } from '../utils/proposedConsumers';
 import { allStudySplitPoints, endSplitPoints, setSplitConsumerSide, type SplitSide } from '../utils/splitStudy';
 
@@ -125,6 +126,8 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
   const [editing, setEditing] = useState<{ cableId: string; index: number } | null>(null);
   const [endsPole, setEndsPole] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // E2 study (preview), read only: a separate panel (decision D-C)
+  const [showE2, setShowE2] = useState(false);
   const parsed = fromForm(form, t);
   const dirty = JSON.stringify(toForm(electrical)) !== JSON.stringify(form);
   const setF = (k: keyof SettingsForm, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -403,11 +406,13 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
           </section>
           <div className="flex gap-2">
             <button type="button" className="ui-tinted-btn !w-auto" data-vd-action="copy-report" onClick={copyReport}>{copied ? t('vd.copied') : t('vd.copy')}</button>
+            <button type="button" className="ui-tinted-btn !w-auto" data-vd-action="open-e2" onClick={() => setShowE2(true)}>{t('e2.open')}</button>
           </div>
         </div>
       </div>
       {editing && <div onClick={(e) => e.stopPropagation()}><SpanPropertiesSheet cableId={editing.cableId} index={editing.index} onClose={() => setEditing(null)} /></div>}
       {endsPole && <div onClick={(e) => e.stopPropagation()}><CableEndsDialog poleId={endsPole} onClose={() => setEndsPole(null)} /></div>}
+      {showE2 && <div onClick={(e) => e.stopPropagation()}><E2ResultsPanel onClose={() => setShowE2(false)} /></div>}
       {proposalEdit && <div onClick={(e) => e.stopPropagation()}><ProposedConsumerSheet poleId={proposalEdit.poleId} consumerId={proposalEdit.consumerId} onClose={() => setProposalEdit(null)} /></div>}
     </div>
   );
