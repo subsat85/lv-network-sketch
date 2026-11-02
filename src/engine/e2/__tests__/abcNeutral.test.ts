@@ -73,17 +73,16 @@ describe('the neutral is never taken from the phase', () => {
     const typed = resolveSpan(K, { poles: ['a', 'b'], rOhmPerKm: 0.7, xOhmPerKm: 0.1, dataSource: SRC }, abcEntry(), { entryId: 'syn-abc' }, T, 'e2-input');
     expect([typed.r.value, typed.r.input!.provenance, typed.x.value]).toEqual([0.7, 'project', 0.1]);
     expect([typed.rn.reason, typed.xn.reason]).toEqual(['neutral-impedance-missing', 'neutral-impedance-missing']);
-    // RN, documented order: span RN → catalogue rnAc → catalogue rnDc20 (al / cu, F8) → the span's al / cu neutral (IEC, F8)
+    // RN, documented order: span RN → catalogue rnAc → catalogue rnDc20 (as entered, not converted) → missing (no IEC 60228 fallback)
     const dc = resolveSpan(K, undefined, abcEntry({ rnDc20: { ...ms(0.443), conditions: 'DC 20 degC (synthetic)' } }), { entryId: 'syn-abc' }, T, 'e2-input');
-    expect(dc.rn.value).toBeCloseTo(0.443 * (1 + 0.00403 * 50), 12);
-    expect(dc.rn).toMatchObject({ warnings: ['dc-resistance-used'], input: { provenance: 'catalogue' } });
+    expect(dc.rn.value).toBe(0.443);
+    expect(dc.rn).toMatchObject({ warnings: ['dc-resistance-as-entered'], input: { provenance: 'catalogue' } });
     const iec = resolveSpan(K, { ...MANUAL, neutralMaterial: 'al', neutralCrossSectionMm2: 70 }, undefined, undefined, T, 'e2-input');
-    expect(iec.rn).toMatchObject({ input: { provenance: 'iec-table' }, warnings: ['dc-resistance-used'] });
-    expect(iec.rn.value).toBeCloseTo(0.443 * (1 + 0.00403 * 50), 12);
+    expect(iec.rn).toEqual({ reason: 'neutral-impedance-missing', warnings: [] });
     expect(iec.xn.reason).toBe('neutral-impedance-missing');
-    // an al neutral size not in the table, or no operating temperature: no value, nothing in its place
+    // any neutral material / section, with or without a conductor temperature: no value, nothing in its place
     expect(resolveSpan(K, { ...MANUAL, neutralMaterial: 'al', neutralCrossSectionMm2: 54.6 }, undefined, undefined, T, 'e2-input').rn.reason).toBe('neutral-impedance-missing');
-    expect(resolveSpan(K, { ...MANUAL, neutralMaterial: 'al', neutralCrossSectionMm2: 70 }, undefined, undefined, {}, 'e2-input').rn.reason).toBe('settings-missing');
+    expect(resolveSpan(K, { ...MANUAL, neutralMaterial: 'al', neutralCrossSectionMm2: 70 }, undefined, undefined, {}, 'e2-input').rn.reason).toBe('neutral-impedance-missing');
     // a missing phase value does not touch the neutral, and the other way round
     const noX = resolveSpan(K, { ...MANUAL, xOhmPerKm: undefined, rNeutralOhmPerKm: 0.9 }, abcEntry({ xn: ms(0.2) }), { entryId: 'syn-abc' }, T, 'e2-input');
     expect(noX.x.value).toBe(0.08); // the catalogue x after the span's missing X
@@ -147,14 +146,13 @@ describe('other cables and explicit neutrals', () => {
     const typed = resolveSpan(K, { ...MANUAL, rNeutralOhmPerKm: 1.2 }, undefined, undefined, T, 'e2-input');
     expect([typed.rn.value, typed.rn.input!.provenance]).toEqual([1.2, 'project']);
   });
-  it('12. alloy: no documented conversion — its DC value is not used and nothing replaces it', () => {
+  it('12. alloy: nothing is converted for any material — a printed DC value is used as entered (noted); nothing is put in place of a missing one', () => {
     const manual = resolveSpan(K, MANUAL, undefined, undefined, T, 'e2-input');
     expect(manual.rn.reason).toBe('neutral-impedance-missing');
     const printed = resolveSpan(K, undefined, abcEntry({ neutral: { material: 'alloy', sectionMm2: 54.6 }, construction: '3x70 + 54.6', rnDc20: ms(0.63), xn: ms(0.09) }), { entryId: 'syn-abc' }, T, 'e2-input');
-    expect(printed.rn).toMatchObject({ reason: 'neutral-impedance-missing' });
-    expect(printed.rn.value).toBeUndefined();
+    expect(printed.rn).toMatchObject({ value: 0.63, warnings: ['dc-resistance-as-entered'], input: { provenance: 'catalogue' } });
     expect(printed.xn).toMatchObject({ value: 0.09, input: { provenance: 'catalogue' } });
-    expect(neutralIssues(printed)).toEqual(['neutral:resistance-missing']);
+    expect(neutralIssues(printed)).toEqual([]);
     // an explicit RN for the alloy neutral is used
     expect(resolveSpan(K, { ...MANUAL, rNeutralOhmPerKm: 0.63 }, undefined, undefined, T, 'e2-input').rn.value).toBe(0.63);
   });

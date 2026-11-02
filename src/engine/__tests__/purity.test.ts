@@ -101,7 +101,7 @@ describe('N4. the core\'s own source: no randomness, no clock, no UI', () => {
   it('src/engine (tests excluded)', () => {
     const files = filesUnder(ENGINE_DIR).filter((f) => relative(ENGINE_DIR, f).split(sep).includes('__tests__') === false);
     expect(files.map((f) => relative(ENGINE_DIR, f)).sort()).toEqual(['adapter.ts', 'index.ts', 'issues.ts', 'model.ts', 'solver.ts', join('solvers', 'legacy.ts'), 'version.ts',
-      ...['index.ts', 'version.ts', 'quantity.ts', 'assumptions.ts', 'complex.ts', join('catalogue', 'schema.ts'), join('catalogue', 'entries.ts'), join('catalogue', 'resolve.ts'), 'phases.ts', 'model.ts', 'build.ts', 'sweep.ts', 'losses.ts', 'limits.ts'].map((f) => join('e2', f))].sort());
+      ...['index.ts', 'version.ts', 'quantity.ts', 'assumptions.ts', 'complex.ts', join('catalogue', 'schema.ts'), join('catalogue', 'entries.ts'), join('catalogue', 'resolve.ts'), join('catalogue', 'cableTypes.ts'), 'phases.ts', 'model.ts', 'build.ts', 'sweep.ts', 'losses.ts', 'limits.ts'].map((f) => join('e2', f))].sort());
     for (const f of files) {
       const code = readFileSync(f, 'utf8');
       expect(code, f).not.toMatch(/Math\.random|Date\.now|new Date\(/);

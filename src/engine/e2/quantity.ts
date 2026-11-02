@@ -33,7 +33,8 @@ export type WarningCode =
   | 'span-inherited'
   | 'source-unknown'          // a value typed on the span without dataSource
   | 'catalogue-unverified'
-  | 'dc-resistance-used'      // R from a DC value at 20 °C, corrected with F8
+  | 'dc-resistance-used'      // R from the IEC 60228 table (DC 20 °C), corrected with F8 (span material / section only)
+  | 'dc-resistance-as-entered' // a resistance stated as DC, used as entered in the AC calculation (not converted)
   | 'load-default'            // load current from a rule (4 A single-phase, 32 A three-phase default)
   | 'power-factor-default'
   | 'phase-parallel-default'   // np = 1 for a legacy project whose span has no parallel
@@ -44,6 +45,7 @@ export type WarningCode =
 
 export type UnavailableReason =
   | 'circuit-not-computed'
+  | 'cable-type-conflict'     // C0: a merged span whose original records had different cable types, not resolved
   | 'system-missing'
   | 'impedance-missing'
   | 'neutral-impedance-missing'

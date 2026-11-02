@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { MousePointer2, Trash2, Activity, Check, ArrowRight, Folder, Share, Minus, Zap, BarChart3, Gauge, Maximize } from 'lucide-react';
+import { MousePointer2, Trash2, Activity, Check, ArrowRight, Folder, Share, Minus, Zap, BarChart3, Gauge, Maximize, Library } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import { ToolType, CableElement } from '../types/drawing';
 import { LoadReportModal } from './LoadReportModal';
 import { VoltageDropPanel } from './VoltageDropPanel';
+import { CableLibrarySheet } from './cables/CableLibrarySheet';
 import { ICON_LG } from './ui/icons';
 import { consumerIncluded } from '../utils/network';
 import { useLocale, useT } from '../store/localeStore';
@@ -31,6 +32,7 @@ interface ConsumerElement {
 export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, onOpenTransformerInfo, onEnterFullScreen }) => {
   const [showLoadReport, setShowLoadReport] = useState(false);
   const [showVoltageDrop, setShowVoltageDropPanel] = useState(false);
+  const [showCableLibrary, setShowCableLibrary] = useState(false);
   const t = useT();
   const locale = useLocale((s) => s.locale);
   
@@ -118,6 +120,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       onClick: () => setShowVoltageDropPanel(true),
       isActive: false
     },
+    {
+      // Stage C2: the cable library (reading only); last of the info group, the others keep their place
+      id: 'cableLibrary',
+      group: 'info',
+      icon: <Library {...ICON_LG} />,
+      label: t('toolbar.cableLibrary'),
+      onClick: () => setShowCableLibrary(true),
+      isActive: false
+    },
   ];
 
   const renderTool = (tl: typeof tools[number]) => (
@@ -199,6 +210,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
         consumers={consumers}
       />
       {showVoltageDrop && <VoltageDropPanel onClose={() => setShowVoltageDropPanel(false)} />}
+      {showCableLibrary && <CableLibrarySheet onClose={() => setShowCableLibrary(false)} />}
     </>
   );
 };

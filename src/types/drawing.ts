@@ -1,3 +1,5 @@
+import type { SpanCableType } from './cableType';
+
 export type Point = { x: number; y: number };
 
 export type ElementType = 'path' | 'text' | 'symbol' | 'cable' | 'consumer' | 'arc' | 'shape' | 'transformer_table' | 'cable_arc' | 'jumper';
@@ -142,6 +144,9 @@ export interface SpanProps {
   review?: SpanReview[];
   /** properties read from a feature/vd (version 2) file, kept unchanged */
   legacyV2?: unknown;
+  /** Stage B: the library cable type used by this span — its id, the exact revision, a full snapshot of
+   *  that revision and the project's own overrides (never updated from the library by itself) */
+  cableType?: SpanCableType;
   /** after merging spans whose properties differed (or existed on one side only):
    *  every original record (null = that span had none), kept for review */
   mergedFrom?: (Omit<SpanProps, 'poles' | 'mergedFrom'> | null)[];
@@ -181,6 +186,12 @@ export interface ElectricalSettings {
   powerFactor?: number;
   /** conductor operating temperature, °C — required when the conductor table is used */
   conductorTempC?: number;
+  /**
+   * Ambient temperature around the cable, °C — an environment setting of the project, kept for later
+   * use (installation conditions). It is NOT the conductor temperature and NOT a resistance reference
+   * temperature, and no calculation corrects a conductor resistance with it.
+   */
+  ambientTempC?: number;
   /**
    * How single-phase loads with an unknown phase are handled:
    * 'worst'    — all of them on the phase being checked (an upper bound);

@@ -1,6 +1,7 @@
 import type { CableElement, DrawingElement, SpanProps, SpanReview } from '../types/drawing';
 import { pruneSuggestedSplits } from './cableArrows';
 import { pruneSplitSides } from './splitStudy';
+import { sameCableType } from './cableTypeModel';
 
 // ---------------------------------------------------------------------------
 // Span identity and per-span electrical properties.
@@ -34,8 +35,10 @@ export const ELECTRICAL_FIELDS = [
   'rOhmPerKm', 'xOhmPerKm', 'rNeutralOhmPerKm', 'dataSource',
 ] as const;
 
-export const sameElectrical = (a: SpanProps, b: SpanProps) => ELECTRICAL_FIELDS.every((k) => a[k] === b[k]);
-export const hasElectrical = (p: SpanProps | undefined) => !!p && ELECTRICAL_FIELDS.some((k) => p[k] !== undefined && p[k] !== '');
+// C0: a span's library cable type (type, revision, snapshot, overrides) is part of its electrical
+// identity; spans without one compare and count exactly as before
+export const sameElectrical = (a: SpanProps, b: SpanProps) => ELECTRICAL_FIELDS.every((k) => a[k] === b[k]) && sameCableType(a.cableType, b.cableType);
+export const hasElectrical = (p: SpanProps | undefined) => !!p && (ELECTRICAL_FIELDS.some((k) => p[k] !== undefined && p[k] !== '') || p.cableType !== undefined);
 
 const withReview = (p: SpanProps, r: SpanReview): SpanProps =>
   p.review?.includes(r) ? p : { ...p, review: [...(p.review ?? []), r] };

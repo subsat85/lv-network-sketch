@@ -34,20 +34,23 @@ describe('order of the sources', () => {
     expect(r.r).toMatchObject({ value: 0.3, warnings: ['source-unknown'], input: { provenance: 'project' } });
     expect(r.x).toMatchObject({ value: 0.07, input: { provenance: 'project' } });
   });
-  it('then the catalogue AC value, then DC 20 °C (F8, with its warning)', () => {
+  it('then the catalogue AC value, then the DC value — used as entered (no F8, no thermal correction), with its note', () => {
     expect(resolveSpan(K, undefined, e, { entryId: e.id }, T, 'e2-input').r).toMatchObject({ value: 0.5, warnings: [], input: { provenance: 'catalogue' } });
     const dc = { ...e, rAc: undefined, rDc20: { ...e.rAc!, value: 0.443, conditions: 'DC 20 degC' } };
     const r = resolveSpan(K, undefined, dc, { entryId: e.id }, T, 'e2-input').r;
-    expect(r.value).toBeCloseTo(0.443 * (1 + 0.00403 * 50), 12);
-    expect(r.warnings).toEqual(['dc-resistance-used']);
-    expect(resolveSpan(K, undefined, dc, { entryId: e.id }, {}, 'e2-input').r.reason).toBe('settings-missing');
+    expect(r.value).toBe(0.443);
+    expect(r.warnings).toEqual(['dc-resistance-as-entered']);
+    // the conductor temperature neither changes it nor is needed for it
+    expect(resolveSpan(K, undefined, dc, { entryId: e.id }, {}, 'e2-input').r).toMatchObject({ value: 0.443, warnings: ['dc-resistance-as-entered'] });
   });
-  it('IEC 60228 for the table kinds only; the company table is never used (D5)', () => {
+  it('no IEC 60228 fallback (final decision): the span\'s material and section give no R; the company table is never used (D5)', () => {
     const props = { poles: ['a', 'b'] as [string, string], cableKind: 'abc' as const, material: 'cu' as const, crossSectionMm2: 120 };
-    const r = resolveSpan(K, props, undefined, undefined, T, 'e2-input').r;
-    expect(r.value).toBeCloseTo(R20_OHM_PER_KM.cu[120] * (1 + 0.00393 * 50), 12);
-    expect(r.value).not.toBeCloseTo(COMPANY_RX_OHM_PER_KM.cu[120].r, 3);
-    expect(r.input?.provenance).toBe('iec-table');
+    const rs = resolveSpan(K, props, undefined, undefined, T, 'e2-input');
+    expect(rs.r).toEqual({ reason: 'impedance-missing', warnings: [] });
+    expect(rs.issues).toContainEqual({ code: 'phase:resistance-missing', severity: 'blocks', target: { kind: 'span', id: K }, params: { property: 'R' } });
+    expect(R20_OHM_PER_KM.cu[120]).toBeGreaterThan(0); // the table is still there (documentation), only not used
+    expect(JSON.stringify(rs)).not.toContain(String(COMPANY_RX_OHM_PER_KM.cu[120].r));
+    expect(JSON.stringify(rs)).not.toContain('iec-table');
     expect(resolveSpan(K, { ...props, cableKind: 'bare' }, undefined, undefined, T, 'e2-input').r.reason).toBe('impedance-missing');
     // no X from any table, also not at pf = 1
     expect(resolveSpan(K, props, undefined, undefined, T, 'e2-input').x.reason).toBe('impedance-missing');

@@ -3,6 +3,7 @@ import { readDistanceFlags } from './distances';
 import { isArcValid } from './cableArcs';
 import { DEFAULT_ELECTRICAL, readElectricalSettings } from './electricalSettings';
 import { prepareDocument, unplacedV2Records } from './projectMigration';
+import { spanCableTypeProblem } from './cableTypeModel';
 import { t } from '../store/localeStore';
 
 export interface ProjectExportData {
@@ -93,13 +94,16 @@ const SPAN_NUM_FIELDS = ['crossSectionMm2', 'neutralCrossSectionMm2', 'parallel'
 const spanPropsProblem = (sp: unknown): string | null => {
   if (!isObj(sp)) return t('dialogs.file.notObject');
   if (sp.poles !== undefined && (!Array.isArray(sp.poles) || sp.poles.length !== 2 || !sp.poles.every(isStr))) return 'poles';
-  for (const k of SPAN_NUM_FIELDS) if (sp[k] !== undefined && !(isNum(sp[k]) && (sp[k] as number) > 0)) return k;
+  // X = 0 is an entered value (as in the span form, E1 and E2); the others must be > 0
+  for (const k of SPAN_NUM_FIELDS) if (sp[k] !== undefined && !(isNum(sp[k]) && ((sp[k] as number) > 0 || (k === 'xOhmPerKm' && sp[k] === 0)))) return k;
   if (sp.material !== undefined && sp.material !== 'al' && sp.material !== 'cu') return 'material';
   if (sp.neutralMaterial !== undefined && !['al', 'cu', 'alloy'].includes(sp.neutralMaterial as string)) return 'neutralMaterial';
   if (sp.system !== undefined && sp.system !== '3ph4w' && sp.system !== '1ph2w') return 'system';
   if (sp.cableKind !== undefined && !['abc', 'bare', 'underground', 'other'].includes(sp.cableKind as string)) return 'cableKind';
   if (sp.dataSource !== undefined && !isStr(sp.dataSource)) return 'dataSource';
   if (sp.mergedFrom !== undefined && (!Array.isArray(sp.mergedFrom) || sp.mergedFrom.some((m) => m !== null && (!isObj(m) || spanPropsProblem({ ...m, poles: undefined }))))) return 'mergedFrom';
+  // Stage B: a cable type reference is kept exactly as written; a malformed one is reported, never repaired
+  if (sp.cableType !== undefined) { const ct = spanCableTypeProblem(sp.cableType); if (ct) return ct; }
   return null;
 };
 

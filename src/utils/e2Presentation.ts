@@ -40,11 +40,11 @@ export const runE2Study = (d: E2DocumentInput): E2StudyResult =>
 // ---------- every code the result can carry, each with its text (checked by the compiler) ----------
 
 export const STATUSES: readonly QuantityStatus[] = ['computed', 'provisional', 'unavailable', 'not-run'];
-const REASONS = ['circuit-not-computed', 'system-missing', 'impedance-missing', 'neutral-impedance-missing', 'neutral-parallel-unknown', 'neutral-conductor-missing',
+const REASONS = ['circuit-not-computed', 'cable-type-conflict', 'system-missing', 'impedance-missing', 'neutral-impedance-missing', 'neutral-parallel-unknown', 'neutral-conductor-missing',
   'phase-parallel-unknown', 'parallel-invalid', 'parallel-conflict', 'length-missing', 'length-suspect', 'phase-allocation-missing', 'phase-allocation-invalid',
   'phase-allocation-conflict', 'phase-not-present', 'three-phase-on-single-phase', 'invalid-load', 'not-converged', 'settings-missing', 'energy-needs-load-profile',
   'node-voltage-unknown', 'upstream-unavailable'] as const satisfies readonly UnavailableReason[];
-const WARNINGS = ['length-estimated', 'span-review', 'span-inherited', 'source-unknown', 'catalogue-unverified', 'dc-resistance-used', 'load-default',
+const WARNINGS = ['length-estimated', 'span-review', 'span-inherited', 'source-unknown', 'catalogue-unverified', 'dc-resistance-used', 'dc-resistance-as-entered', 'load-default',
   'power-factor-default', 'phase-parallel-default', 'allocation-unverified', 'proposed-load', 'orphan-consumer-excluded', 'proposed-consumer-excluded'] as const satisfies readonly WarningCode[];
 // a reason or warning added to E2 without a text here is a compile error
 type Exhaustive<All, Listed> = [Exclude<All, Listed>] extends [never] ? true : never;

@@ -13,6 +13,10 @@ import { useLocale, useT } from '../store/localeStore';
 import { directionOf } from '../i18n';
 import { isPlainDistance } from '../utils/distances';
 import { poleNamer } from '../utils/poleNames';
+import { cableTypeMergeConflict } from '../utils/cableTypeModel';
+import { useCableLibrary } from '../store/cableLibraryStore';
+import { checkPick, linkRecordState, linkSpanCable, unlinkSpanCable, writeSpanProps, type LinkRecordState } from '../utils/spanCableLink';
+import { SpanCablePicker, SpanCableSection } from './cables/SpanCableLink';
 
 // Editing the electrical properties of one span of one cable (Stage 7.2).
 // Nothing is written until "حفظ"; the save is one undo step. The length is the
@@ -24,12 +28,12 @@ interface Props {
   onClose: () => void;
 }
 
-type Form = {
+export type Form = {
   length: string; system: '' | SupplySystem; cableKind: '' | CableKind; material: '' | ConductorMaterial;
   section: string; neutral: string; neutralMaterial: '' | ConductorMaterial | 'alloy'; parallel: string; r: string; x: string; rn: string; source: string;
 };
 
-const toForm = (p: SpanProps | undefined, length: string): Form => ({
+export const toForm = (p: SpanProps | undefined, length: string): Form => ({
   length,
   system: p?.system ?? '', cableKind: p?.cableKind ?? '', material: p?.material ?? '',
   section: p?.crossSectionMm2?.toString() ?? '', neutral: p?.neutralCrossSectionMm2?.toString() ?? '', neutralMaterial: p?.neutralMaterial ?? '',
@@ -41,7 +45,7 @@ const num = (s: string) => { const v = Number(s.trim().replace(',', '.')); retur
 const posOrUndef = (s: string) => { const v = num(s); return v !== undefined && Number.isFinite(v) && v > 0 ? v : undefined; };
 
 /** Form → properties (only valid values are kept); returns field errors too. */
-const fromForm = (f: Form, poles: [string, string], keep: SpanProps | undefined, tr: Tr): { props: SpanProps; errors: string[] } => {
+export const fromForm = (f: Form, poles: [string, string], keep: SpanProps | undefined, tr: Tr): { props: SpanProps; errors: string[] } => {
   const errors: string[] = [];
   const check = (label: string, s: string, allowZero = false) => {
     const v = num(s);
@@ -64,6 +68,15 @@ const fromForm = (f: Form, poles: [string, string], keep: SpanProps | undefined,
   const rn = check('Rn', f.rn); if (rn !== undefined) props.rNeutralOhmPerKm = rn;
   if (f.source.trim()) props.dataSource = f.source.trim();
   if (keep?.legacyV2 !== undefined) props.legacyV2 = keep.legacyV2;
+  // C0 (G1): the span's library cable type (reference, exact snapshot, overrides, verification) is not
+  // edited by this form and is kept exactly as stored
+  if (keep?.cableType !== undefined) props.cableType = keep.cableType;
+  // an unresolved cable type merge stays unresolved: saving this form does not choose a cable type
+  if (keep && cableTypeMergeConflict(keep)) {
+    props.mergedFrom = keep.mergedFrom;
+    const marks = (keep.review ?? []).filter((r) => r === 'merge-different' || r === 'merge-partial');
+    if (marks.length) props.review = marks;
+  }
   return { props, errors };
 };
 
@@ -107,18 +120,21 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   // phase / neutral material or section changed: R, X (and Rn) follow the company table
   // only while they hold its values or are empty; typed values are kept (Stage 7.12)
+  const linked = stored?.cableType !== undefined;
   const setPhase = (k: 'material' | 'section', v: string) => setForm((f) => {
     const next = { ...f, [k]: v };
+    if (linked) return next; // C0 (G3): a span with a library cable type gets no company table values
     const t = followPhaseTable(f, next);
     return { ...next, r: t.r, x: t.x, source: !f.source.trim() && (t.r !== f.r || t.x !== f.x) && t.r ? DEFAULT_DATA_SOURCE : f.source };
   });
   const setNeutral = (k: 'neutralMaterial' | 'neutral', v: string) => setForm((f) => {
     const next = { ...f, [k]: v };
+    if (linked) return next;
     const t = followNeutralTable(f, next);
     return { ...next, rn: t.rn, source: !f.source.trim() && t.rn !== f.rn && t.rn ? DEFAULT_DATA_SOURCE : f.source };
   });
-  const useCompanyPhase = () => setForm((f) => { const t = phaseTableState(f).table; return t ? { ...f, r: String(t.r), x: String(t.x), source: f.source.trim() || DEFAULT_DATA_SOURCE } : f; });
-  const useCompanyNeutral = () => setForm((f) => { const t = neutralTableState(f).table; return t ? { ...f, rn: String(t.r), source: f.source.trim() || DEFAULT_DATA_SOURCE } : f; });
+  const useCompanyPhase = () => setForm((f) => { const t = linked ? null : phaseTableState(f).table; return t ? { ...f, r: String(t.r), x: String(t.x), source: f.source.trim() || DEFAULT_DATA_SOURCE } : f; });
+  const useCompanyNeutral = () => setForm((f) => { const t = linked ? null : neutralTableState(f).table; return t ? { ...f, rn: String(t.r), source: f.source.trim() || DEFAULT_DATA_SOURCE } : f; });
   const lengthFlag = distanceFlags[distKey];
   const lengthEstimated = !!lengthFlag?.estimated;
   // an estimated length becomes a measured one only when it is changed or explicitly confirmed
@@ -127,14 +143,35 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
   const locale = useLocale((st) => st.locale);
   const name = useMemo(() => poleNamer(elements, t), [elements, t]);
   const backdropClose = useBackdropClose(onClose);
+  // Stage C4: the library cable of this span (the picker replaces the form inside this sheet)
+  const [picking, setPicking] = useState(false);
+  const lib = useCableLibrary();
+  const ctx = useMemo(() => ({ tr: t, locale }), [t, locale]);
+  const link = stored?.cableType;
+  const linkKey = link ? `${link.typeId}@${link.revision}` : '';
+  const [record, setRecord] = useState<{ key: string; state: LinkRecordState }>({ key: '', state: { kind: 'checking' } });
+  // where the linked record stands in this device's library: shown only (the span keeps its snapshot;
+  // nothing here is used by a calculation, and nothing is updated automatically)
+  useEffect(() => {
+    if (!link) return;
+    let alive = true;
+    lib.controller.history(link.typeId)
+      .then((h) => { if (alive) setRecord({ key: linkKey, state: linkRecordState(link, h) }); })
+      .catch((e: unknown) => { if (alive) setRecord({ key: linkKey, state: (e as { kind?: string })?.kind === 'not-found' ? { kind: 'missing' } : { kind: 'unknown' } }); });
+    return () => { alive = false; };
+    // read again when the link or the library list changes (an edit in the library)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkKey, lib.types, lib.controller]);
+  const recordState: LinkRecordState = record.key === linkKey ? record.state : { kind: 'checking' };
 
   // the span disappeared (undo, delete…): close
   useEffect(() => { if (!cable || !a || !b || !spanId) onClose(); }, [cable, a, b, spanId, onClose]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    // Escape leaves the picker first, then closes the sheet
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { if (picking) setPicking(false); else onClose(); } };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, picking]);
 
   const draft = useMemo(() => (a && b ? fromForm(form, [a, b], stored, t) : null), [form, a, b, stored, t]);
   // live check of this span with the values in the form (nothing saved)
@@ -178,6 +215,13 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
     saveHistory();
     onClose();
   };
+  // C4: the link and its removal are written at once, each as one undo step, through the drawing
+  // store's element update; only this span's record changes (the form's unsaved values stay in the form)
+  const linkCable = (rev: Parameters<typeof linkSpanCable>[2]) => {
+    writeSpanProps(useDrawingStore.getState(), cable.id, index, (st, poles) => linkSpanCable(st, poles, rev, Date.now()));
+    setPicking(false);
+  };
+  const unlinkCable = () => { writeSpanProps(useDrawingStore.getState(), cable.id, index, (st) => (st ? unlinkSpanCable(st) : st)); };
   const clearProps = () => {
     saveHistory();
     updateElement(cable.id, withSpanProps(cable, spanId, undefined));
@@ -188,7 +232,11 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
   const s = preview?.span;
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/30 sm:items-center" {...backdropClose}>
-      <div dir={directionOf(locale)} role="dialog" aria-label={t('span.dialog')} data-span-sheet data-span={`${cable.id}#${index}`} className="w-full max-w-lg max-h-[85vh] supports-[height:100dvh]:max-h-[85dvh] overflow-y-auto rounded-t-[16px] sm:rounded-[16px] bg-white shadow-float pb-[env(safe-area-inset-bottom)]" onClick={(e) => e.stopPropagation()}>
+      <div dir={directionOf(locale)} role="dialog" aria-label={t('span.dialog')} data-span-sheet data-span={`${cable.id}#${index}`} className="w-full max-w-lg max-h-[85vh] supports-[height:100dvh]:max-h-[85dvh] overflow-y-auto overflow-x-hidden rounded-t-[16px] sm:rounded-[16px] bg-white shadow-float pb-[env(safe-area-inset-bottom)]" onClick={(e) => e.stopPropagation()}>
+        {picking ? (
+          <SpanCablePicker state={lib} linked={link} ctx={ctx} check={(shown) => checkPick((id) => lib.controller.history(id), shown)}
+            onLink={linkCable} onRetry={() => void lib.controller.reload()} onBack={() => setPicking(false)} />
+        ) : (<>
         <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-ios-separator bg-white px-4 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <span className="h-3.5 w-3.5 flex-shrink-0 rounded-full ring-1 ring-inset ring-black/10" style={{ backgroundColor: cable.strokeColor }} />
@@ -206,6 +254,8 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
               <ol className="list-decimal ps-5">{stored.mergedFrom.map((m, i) => <li key={i}>{m ? spanSummary({ ...m, poles: ['', ''] }, t) + (m.xOhmPerKm !== undefined ? ` · X ${m.xOhmPerKm}` : '') + (m.dataSource ? ` · ${m.dataSource}` : '') : t('span.noProps')}</li>)}</ol>
             </div>
           )}
+
+          <SpanCableSection link={link} record={recordState} conflict={cableTypeMergeConflict(stored)} ctx={ctx} onChoose={() => setPicking(true)} onUnlink={unlinkCable} />
 
           <Field label={t('span.length')} hint={parallelCables ? t('span.lengthShared', { n: parallelCables }) : t('span.lengthHint')}>
             <input className="ui-field h-11" type="text" inputMode="decimal" value={form.length} onChange={(e) => set('length', e.target.value)} aria-label={t('span.lengthName')} data-span-field="length" />
@@ -279,7 +329,7 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
               <p data-company-phase={phaseTable.matches ? 'table' : rxTyped ? 'typed' : 'empty'}>
                 {t('span.companyTable')} ({form.material === 'cu' ? 'Cu' : 'Al'} {form.section} mm²): R {phaseTable.table.r} · X {phaseTable.table.x} Ω/km —{' '}
                 {phaseTable.matches ? t('span.phaseFromTable') : rxTyped ? t('span.phaseTyped') : t('span.unused')}
-                {!phaseTable.matches && <button type="button" className="ui-tinted-btn !ms-2 !inline-flex !w-auto !min-h-[30px] !px-3" data-span-action="use-company-phase" onClick={useCompanyPhase}>{t('span.useCompanyPhase')}</button>}
+                {!phaseTable.matches && !linked && <button type="button" className="ui-tinted-btn !ms-2 !inline-flex !w-auto !min-h-[30px] !px-3" data-span-action="use-company-phase" onClick={useCompanyPhase}>{t('span.useCompanyPhase')}</button>}
               </p>
             ) : (
               form.material && form.section.trim() && <p data-company-phase="none">{t('span.phaseNotInTable', { section: form.section, table: t('span.companyTable'), note: form.r.trim() ? '' : t('span.phaseNotInTableNote') })}</p>
@@ -288,7 +338,7 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
               <p data-company-neutral={neutralTable.matches ? 'table' : rnTyped ? 'typed' : 'empty'}>
                 {t('span.neutralTable', { material: form.neutralMaterial === 'cu' ? 'Cu' : 'Al', section: form.neutral, r: neutralTable.table.r, table: t('span.companyTable') })}
                 {neutralTable.matches ? t('span.neutralUsed') : rnTyped ? t('span.neutralTyped') : t('span.unused')}
-                {!neutralTable.matches && <button type="button" className="ui-tinted-btn !ms-2 !inline-flex !w-auto !min-h-[30px] !px-3" data-span-action="use-company-neutral" onClick={useCompanyNeutral}>{t('span.useCompanyNeutral')}</button>}
+                {!neutralTable.matches && !linked && <button type="button" className="ui-tinted-btn !ms-2 !inline-flex !w-auto !min-h-[30px] !px-3" data-span-action="use-company-neutral" onClick={useCompanyNeutral}>{t('span.useCompanyNeutral')}</button>}
               </p>
             ) : (
               form.neutral.trim() && form.neutralMaterial && <p data-company-neutral="none">{t('span.neutralNotInTable', { what: form.neutralMaterial === 'alloy' ? t('span.neutralAlloy') : `${form.neutral} mm²`, table: t('span.companyTable') })}</p>
@@ -336,6 +386,7 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
             <button type="button" disabled={!canSave} className="min-h-[44px] rounded-ctl bg-ios-blue text-[17px] font-semibold text-white active:bg-ios-blue-pressed disabled:opacity-40" data-span-action="save" onClick={save}>{t('span.save')}</button>
           </div>
         </div>
+        </>)}
       </div>
     </div>
   );

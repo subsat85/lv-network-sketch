@@ -137,8 +137,8 @@ describe('texts of the codes', () => {
     for (const s of STATUSES) for (const d of [ar, en]) expect(typeof has(d, `e2.status.${s}`), s).toBe('string');
     for (const r of REASON_CODES) for (const d of [ar, en]) expect(typeof has(d, `e2.reason.${r}`), r).toBe('string');
     for (const w of WARNING_CODES) for (const d of [ar, en]) expect(typeof has(d, `e2.warning.${w}`), w).toBe('string');
-    expect(REASON_CODES).toHaveLength(22);
-    expect(WARNING_CODES).toHaveLength(13);
+    expect(REASON_CODES).toHaveLength(23);
+    expect(WARNING_CODES).toHaveLength(14);
   });
   it('the arithmetic sum is named as such, never as a guaranteed upper bound', () => {
     expect(ar.e2.q.arithmeticSum).toBe('المجموع الحسابي للتيارات');

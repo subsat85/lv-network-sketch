@@ -3,7 +3,7 @@
 // impedances with their sources (catalogue/resolve.ts) and every load its phases
 // (phases.ts). Nothing in the document is written; what is missing stays missing.
 
-import type { CableElement, ConsumerElement, DrawingElement, ElectricalSettings } from '../../types/drawing';
+import type { CableElement, ConsumerElement, DrawingElement, ElectricalSettings, SpanProps } from '../../types/drawing';
 import { toNetwork } from '../adapter';
 import { networkIssueTarget, type DataIssue } from '../issues';
 import type { NetworkIssue } from '../../utils/network';
@@ -11,6 +11,8 @@ import type { NetBranch, NetLoad, ProjectDocument } from '../model';
 import { c, scale } from './complex';
 import { resolveSpan, type CatalogueSelection, type InputOrigin, type Resolved } from './catalogue/resolve';
 import type { CableEntry } from './catalogue/schema';
+import { cableTypeEntry } from './catalogue/cableTypes';
+import { cableTypeMergeConflict } from '../../utils/cableTypeModel';
 import type { E2Circuit, E2Load, E2Span, ZData } from './model';
 import { consumerPhases, PHASES, spanPhase, type Phase, type PhaseAllocation } from './phases';
 import type { InputRef, UnavailableReason, WarningCode } from './quantity';
@@ -28,8 +30,8 @@ export interface BuildInput {
 }
 
 // F5: an invalid input comes before any missing one (an invalid parallel is never hidden by a missing length)
-const NEUTRAL_ORDER: UnavailableReason[] = ['parallel-invalid', 'length-missing', 'length-suspect', 'neutral-conductor-missing', 'neutral-impedance-missing', 'settings-missing', 'parallel-conflict', 'neutral-parallel-unknown'];
-const PHASE_ORDER: UnavailableReason[] = ['parallel-invalid', 'length-missing', 'length-suspect', 'phase-parallel-unknown', 'impedance-missing', 'settings-missing'];
+const NEUTRAL_ORDER: UnavailableReason[] = ['cable-type-conflict', 'parallel-invalid', 'length-missing', 'length-suspect', 'neutral-conductor-missing', 'neutral-impedance-missing', 'settings-missing', 'parallel-conflict', 'neutral-parallel-unknown'];
+const PHASE_ORDER: UnavailableReason[] = ['cable-type-conflict', 'parallel-invalid', 'length-missing', 'length-suspect', 'phase-parallel-unknown', 'impedance-missing', 'settings-missing'];
 
 /** F1: an E1 network issue as a DataIssue: code network:<kind>, the same target as E1, every field kept */
 const EXCLUDING: ReadonlySet<string> = new Set(['orphan-consumer', 'proposed-consumer-unconnected']);
@@ -97,15 +99,34 @@ export const buildNetwork = (b: BuildInput): { circuits: E2Circuit[]; issues: Da
   const spanOf = (br: NetBranch): E2Span => {
     const cable = cables.get(br.cableId);
     const props = br.spanId ? cable?.spanProps?.[br.spanId] : undefined;
-    const sel = selection[br.key] ?? selection[br.cableId];
-    const entry = sel ? entries.get(sel.entryId) : undefined;
+    // Stage B: a library cable type on the span (its snapshot + overrides) is the span's catalogue entry;
+    // its values only: the span's own typed values and conductor fields are not used next to it
+    // (no silent substitution), only its topology (system, parallel = complete assemblies)
+    // C0: a merge of spans with different cable types that is not resolved — nothing is chosen for it,
+    // the span is not calculated (one span cannot stand for two different cables in series)
+    const conflict = cableTypeMergeConflict(props);
+    if (conflict) issues.push({ code: 'cable-type:merge-conflict', severity: 'blocks', target: { kind: 'span', id: br.key }, params: { records: props!.mergedFrom!.length } });
+    const typed = !conflict && props?.cableType ? cableTypeEntry(props.cableType) : undefined;
+    // the difference with E1 is stated: E1 keeps using the span's own R / X / Rn, E2 uses the cable type
+    const legacyFields = typed && props ? ([['R', props.rOhmPerKm], ['X', props.xOhmPerKm], ['RN', props.rNeutralOhmPerKm]] as const).filter(([, v]) => v !== undefined).map(([n]) => n) : [];
+    if (legacyFields.length) issues.push({ code: 'cable-type:legacy-values-ignored', severity: 'reported', target: { kind: 'span', id: br.key }, params: { fields: legacyFields.join(',') } });
+    const sel = conflict ? undefined : typed ? { entryId: typed.entryId } : selection[br.key] ?? selection[br.cableId];
+    const entry = typed ? typed.entry : sel ? entries.get(sel.entryId) : undefined;
     if (sel && !entry) {
-      const problems = b.refused.get(sel.entryId);
+      const problems = typed ? typed.problems : b.refused.get(sel.entryId);
       issues.push(problems !== undefined
         ? { code: 'catalogue:entry-refused', severity: 'reported', target: { kind: 'span', id: br.key }, params: { entryId: sel.entryId, problems } }
         : { code: 'catalogue:entry-not-found', severity: 'reported', target: { kind: 'span', id: br.key }, params: { entryId: sel.entryId } });
     }
-    const rs = resolveSpan(br.key, props, entry, sel, settings, origin);
+    // a conversion request stored on a value is not carried out in the calculation: the value is used as entered
+    for (const property of typed?.conversionNotApplied ?? [])
+      issues.push({ code: 'cable-type:conversion-not-applied', severity: 'reported', target: { kind: 'span', id: br.key }, params: { property } });
+    const resolveProps: SpanProps | undefined = typed && props
+      ? { poles: props.poles, ...(props.parallel !== undefined ? { parallel: props.parallel } : {}), ...(props.system ? { system: props.system } : {}) }
+      : props;
+    const resolved = resolveSpan(br.key, resolveProps, entry, sel, settings, origin);
+    const blocked: Resolved = { reason: 'cable-type-conflict', warnings: [] };
+    const rs = conflict ? { ...resolved, r: blocked, x: blocked, rn: blocked, xn: blocked, np: blocked, nN: blocked, issues: [] } : resolved;
     issues.push(...rs.issues);
     const L = br.lengthM.value;
     const suspect = L === undefined && br.lengthMissing === 'length-suspect';

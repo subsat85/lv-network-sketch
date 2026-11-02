@@ -137,6 +137,9 @@ const addDefaultsReview = (review: SpanProps['review']): NonNullable<SpanProps['
 /** The span's properties with the missing ones filled, or null when nothing is missing / it is not filled. */
 export const fillMissingSpanDefaults = (p: SpanProps | undefined, poles: [string, string]): SpanProps | null => {
   if (p?.legacyV2 !== undefined) return null;
+  // C0: a span with a library cable type is never filled from the company table (E2 uses its snapshot;
+  // its own fields stay as the user left them, for E1)
+  if (p?.cableType !== undefined) return null;
   if (!hasElectrical(p)) return { ...(p ?? {}), ...defaultSpanValues(), poles, review: addDefaultsReview(p?.review) };
   const out: SpanProps = { ...p!, poles };
   let filled = false, fromTable = false;

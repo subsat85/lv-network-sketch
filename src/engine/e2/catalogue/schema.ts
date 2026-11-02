@@ -48,6 +48,9 @@ export interface CableEntry {
   x0?: Measured;
   ampacity?: Measured;
   verification: { status: 'unverified' | 'checked' | 'approved'; by?: string; on?: string; note?: string };
+  /** Stage B: a value's own verification (a library cable type verifies each value on its own);
+   *  a value not listed takes `verification.status` */
+  propertyVerification?: Partial<Record<'rAc' | 'rDc20' | 'x' | 'rnAc' | 'rnDc20' | 'xn', 'unverified' | 'checked' | 'approved'>>;
 }
 
 export interface Catalogue { documents: readonly CatalogueDocument[]; entries: readonly CableEntry[] }
@@ -62,18 +65,19 @@ export const validateCatalogue = (cat: Catalogue): CatalogueError[] => {
   const errors: CatalogueError[] = [];
   const docs = new Set(cat.documents.map((d) => d.id));
   const seen = new Set<string>();
-  const check = (e: CableEntry, field: string, m: Measured | undefined, unit: Measured['unit']) => {
+  const check = (e: CableEntry, field: string, m: Measured | undefined, unit: Measured['unit'], zeroAllowed = false) => {
     if (m === undefined) return;
     if (!m.source) { errors.push({ entryId: e.id, field, problem: 'no-source' }); return; }
     if (!docs.has(m.source.documentId)) errors.push({ entryId: e.id, field, problem: 'unknown-document' });
     if (!m.source.page || !m.source.page.trim()) errors.push({ entryId: e.id, field, problem: 'no-page' });
     if (m.unit !== unit) errors.push({ entryId: e.id, field, problem: 'unit' });
-    if (!(Number.isFinite(m.value) && m.value > 0)) errors.push({ entryId: e.id, field, problem: 'value' });
+    if (!(Number.isFinite(m.value) && (m.value > 0 || (zeroAllowed && m.value === 0)))) errors.push({ entryId: e.id, field, problem: 'value' });
   };
   for (const e of cat.entries) {
     if (seen.has(e.id)) errors.push({ entryId: e.id, field: 'id', problem: 'duplicate-id' });
     seen.add(e.id);
-    for (const f of OHM_FIELDS) check(e, f, e[f], 'ohm/km');
+    // X = 0 is an entered value (C0); every other value must be > 0
+    for (const f of OHM_FIELDS) check(e, f, e[f], 'ohm/km', f === 'x');
     for (const [f, u] of Object.entries(OTHER_FIELDS)) check(e, f, e[f as keyof typeof OTHER_FIELDS], u);
     // the construction as printed must name the phase section, and the neutral section when there is one
     const nums = (e.construction.match(/\d+(?:[.,]\d+)?/g) ?? []).map((s) => Number(s.replace(',', '.')));

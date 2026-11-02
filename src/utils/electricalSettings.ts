@@ -32,6 +32,7 @@ const CHECKS: Checks = {
   minLineVoltage: (v) => num(v, (n) => n > 0),
   powerFactor: (v) => num(v, (n) => n > 0 && n <= 1),
   conductorTempC: (v) => num(v, (n) => n >= -40 && n <= 250),
+  ambientTempC: (v) => num(v, (n) => n >= -60 && n <= 80),
   singlePhaseMode: (v) => (v === 'worst' || v === 'balanced' ? v : undefined),
   loadModel: (v) => (v === 'constant-current' || v === 'constant-power' ? v : undefined),
   studySuggestedSplits: (v) => (typeof v === 'boolean' ? v : undefined),
