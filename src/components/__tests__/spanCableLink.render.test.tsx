@@ -27,7 +27,7 @@ const UG = latestRevision(createCableType('ct_ug', data({ name: 'UG 4x95 (synthe
 const link: SpanCableType = assignCableType({ poles: ['A', 'B'] }, REV, 3).cableType!;
 const section = (locale: Locale, o: { link?: SpanCableType; record?: LinkRecordState; conflict?: boolean } = {}) =>
   renderToStaticMarkup(<div dir={directionOf(locale)}><SpanCableSection link={'link' in o ? o.link : link} record={o.record ?? { kind: 'current' }} conflict={!!o.conflict} ctx={ctxOf(locale)} onChoose={() => undefined} onUnlink={() => undefined} /></div>);
-const lib = (types: CableTypeRevision[]): CableLibraryState => ({ status: types.length ? 'ready' : 'empty', types, problems: [], saving: false });
+const lib = (types: CableTypeRevision[]): CableLibraryState => ({ status: types.length ? 'ready' : 'empty', types, problems: [], saving: false, defaultCable: { kind: 'none' } });
 const picker = (locale: Locale, o: { preview?: CableTypeRevision; linked?: SpanCableType } = {}) =>
   renderToStaticMarkup(<div dir={directionOf(locale)}><SpanCablePicker state={lib([REV, UG])} linked={o.linked} ctx={ctxOf(locale)} check={async () => ({ ok: false, reason: 'failed' })} onLink={() => undefined} onRetry={() => undefined} onBack={() => undefined} {...(o.preview ? { initial: { preview: o.preview } } : {})} /></div>);
 const text = (html: string) => html.replace(/<[^>]+>/g, ' ').replace(/&#x27;/g, "'").replace(/&amp;/g, '&').replace(/\s+/g, ' ');

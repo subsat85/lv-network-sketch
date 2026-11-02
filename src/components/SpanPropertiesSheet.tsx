@@ -5,8 +5,7 @@ import type { CableElement, CableKind, ConductorMaterial, DrawingElement, SpanPr
 import { hasElectrical, spanAt, withSpanProps } from '../utils/spanModel';
 import { pairKey } from '../utils/cableSegments';
 import { computeVoltageDrop, spanKey } from '../utils/voltageDrop';
-import { tableSections, companySections, CONDUCTOR_TABLE_SOURCE } from '../data/conductors';
-import { DEFAULT_DATA_SOURCE, fillMissingSpanDefaults, followNeutralTable, followPhaseTable, neutralTableState, phaseTableState } from '../utils/spanDefaults';
+import { linkDefaultCable, usableDefault } from '../utils/defaultCable';
 import { effectiveSettings } from '../utils/electricalSettings';
 import { AR_TR, CABLE_KIND_LABEL, cableKindLabel, fmt, missingLabel, provisionalLabel, reviewLabel, settingMissingLabel, type Tr } from '../utils/vdLabels';
 import { useLocale, useT } from '../store/localeStore';
@@ -118,23 +117,9 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
   const distKey = a && b ? pairKey(a, b) : '';
   const [form, setForm] = useState<Form>(() => toForm(stored, connectionDistances[distKey] ?? ''));
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
-  // phase / neutral material or section changed: R, X (and Rn) follow the company table
-  // only while they hold its values or are empty; typed values are kept (Stage 7.12)
-  const linked = stored?.cableType !== undefined;
-  const setPhase = (k: 'material' | 'section', v: string) => setForm((f) => {
-    const next = { ...f, [k]: v };
-    if (linked) return next; // C0 (G3): a span with a library cable type gets no company table values
-    const t = followPhaseTable(f, next);
-    return { ...next, r: t.r, x: t.x, source: !f.source.trim() && (t.r !== f.r || t.x !== f.x) && t.r ? DEFAULT_DATA_SOURCE : f.source };
-  });
-  const setNeutral = (k: 'neutralMaterial' | 'neutral', v: string) => setForm((f) => {
-    const next = { ...f, [k]: v };
-    if (linked) return next;
-    const t = followNeutralTable(f, next);
-    return { ...next, rn: t.rn, source: !f.source.trim() && t.rn !== f.rn && t.rn ? DEFAULT_DATA_SOURCE : f.source };
-  });
-  const useCompanyPhase = () => setForm((f) => { const t = linked ? null : phaseTableState(f).table; return t ? { ...f, r: String(t.r), x: String(t.x), source: f.source.trim() || DEFAULT_DATA_SOURCE } : f; });
-  const useCompanyNeutral = () => setForm((f) => { const t = linked ? null : neutralTableState(f).table; return t ? { ...f, rn: String(t.r), source: f.source.trim() || DEFAULT_DATA_SOURCE } : f; });
+  // no conductor table: the material and section describe the conductor, R / X / Rn are typed values
+  const setPhase = (k: 'material' | 'section', v: string) => set(k, v);
+  const setNeutral = (k: 'neutralMaterial' | 'neutral', v: string) => set(k, v);
   const lengthFlag = distanceFlags[distKey];
   const lengthEstimated = !!lengthFlag?.estimated;
   // an estimated length becomes a measured one only when it is changed or explicitly confirmed
@@ -190,15 +175,13 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
   if (!cable || !a || !b || !spanId || !draft) return null;
 
   const prevSpan = index > 0 ? spanAt(cable, index - 1).props : undefined;
-  const sections = form.material ? [...new Set([...companySections(form.material), ...tableSections(form.material)])].sort((p, q) => p - q) : [];
-  const phaseTable = phaseTableState(form);
-  const neutralTable = neutralTableState(form);
-  const rxTyped = !phaseTable.matches && (form.r.trim() !== '' || form.x.trim() !== '');
-  const rnTyped = !neutralTable.matches && form.rn.trim() !== '';
-  // missing fields of this span can be filled with the defaults on request (Stage 7.13):
-  // the form is filled, nothing is saved until «حفظ»; existing values are never changed
-  const filledDraft = fillMissingSpanDefaults(hasElectrical(draft.props) ? draft.props : undefined, [a, b]);
-  const fillFormDefaults = () => { if (filledDraft) setForm((f) => ({ ...toForm(filledDraft, f.length) })); };
+  // the default cable of the library, on request, for a span without a library cable (one undo step;
+  // its snapshot — never the latest revision; nothing is copied into the span's own fields)
+  const defaultCable = usableDefault(lib.defaultCable);
+  const linkDefault = () => {
+    if (!defaultCable || link) return;
+    writeSpanProps(useDrawingStore.getState(), cable.id, index, (st, poles) => linkDefaultCable(st, poles, defaultCable, Date.now()));
+  };
   const lengthBad = form.length.trim() !== '' && !(isPlainDistance(form.length) && posOrUndef(form.length) !== undefined);
   const canSave = !draft.errors.length && !lengthBad;
   const parallelCables = elements.filter((e): e is CableElement => e.type === 'cable' && e.id !== cable.id && e.poleIds.some((p, i) => i < e.poleIds.length - 1 && pairKey(p, e.poleIds[i + 1]) === distKey)).length;
@@ -296,10 +279,10 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
               </select>
             </Field>
             <Field label={t('span.section')}>
-              <input className="ui-field h-11" type="text" inputMode="decimal" list="vd-sections" value={form.section} onChange={(e) => setPhase('section', e.target.value)} aria-label={t('span.sectionName')} data-span-field="section" />
+              <input className="ui-field h-11" type="text" inputMode="decimal" value={form.section} onChange={(e) => setPhase('section', e.target.value)} aria-label={t('span.sectionName')} data-span-field="section" />
             </Field>
             <Field label={t('span.neutral')}>
-              <input className="ui-field h-11" type="text" inputMode="decimal" list="vd-sections" value={form.neutral} onChange={(e) => setNeutral('neutral', e.target.value)} aria-label={t('span.neutralName')} data-span-field="neutral" />
+              <input className="ui-field h-11" type="text" inputMode="decimal" value={form.neutral} onChange={(e) => setNeutral('neutral', e.target.value)} aria-label={t('span.neutralName')} data-span-field="neutral" />
             </Field>
             <Field label={t('span.neutralMaterial')} hint={t('span.neutralMaterialHint')}>
               <select className="ui-field h-11" value={form.neutralMaterial} onChange={(e) => setNeutral('neutralMaterial', e.target.value)} aria-label={t('span.neutralMaterial')} data-span-field="neutralMaterial">
@@ -309,7 +292,6 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
                 <option value="alloy">{t('span.alloy')}</option>
               </select>
             </Field>
-            <datalist id="vd-sections">{sections.map((v) => <option key={v} value={v} />)}</datalist>
             <Field label={t('span.parallel')} hint={t('span.parallelHint')}>
               <input className="ui-field h-11" type="text" inputMode="numeric" placeholder="1" value={form.parallel} onChange={(e) => set('parallel', e.target.value)} aria-label={t('span.parallel')} data-span-field="parallel" />
             </Field>
@@ -323,31 +305,10 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
               <input className="ui-field h-11" type="text" inputMode="decimal" value={form.rn} onChange={(e) => set('rn', e.target.value)} aria-label={t('span.rnName')} data-span-field="rn" />
             </Field>
           </div>
-          {/* how R / X / Rn relate to the company table for the chosen material and section (Stage 7.12) */}
-          <div className="flex flex-col gap-1 rounded-ctl bg-ios-fill px-3 py-2 text-[13px] text-ios-label" data-company-table>
-            {phaseTable.table ? (
-              <p data-company-phase={phaseTable.matches ? 'table' : rxTyped ? 'typed' : 'empty'}>
-                {t('span.companyTable')} ({form.material === 'cu' ? 'Cu' : 'Al'} {form.section} mm²): R {phaseTable.table.r} · X {phaseTable.table.x} Ω/km —{' '}
-                {phaseTable.matches ? t('span.phaseFromTable') : rxTyped ? t('span.phaseTyped') : t('span.unused')}
-                {!phaseTable.matches && !linked && <button type="button" className="ui-tinted-btn !ms-2 !inline-flex !w-auto !min-h-[30px] !px-3" data-span-action="use-company-phase" onClick={useCompanyPhase}>{t('span.useCompanyPhase')}</button>}
-              </p>
-            ) : (
-              form.material && form.section.trim() && <p data-company-phase="none">{t('span.phaseNotInTable', { section: form.section, table: t('span.companyTable'), note: form.r.trim() ? '' : t('span.phaseNotInTableNote') })}</p>
-            )}
-            {neutralTable.table ? (
-              <p data-company-neutral={neutralTable.matches ? 'table' : rnTyped ? 'typed' : 'empty'}>
-                {t('span.neutralTable', { material: form.neutralMaterial === 'cu' ? 'Cu' : 'Al', section: form.neutral, r: neutralTable.table.r, table: t('span.companyTable') })}
-                {neutralTable.matches ? t('span.neutralUsed') : rnTyped ? t('span.neutralTyped') : t('span.unused')}
-                {!neutralTable.matches && !linked && <button type="button" className="ui-tinted-btn !ms-2 !inline-flex !w-auto !min-h-[30px] !px-3" data-span-action="use-company-neutral" onClick={useCompanyNeutral}>{t('span.useCompanyNeutral')}</button>}
-              </p>
-            ) : (
-              form.neutral.trim() && form.neutralMaterial && <p data-company-neutral="none">{t('span.neutralNotInTable', { what: form.neutralMaterial === 'alloy' ? t('span.neutralAlloy') : `${form.neutral} mm²`, table: t('span.companyTable') })}</p>
-            )}
-          </div>
           <Field label={t('span.source')} hint={t('span.sourceHint')}>
             <input className="ui-field h-11" type="text" value={form.source} onChange={(e) => set('source', e.target.value)} aria-label={t('span.source')} data-span-field="source" />
           </Field>
-          <p className="text-[12px] text-ios-tertiary">{t('span.help', { company: t('span.companyTable'), table: CONDUCTOR_TABLE_SOURCE })}</p>
+          <p className="text-[12px] text-ios-tertiary">{t('span.help')}</p>
 
           {/* live check */}
           <div className="rounded-ctl border border-ios-separator px-3 py-2 text-[13px]" aria-live="polite" data-span-check>
@@ -373,9 +334,10 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {filledDraft && draft.props.legacyV2 === undefined && (
-              <button type="button" className="ui-tinted-btn !w-auto" onClick={fillFormDefaults} data-fill-defaults>{t('span.fillDefaults')}</button>
+            {!link && defaultCable && (
+              <button type="button" className="ui-tinted-btn !w-auto" onClick={linkDefault} data-fill-defaults>{t('defaultCable.linkSpan', { name: `\u2068${defaultCable.snapshot.name}\u2069` })}</button>
             )}
+            {!link && !defaultCable && <p className="w-full text-[12px] text-amber-900" data-default-cable={lib.defaultCable.kind}>{t(lib.defaultCable.kind === 'missing' ? 'defaultCable.missing' : lib.defaultCable.kind === 'unreadable' ? 'defaultCable.unreadable' : 'defaultCable.none')}</p>}
             {prevSpan && (
               <button type="button" className="ui-tinted-btn !w-auto" data-span-action="copy-previous" onClick={() => setForm((f) => ({ ...toForm(prevSpan, f.length) }))}>{t('span.copyPrevious')}</button>
             )}
@@ -396,6 +358,8 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
 export const spanSummary = (p: SpanProps | undefined, tr: Tr = AR_TR): string => {
   if (!p) return tr('span.summaryNone');
   const parts: string[] = [];
+  // a library cable: its name and the linked revision (from the snapshot)
+  if (p.cableType) parts.push(tr('defaultCable.summary', { name: `\u2068${p.cableType.snapshot.name}\u2069`, n: p.cableType.revision }));
   if (p.material || p.crossSectionMm2) parts.push(`${p.material === 'cu' ? 'Cu' : p.material === 'al' ? 'Al' : ''} ${p.crossSectionMm2 ?? '?'} mm²`.trim());
   if (p.parallel && p.parallel > 1) parts.push(`×${p.parallel}`);
   if (p.system) parts.push(p.system === '3ph4w' ? '3φ+N' : '1φ+N');

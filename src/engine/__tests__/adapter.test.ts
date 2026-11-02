@@ -96,7 +96,7 @@ const base = { system: '3ph4w', cableKind: 'abc', material: 'al', crossSectionMm
 
 describe('values: documented, documented zero, missing, and the existing engine\'s own rule are told apart', () => {
   it('X typed as 0.08 → project', () => {
-    const b = branch({ ...base, xOhmPerKm: 0.08 }, S);
+    const b = branch({ ...base, xOhmPerKm: 0.08, rOhmPerKm: 0.32 }, S); // R entered (synthetic): no table
     expect(b.impedance.x).toEqual({ value: 0.08, provenance: 'project', status: 'complete' });
     expect(b.dropV.origin).toBe('legacy-computed');
   });
@@ -115,9 +115,11 @@ describe('values: documented, documented zero, missing, and the existing engine\
     expect(b.impedance.x.value).toBe(0);
     expect(b.impedance.x.provenance).toBe('legacy-rule');
   });
-  it('R from the IEC table, Rn not required for a three-phase load, Xn always missing', () => {
+  it('R not entered: missing even with a material and section (no IEC / company table); Rn not required for a three-phase load, Xn always missing', () => {
     const b = branch({ ...base, xOhmPerKm: 0.08 }, S);
-    expect(b.impedance.r.provenance).toBe('iec-table');
+    expect(b.impedance.r).toEqual({ provenance: 'missing', status: 'missing' });
+    expect(b.missing).toContain('resistance');
+    expect(b.dropV).toEqual({ origin: 'not-available', reason: 'span-not-computed' });
     expect(b.impedance.rn).toEqual({ provenance: 'not-required' });
     expect(b.impedance.xn.provenance).toBe('missing');
     expect(b.impedance.xn.value).toBeUndefined();

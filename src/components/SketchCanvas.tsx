@@ -21,13 +21,15 @@ import { useSmallScreen } from '../utils/smallScreen';
 import { useVoltageDrop } from '../utils/useVoltageDrop';
 import { splitSpanInCables } from '../utils/spanModel';
 import { midPoleId } from '../utils/splitPoleId';
-import { withDefaultSpan } from '../utils/spanDefaults';
+import { usableDefault, withDefaultCableSpan } from '../utils/defaultCable';
+import { getCableLibrary } from '../store/cableLibraryStore';
 import { arcGeometry, arcPick, ArcPickAction, ArcPickState, createArc, listConnectionPoints, sameEnd } from '../utils/cableArcs';
 import { calculateCablePath } from '../utils/cableLayout';
 import { cableEndArrow, suggestedSplitArrows, SUGGESTED_SPLIT_COLOR } from '../utils/cableArrows';
 import { CableArrowHead } from './CableArrowHead';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
 import { simplifyPath, detectShape, generateSmoothPathData } from '../utils/pathUtils';
+import { autoConsumerOffset, squareLabelY } from '../utils/consumerPlacement';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 const POLE_RADIUS = 20;
@@ -89,6 +91,8 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
     const dx = (before.x - now.x) / k, dy = (before.y - now.y) / k;
     if (dx !== 0 || dy !== 0) setTransform(prev => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
   }, [fullScreen]);
+  // the cable library (its own database) is read once, so a newly drawn span can get the default cable
+  useEffect(() => { void getCableLibrary().load(); }, []);
   // keep the recorded origin current when the window size / orientation changes in between
   useEffect(() => {
     const update = () => { canvasOriginRef.current = readCanvasOrigin(); };
@@ -1175,12 +1179,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
     const consumersOnPole = elements.filter(e => e.type === 'consumer' && !(e as ConsumerElement).proposal && (e as ConsumerElement).poleId === consumer.poleId);
     const index = consumersOnPole.findIndex(e => e.id === consumer.id);
     const placement = getSmartPlacement(consumer.poleId);
-    const radius = POLE_RADIUS * poleSizeScale;
-    const consumerRadius = 16 * consumerSizeScale;
-    const margin = 5 * consumerSizeScale;
-    const spacing = consumerRadius * 2 + margin;
-    const startOffset = radius + consumerRadius + margin;
-    const totalOffset = startOffset + index * spacing;
+    const totalOffset = autoConsumerOffset(consumersOnPole as ConsumerElement[], index, POLE_RADIUS * poleSizeScale, consumerSizeScale, placement.dy !== 0);
     return { x: placement.x + placement.dx * totalOffset, y: placement.y + placement.dy * totalOffset };
   };
 
@@ -1233,11 +1232,11 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
                }
 
                updateElement(activeCableId, updates);
-               // a new span that got no properties from its neighbour gets the default
-               // ones (same undo step); see utils/spanDefaults.ts
+               // a new span that got no properties from its neighbour is linked to the default cable of
+               // the library, when one is chosen and present (same undo step); see utils/defaultCable.ts
                const drawn = useDrawingStore.getState().elements.find((e) => e.id === activeCableId) as CableElement | undefined;
                if (drawn) {
-                 const withDefaults = withDefaultSpan(drawn, drawn.poleIds.length - 2);
+                 const withDefaults = withDefaultCableSpan(drawn, drawn.poleIds.length - 2, usableDefault(getCableLibrary().store.getState().defaultCable), Date.now());
                  if (withDefaults !== drawn) updateElement(activeCableId, { spanProps: withDefaults.spanProps });
                }
                // show the new span's (suggested) properties without interrupting drawing
@@ -1806,6 +1805,8 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
     if (!pole) return null;
     
     let cx, cy;
+    // the stack direction from the pole (a consumer placed by hand: its label stays above it)
+    let stackDy = 0;
     
     if (el.hasManualPosition) {
       cx = el.x;
@@ -1815,17 +1816,11 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
       const index = consumersOnPole.findIndex(e => e.id === el.id);
       
       const placement = getSmartPlacement(el.poleId);
-      const radius = POLE_RADIUS * poleSizeScale;
-      const consumerRadius = 16 * consumerSizeScale;
-      const margin = 5 * consumerSizeScale;
-      const spacing = consumerRadius * 2 + margin;
-      
-      const startOffset = radius + consumerRadius + margin;
-      const stackOffset = index * spacing;
-      const totalOffset = startOffset + stackOffset;
+      const totalOffset = autoConsumerOffset(consumersOnPole as ConsumerElement[], index, POLE_RADIUS * poleSizeScale, consumerSizeScale, placement.dy !== 0);
       
       cx = placement.x + placement.dx * totalOffset;
       cy = placement.y + placement.dy * totalOffset;
+      stackDy = placement.dy;
     }
     
     const isSelected = el.id === selectedId;
@@ -1880,7 +1875,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
         {el.label && (
           <text 
             x={el.variant === 'square' ? 0 : consumerRadius} 
-            y={el.variant === 'square' ? -(consumerRadius + 10) : 0} 
+            y={el.variant === 'square' ? squareLabelY(consumerRadius, stackDy) : 0} 
             dy=".3em" 
             textAnchor={el.variant === 'square' ? "middle" : "start"} 
             fill={el.color} 
@@ -2550,13 +2545,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
                const placement = getSmartPlacement(pendingConsumer.poleId);
                const consumersOnPole = elements.filter(e => e.type === 'consumer' && !(e as ConsumerElement).proposal && (e as ConsumerElement).poleId === pendingConsumer.poleId);
                const index = consumersOnPole.length;
-               const radius = POLE_RADIUS * poleSizeScale;
-               const consumerRadius = 16 * consumerSizeScale;
-               const margin = 5 * consumerSizeScale;
-               const spacing = consumerRadius * 2 + margin;
-               const startOffset = radius + consumerRadius + margin;
-               const stackOffset = index * spacing;
-               const totalOffset = startOffset + stackOffset;
+               const totalOffset = autoConsumerOffset(consumersOnPole as ConsumerElement[], index, POLE_RADIUS * poleSizeScale, consumerSizeScale, placement.dy !== 0);
                const cx = placement.x + placement.dx * totalOffset;
                const cy = placement.y + placement.dy * totalOffset;
                return `translate(${cx}, ${cy})`;

@@ -4,7 +4,7 @@ import type { CableElement, DrawingElement, SpanProps, SymbolElement } from '../
 import { assignCableType, cableTypeCompleteness, cableTypeMergeConflict, cableTypeRevisionProblem, createCableType, editCableType, latestRevision, setCableTypeOverride } from '../../../utils/cableTypeModel';
 import { fromForm, toForm } from '../../../components/SpanPropertiesSheet';
 import { hasElectrical, normalizeElements, reconcileCable, sameElectrical, spanAt, withSpanProps } from '../../../utils/spanModel';
-import { defaultSpanValues, fillMissingSpanDefaults, planMissingDefaults } from '../../../utils/spanDefaults';
+import { planDefaultFill } from '../../../utils/defaultCable';
 import { serializeProject, validateProjectFile } from '../../../utils/projectSerialization';
 import { DEFAULT_ELECTRICAL } from '../../../utils/electricalSettings';
 import { AR_TR } from '../../../utils/vdLabels';
@@ -183,22 +183,22 @@ describe('E2 and an unresolved merge of different cable types', () => {
   });
 });
 
-describe('G3. the company table never fills a span linked to the library', () => {
-  it('6. fillMissingSpanDefaults and «fill the defaults» skip it; its fields stay as they are', () => {
+describe('G3. default filling never changes a span linked to the library (the company table is gone)', () => {
+  it('6. «link the default cable» skips a linked span; its fields stay as they are', () => {
     const only = linked(R1);
-    expect(fillMissingSpanDefaults(only, ['A', 'B'])).toBeNull();
-    expect(fillMissingSpanDefaults({ ...only, material: 'al', crossSectionMm2: 70 }, ['A', 'B'])).toBeNull();
     const k = cableWith(['A', 'B', 'C'], [noPoles(only), undefined]);
-    const plan = planMissingDefaults([k]);
+    const def = { typeId: OTHER.id, revision: OTHER.revision, snapshot: OTHER, selectedAt: 1 };
+    const plan = planDefaultFill([k], def, 5);
     const after = plan.updates[0].changes.spanProps!;
     expect(after[k.spanIds![0]]).toEqual(k.spanProps![k.spanIds![0]]);
-    expect([plan.empty, plan.partial]).toEqual([1, 0]);
-    // E2 does not read the company table values for it (it has none, and uses the snapshot)
-    expect(JSON.stringify(after[k.spanIds![0]])).not.toContain('"rOhmPerKm"');
+    expect(plan.spans).toBe(1);
+    expect(after[k.spanIds![1]]!.cableType).toMatchObject({ typeId: OTHER.id, revision: OTHER.revision });
+    // nothing copied into the span's own fields
+    expect(JSON.stringify(after)).not.toContain('"rOhmPerKm"');
   });
-  it('7. an old span without a cable type is still filled exactly as before', () => {
-    expect(fillMissingSpanDefaults(undefined, ['A', 'B'])).toEqual({ ...defaultSpanValues(), poles: ['A', 'B'], review: ['defaults'] });
-    expect(fillMissingSpanDefaults({ poles: ['A', 'B'], material: 'al', crossSectionMm2: 70 }, ['A', 'B'])).toMatchObject({ rOhmPerKm: expect.any(Number), xOhmPerKm: expect.any(Number), review: ['defaults'] });
+  it('7. without a default cable nothing is filled (no table values for any span)', () => {
+    const k = cableWith(['A', 'B'], [undefined]);
+    expect(planDefaultFill([k], undefined)).toEqual({ updates: [], spans: 0 });
   });
 });
 

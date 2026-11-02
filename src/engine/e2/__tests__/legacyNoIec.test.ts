@@ -22,7 +22,9 @@ import { loadProject, saveProject } from '../../../utils/projectStorage';
 import { serializeProject, validateProjectFile } from '../../../utils/projectSerialization';
 import { withSpanProps } from '../../../utils/spanModel';
 import { useDrawingStore } from '../../../store/drawingStore';
-import { R20_OHM_PER_KM } from '../../../data/conductors';
+// the values the removed IEC 60228 table had for Al 70 mm² (20 °C) — written here only to show that
+// they appear nowhere (the table itself was removed with the default-cable change)
+const IEC_AL70_R20 = 0.443;
 import { runStudy } from '../../index';
 import { runStudyE2 } from '../index';
 import type { CircuitResult } from '../model';
@@ -60,7 +62,7 @@ describe('no IEC 60228 fallback in E2', () => {
       expect(text).not.toContain('iec-table');
       expect(text).not.toContain('IEC 60228');
       expect(text).not.toContain('dc-resistance-used');
-      expect(text).not.toContain(String(R20_OHM_PER_KM.al[70]));
+      expect(text).not.toContain(String(IEC_AL70_R20));
     }
   });
   it('2 / 4. an old span without RN gets no RN from the table (and never R): the neutral results unavailable, the missing RN named', () => {
@@ -123,12 +125,13 @@ describe('old projects stay intact and editable', () => {
     expect(JSON.stringify(db.data.get('project_old-1'))).toBe(stored);
     expect(spanOf(reopened.data.elements).props.rOhmPerKm).toBeUndefined();
   });
-  it('9. E1 keeps its own behaviour: for the same old span it still uses its conductor table (unchanged)', () => {
+  it('9. E1 has no conductor table either (removed with the default-cable change): the same old span has no R', () => {
     const { doc } = e2({ ...OLD, xOhmPerKm: 0.08 }, { balanced: true, tempC: 70 });
-    const span = (runStudy(doc).legacy as { circuits: { spans: { r?: number; rSource?: string; computable: boolean }[] }[] }).circuits[0].spans[0];
-    expect(span.computable).toBe(true);
-    expect(span.rSource).toBe('table');
-    expect(span.r).toBeCloseTo(R20_OHM_PER_KM.al[70] * (1 + 0.00403 * 50), 12);
+    const span = (runStudy(doc).legacy as { circuits: { spans: { r?: number; rSource?: string; computable: boolean; missing: string[] }[] }[] }).circuits[0].spans[0];
+    expect(span.computable).toBe(false);
+    expect(span.rSource).toBeUndefined();
+    expect(span.r).toBeUndefined();
+    expect(span.missing).toContain('resistance');
   });
 });
 

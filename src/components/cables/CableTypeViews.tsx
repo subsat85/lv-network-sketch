@@ -126,8 +126,10 @@ export interface CardOptions {
   showBasis?: boolean;
   /** C4: the type linked to the span being edited (marked on its card) */
   linkedId?: string;
+  /** the app's default cable (its type is marked on its card, with the chosen revision) */
+  defaultOf?: { typeId: string; revision: number };
 }
-export const CableTypeCard: React.FC<{ t: CableTypeRevision; ctx: ViewCtx; onOpen: (id: string) => void } & CardOptions> = ({ t, ctx, onOpen, showBasis, linkedId }) => {
+export const CableTypeCard: React.FC<{ t: CableTypeRevision; ctx: ViewCtx; onOpen: (id: string) => void } & CardOptions> = ({ t, ctx, onOpen, showBasis, linkedId, defaultOf }) => {
   const complete = cableTypeCompleteness(t).complete;
   const line = conductorLine(t, ctx);
   const linked = linkedId === t.id;
@@ -146,6 +148,7 @@ export const CableTypeCard: React.FC<{ t: CableTypeRevision; ctx: ViewCtx; onOpe
           <CompletenessBadge complete={complete} ctx={ctx} />
           <VerificationBadge status={typeVerification(t)} ctx={ctx} what="type" />
           {linked && <span className="text-[12px] font-medium text-ios-blue" data-cl-linked-mark>{ctx.tr('spanCable.current')}</span>}
+          {defaultOf?.typeId === t.id && <span className="text-[12px] font-medium text-ios-blue" data-cl-default={defaultOf.revision}>{ctx.tr('defaultCable.badge', { n: defaultOf.revision })}</span>}
         </div>
         <dl className="grid w-full grid-cols-2 gap-x-3 gap-y-0.5 text-[12px] sm:grid-cols-4" data-cl-summary>
           {(['r', 'x', 'rn', 'xn'] as const).map((p) => {
@@ -308,8 +311,12 @@ export interface DetailsProps {
   onHistory?: () => void;
   /** Stage C3: edit — offered for the current revision only (an earlier revision is never edited) */
   onEdit?: () => void;
+  /** the app's default cable, when it is this type (its chosen revision) */
+  defaultRevision?: number;
+  /** makes the revision shown the app's default cable */
+  onSetDefault?: () => void;
 }
-export const CableTypeDetailsView: React.FC<DetailsProps> = ({ t, current, ctx, onBack, onClose, onHistory, onEdit }) => {
+export const CableTypeDetailsView: React.FC<DetailsProps> = ({ t, current, ctx, onBack, onClose, onHistory, onEdit, defaultRevision, onSetDefault }) => {
   const { tr } = ctx;
   const old = t.revision !== current;
   const complete = cableTypeCompleteness(t).complete;
@@ -325,6 +332,14 @@ export const CableTypeDetailsView: React.FC<DetailsProps> = ({ t, current, ctx, 
           <CompletenessBadge complete={complete} ctx={ctx} />
           <VerificationBadge status={typeVerification(t)} ctx={ctx} what="type" />
         </div>
+        {(defaultRevision !== undefined || onSetDefault) && (
+          <div className="flex flex-wrap items-center gap-2 rounded-ctl bg-ios-fill px-3 py-2 text-[13px] text-ios-label" data-cl-default-box>
+            {defaultRevision !== undefined && <span data-cl-default-is={defaultRevision}>{tr('defaultCable.badge', { n: defaultRevision })}</span>}
+            {onSetDefault && defaultRevision !== t.revision && (
+              <button type="button" className="ui-tinted-btn !w-auto !min-h-[34px] !px-3" data-cl-action="set-default" onClick={onSetDefault}>{tr('defaultCable.set', { n: t.revision })}</button>
+            )}
+          </div>
+        )}
         <section>
           <h3 className="mb-1 text-[13px] font-semibold uppercase tracking-wide text-ios-secondary">{tr('cableLibrary.view.general')}</h3>
           <dl className="divide-y divide-ios-separator">

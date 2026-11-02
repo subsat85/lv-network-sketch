@@ -3,12 +3,16 @@ import { readFileSync } from 'fs';
 import { goldenCases, goldenTreeCases, goldenOutput } from './vdGoldenNetworks';
 
 // Stage 7.9: results of projects without the new settings (cable end links, load
-// model) must be exactly what the Stage 7.8 code produced. The fixture was
-// recorded from the 7.8 code before any 7.9 change: 240 networks (random ones
-// with every kind of problem, and radial trees with complete data).
-const golden = JSON.parse(readFileSync(new URL('./fixtures/vd-golden-7_8.json', import.meta.url), 'utf8'));
+// model) must stay exactly as recorded: 240 networks (random ones with every kind of
+// problem, and radial trees with complete data).
+// Re-recorded when the conductor tables were removed (company table and IEC 60228, the
+// default-cable change): R and Rn are only entered values. The trees now carry entered
+// SYNTHETIC R / Rn (vdGoldenNetworks.ts); spans of the random networks that relied on the
+// table are now missing their resistance. Spans computed before and now (their R entered)
+// have identical results (checked when re-recording: 6 of 6).
+const golden = JSON.parse(readFileSync(new URL('./fixtures/vd-golden-no-tables.json', import.meta.url), 'utf8'));
 
-describe('existing projects give the same results as before (golden, recorded from 7.8)', () => {
+describe('existing projects give the same results as recorded (golden, no conductor tables)', () => {
   const cases = [...goldenCases(), ...goldenTreeCases()];
   it('covers enough: 240 networks, > 500 computed spans', () => {
     expect(cases).toHaveLength(240);

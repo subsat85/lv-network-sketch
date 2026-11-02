@@ -140,6 +140,10 @@ export const goldenTreeCases = (): GoldenCase[] => {
           crossSectionMm2: [35, 50, 70, 95, 120][rnd(5)], neutralCrossSectionMm2: [35, 50, 70, 95][rnd(4)], neutralMaterial: rnd(3) ? 'al' : 'cu',
           xOhmPerKm: [0.08, 0.1][rnd(2)], dataSource: 'golden',
         };
+        // no conductor table any more: R and Rn are entered values (SYNTHETIC, 10 / section — not a
+        // table and not real cable data), set without a random draw so the networks stay the same
+        props.rOhmPerKm = Math.round((10 / props.crossSectionMm2!) * 1e4) / 1e4;
+        props.rNeutralOhmPerKm = Math.round((10 / props.neutralCrossSectionMm2!) * 1e4) / 1e4;
         if (rnd(5) === 0) props.parallel = 2;
         if (rnd(8) === 0) props.review = ['split'];
         c = withSpanProps(c, c.spanIds![i], props);

@@ -4,6 +4,7 @@
 // Records:
 //   'meta'          → { format: 'lv-cable-library', version: 1 }
 //   'type:<id>'     → CableTypeHistory (every revision, oldest first)
+//   'default-cable' → DefaultCable: the app's default cable (one exact revision, a full snapshot)
 // A revision once written is never changed; an edit appends a new one. Nothing is migrated or deleted
 // on read: a record that cannot be read is reported and left as it is.
 
@@ -13,12 +14,14 @@ import {
   cableTypeHistoryProblem, createCableType, editCableType, findRevision, latestRevision, setCableTypeVerification,
   type CableTypeChange, type CableTypeEdit, type RevisionMeta,
 } from './cableTypeModel';
+import { defaultCableProblem, type DefaultCable } from './defaultCable';
 
 export const CABLE_LIBRARY_DB = 'lv-network-sketch-cable-library';
 export const CABLE_LIBRARY_STORE = 'cable-types';
 export const CABLE_LIBRARY_FORMAT = 'lv-cable-library';
 export const CABLE_LIBRARY_VERSION = 1;
 const META_KEY = 'meta';
+const DEFAULT_KEY = 'default-cable';
 const typeKey = (id: string) => `type:${id}`;
 
 /** the storage the library is written to (IndexedDB in the app; an in-memory one in tests) */
@@ -112,6 +115,24 @@ export const openCableLibrary = (opts: CableLibraryOptions = {}) => {
     history: async (id: string) => { await ready(); return read(id); },
     current: async (id: string) => { await ready(); return latestRevision(await read(id)); },
     async revision(id: string, revision: number): Promise<CableTypeRevision | undefined> { await ready(); return findRevision(await read(id), revision); },
+    /** the app's default cable, as stored (undefined: none chosen). A record that cannot be read is reported, not repaired */
+    async getDefault(): Promise<DefaultCable | undefined> {
+      await ready();
+      const d = await db.get<DefaultCable>(DEFAULT_KEY);
+      if (d === undefined) return undefined;
+      const bad = defaultCableProblem(d);
+      if (bad) throw new CableLibraryError('format', `default cable: ${bad}`);
+      return d;
+    },
+    /** this exact revision becomes the default (a full snapshot is kept); no cable type is changed */
+    async setDefault(id: string, revision: number): Promise<DefaultCable> {
+      await ready();
+      const r = findRevision(await read(id), revision);
+      if (!r) throw new CableLibraryError('not-found', `cable type ${id} revision ${revision} not found`);
+      const d: DefaultCable = { typeId: id, revision, snapshot: r, selectedAt: now() };
+      await db.set(DEFAULT_KEY, d);
+      return d;
+    },
     /** a new revision; changed electrical values become 'unverified' */
     edit: (id: string, expectedRevision: number, edit: CableTypeEdit, meta: Omit<RevisionMeta, 'now'> = {}) =>
       write(id, expectedRevision, (h) => editCableType(h, edit, { ...meta, now: now() })),

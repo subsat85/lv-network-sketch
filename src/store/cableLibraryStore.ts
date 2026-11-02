@@ -4,6 +4,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { CableTypeData, CableTypeHistory, CableTypeRevision, ElectricalProperty, Verification } from '../types/cableType';
 import type { CableTypeChange, CableTypeEdit, RevisionMeta } from '../utils/cableTypeModel';
 import { CableLibraryError, openCableLibrary, type CableLibrary, type CableLibraryOptions, type LibraryReadProblem } from '../utils/cableLibraryStorage';
+import { defaultCableState, type DefaultCable, type DefaultCableState } from '../utils/defaultCable';
 
 // Stage C1: the app's view of the global cable library (IndexedDB, Stage B). This layer keeps only
 // what the screens show — the list, its status, the last error — and calls the library's own
@@ -13,7 +14,7 @@ import { CableLibraryError, openCableLibrary, type CableLibrary, type CableLibra
 
 /** loading → ready | empty | error. 'idle': nothing asked yet */
 export type CableLibraryStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error';
-export type CableLibraryOperation = 'load' | 'create' | 'edit' | 'verify';
+export type CableLibraryOperation = 'load' | 'create' | 'edit' | 'verify' | 'default';
 /** 'read' / 'write': IndexedDB failed; the others come from the library (CableLibraryError) */
 export type CableLibraryErrorKind = 'read' | 'write' | 'conflict' | 'format' | 'not-found' | 'exists';
 
@@ -33,9 +34,11 @@ export interface CableLibraryState {
   error?: CableLibraryFailure;
   /** a write is in progress */
   saving: boolean;
+  /** the app's default cable against this list ('none' until it is read) */
+  defaultCable: DefaultCableState;
 }
 
-export const INITIAL_CABLE_LIBRARY_STATE: CableLibraryState = { status: 'idle', types: [], problems: [], saving: false };
+export const INITIAL_CABLE_LIBRARY_STATE: CableLibraryState = { status: 'idle', types: [], problems: [], saving: false, defaultCable: { kind: 'none' } };
 
 const failure = (operation: CableLibraryOperation, e: unknown): CableLibraryFailure => {
   const message = e instanceof Error ? e.message : String(e);
@@ -59,6 +62,8 @@ export interface CableLibraryController {
   /** Read-only, straight from the library (not kept in this state). */
   history(id: string): Promise<CableTypeHistory>;
   revision(id: string, revision: number): Promise<CableTypeRevision | undefined>;
+  /** This exact revision becomes the app's default cable (the list is read again after it). */
+  setDefault(id: string, revision: number): Promise<DefaultCable>;
   /** No state is changed after this (results still arriving are dropped). */
   dispose(): void;
 }
@@ -85,9 +90,12 @@ export const createCableLibraryController = (opts: CableLibraryOptions & { libra
     const run = (async () => {
       try {
         const { types, problems } = await lib().list();
+        // the default cable: a record that cannot be read is shown as such (the list still loads)
+        let def: DefaultCableState;
+        try { def = defaultCableState(await lib().getDefault(), types); } catch { def = { kind: 'unreadable' }; }
         if (disposed || mine !== generation) return; // unmounted / superseded: dropped
         const error = store.getState().error;
-        set({ status: types.length ? 'ready' : 'empty', types, problems, ...(error?.operation === 'load' ? { error: undefined } : {}) });
+        set({ status: types.length ? 'ready' : 'empty', types, problems, defaultCable: def, ...(error?.operation === 'load' ? { error: undefined } : {}) });
       } catch (e) {
         if (disposed || mine !== generation) return;
         set({ status: 'error', error: failure('load', e) });
@@ -124,6 +132,7 @@ export const createCableLibraryController = (opts: CableLibraryOptions & { libra
       write('verify', () => lib().setVerification(id, expectedRevision, property, verification, meta)).then(({ revision, changes }) => ({ revision, changes })),
     history: (id) => lib().history(id),
     revision: (id, revision) => lib().revision(id, revision),
+    setDefault: (id, revision) => write('default', () => lib().setDefault(id, revision)),
     dispose: () => { disposed = true; inFlight = undefined; },
   };
 };

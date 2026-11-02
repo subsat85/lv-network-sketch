@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { CABLE_ENTRIES, CATALOGUE_DOCUMENTS } from '../catalogue/entries';
 import { resolveSpan } from '../catalogue/resolve';
 import { validateCatalogue } from '../catalogue/schema';
-import { COMPANY_RX_OHM_PER_KM, R20_OHM_PER_KM } from '../../../data/conductors';
+// what the removed tables had for Cu 120 mm² (IEC 60228 R20 and the company table R): shown nowhere
+const IEC_CU120_R20 = 0.153, COMPANY_CU120_R = 0.253;
 import { DOC_ID, synCatalogue, synEntry } from './references';
 
 // Catalogue schema and the order of the sources (design section 5, D9, D10).
@@ -48,8 +49,8 @@ describe('order of the sources', () => {
     const rs = resolveSpan(K, props, undefined, undefined, T, 'e2-input');
     expect(rs.r).toEqual({ reason: 'impedance-missing', warnings: [] });
     expect(rs.issues).toContainEqual({ code: 'phase:resistance-missing', severity: 'blocks', target: { kind: 'span', id: K }, params: { property: 'R' } });
-    expect(R20_OHM_PER_KM.cu[120]).toBeGreaterThan(0); // the table is still there (documentation), only not used
-    expect(JSON.stringify(rs)).not.toContain(String(COMPANY_RX_OHM_PER_KM.cu[120].r));
+    expect(JSON.stringify(rs)).not.toContain(String(IEC_CU120_R20)); // the tables are gone; neither value appears
+    expect(JSON.stringify(rs)).not.toContain(String(COMPANY_CU120_R));
     expect(JSON.stringify(rs)).not.toContain('iec-table');
     expect(resolveSpan(K, { ...props, cableKind: 'bare' }, undefined, undefined, T, 'e2-input').r.reason).toBe('impedance-missing');
     // no X from any table, also not at pf = 1

@@ -2,6 +2,7 @@ import type { CableElement, ConsumerElement, DrawingElement, Point } from '../ty
 import { calculateCablePath } from './cableLayout';
 import { cableEndArrow, suggestedSplitArrows } from './cableArrows';
 import { poleTag } from './poleNames';
+import { autoConsumerOffset, squareLabelY } from './consumerPlacement';
 
 // ---------------------------------------------------------------------------
 // Placement of the drawing's labels so they do not cover each other (world units).
@@ -232,7 +233,7 @@ export const smartDirections = (elements: DrawingElement[], poleId: string) => {
 /** Where an existing subscriber is drawn (centre) and its label — the canvas's rule. */
 export const consumerShapes = (elements: DrawingElement[], ctx: LayoutContext) => {
   const cs = ctx.consumerScale ?? 1;
-  const r = 16 * cs, margin = 5 * cs, spacing = r * 2 + margin;
+  const r = 16 * cs;
   const out: { id: string; cx: number; cy: number; r: number; square: boolean; label?: Rect }[] = [];
   const byPole = new Map<string, ConsumerElement[]>();
   for (const e of elements) if (e.type === 'consumer' && !(e as ConsumerElement).proposal) {
@@ -244,12 +245,13 @@ export const consumerShapes = (elements: DrawingElement[], ctx: LayoutContext) =
     const d = smartDirections(elements, poleId)[0];
     list.forEach((c, index) => {
       let cx: number, cy: number;
+      let stackDy = 0;
       if (c.hasManualPosition) { cx = c.x; cy = c.y; }
-      else { const t = ctx.poleRadius + r + margin + index * spacing; cx = pole.x + d.dx * t; cy = pole.y + d.dy * t; }
+      else { const t = autoConsumerOffset(list, index, ctx.poleRadius, cs, d.dy !== 0); cx = pole.x + d.dx * t; cy = pole.y + d.dy * t; stackDy = d.dy; }
       let label: Rect | undefined;
       if (c.label) {
         const fs = 14 * cs, w = textWidth(c.label, fs);
-        label = c.variant === 'square' ? { x: cx - w / 2, y: cy - (r + 10) - fs / 2, w, h: fs } : { x: cx + r, y: cy - fs / 2, w, h: fs };
+        label = c.variant === 'square' ? { x: cx - w / 2, y: cy + squareLabelY(r, stackDy) - fs / 2, w, h: fs } : { x: cx + r, y: cy - fs / 2, w, h: fs };
       }
       out.push({ id: c.id, cx, cy, r, square: c.variant !== 'circle', label });
     });

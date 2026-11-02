@@ -61,7 +61,7 @@ describe('1–4. proposing, confirming, and the official results', () => {
 
   it('3b. voltage drop with hand values: a confirmed 50 A at B (Al 95, 100 m spans)', () => {
     const ZPH = 0.38448 * 0.9 + 0.08 * Math.sqrt(1 - 0.81);
-    const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', xOhmPerKm: 0.08, system: '3ph4w', dataSource: 'test' };
+    const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', rOhmPerKm: 0.38448, xOhmPerKm: 0.08, rNeutralOhmPerKm: 0.38448, system: '3ph4w', dataSource: 'test' }; // R / Rn entered (synthetic): no conductor table
     const withProps = (els: DrawingElement[]) => normalizeElements(els).map((e) => {
       if (e.type !== 'cable') return e;
       let c = e; c.poleIds.slice(0, -1).forEach((p, i) => { c = withSpanProps(c, c.spanIds![i], { ...AL95, poles: [p, c.poleIds[i + 1]] }); }); return c;
@@ -139,7 +139,7 @@ describe('6. with the confirmed electrical split study', () => {
 
 describe('comparison and the recommended cable (rule approved by the user)', () => {
   const ZPH = 0.38448 * 0.9 + 0.08 * Math.sqrt(1 - 0.81);
-  const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', xOhmPerKm: 0.08, system: '3ph4w', dataSource: 'test' };
+  const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', rOhmPerKm: 0.38448, xOhmPerKm: 0.08, rNeutralOhmPerKm: 0.38448, system: '3ph4w', dataSource: 'test' }; // R / Rn entered (synthetic): no conductor table
   const withProps = (els: DrawingElement[]) => normalizeElements(els).map((e) => {
     if (e.type !== 'cable') return e;
     let c = e; c.poleIds.slice(0, -1).forEach((p, i) => { c = withSpanProps(c, c.spanIds![i], { ...AL95, poles: [p, c.poleIds[i + 1]] }); }); return c;

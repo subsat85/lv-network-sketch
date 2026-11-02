@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { computeVoltageDrop, spanKey } from '../voltageDrop';
 import { normalizeElements, withSpanProps } from '../spanModel';
 import { DEFAULT_ELECTRICAL } from '../electricalSettings';
-import { tableResistance } from '../../data/conductors';
 import type { CableElement, ConsumerElement, DrawingElement, ElectricalSettings, SpanProps, SymbolElement } from '../../types/drawing';
 
 // Hand calculations used below (all values in the comments were worked out by hand):
-//   Al 95 mm² at 70 °C: R = 0.320 × (1 + 0.00403 × 50) = 0.38448 Ω/km
+//   R = 0.38448 Ω/km is an ENTERED value (synthetic): no conductor table is used any more, R and Rn
+//   are only what is entered for the span (the material and section describe the conductor)
 //   cos φ = 0.9 → sin φ = √(1 − 0.81) = 0.435890
 //   R cos φ + X sin φ with X = 0.08: 0.346032 + 0.034871 = 0.380903 Ω/km
 const R95_70 = 0.38448;
@@ -19,8 +19,7 @@ const cable = (id: string, poleIds: string[], color = RED): CableElement => ({ i
 let k = 0;
 const sub = (poleId: string, variant: 'circle' | 'square', count = 1, label = '', color = RED): ConsumerElement =>
   ({ id: `u${++k}`, type: 'consumer', x: 0, y: 0, poleId, color, count, variant, label, strokeColor: color, fillColor: color, strokeWidth: 2 });
-// Stage 7.8: the conductor table needs the cable kind (ABC / underground) and the neutral's own material
-const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', xOhmPerKm: 0.08, system: '3ph4w', dataSource: 'test' };
+const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', rOhmPerKm: R95_70, xOhmPerKm: 0.08, rNeutralOhmPerKm: R95_70, system: '3ph4w', dataSource: 'test' };
 const SET: ElectricalSettings = { ...DEFAULT_ELECTRICAL, powerFactor: 0.9, conductorTempC: 70 };
 
 /** give every span of every cable the same props (or per-cable overrides) */
@@ -34,12 +33,21 @@ const withProps = (els: DrawingElement[], per: Record<string, Partial<SpanProps>
 const run = (els: DrawingElement[], d: Record<string, string>, s: ElectricalSettings = SET) => computeVoltageDrop(els, d, s);
 const at = (r: ReturnType<typeof run>, pole: string, i = 0) => r.byPole.get(pole)![i];
 
-describe('conductor table', () => {
-  it('IEC 60228 values with temperature correction', () => {
-    expect(tableResistance('al', 95, 20)).toBeCloseTo(0.320, 6);
-    expect(tableResistance('al', 95, 70)).toBeCloseTo(R95_70, 6);
-    expect(tableResistance('cu', 50, 70)).toBeCloseTo(0.387 * (1 + 0.00393 * 50), 6); // 0.4630…
-    expect(tableResistance('al', 54.6, 70)).toBeNull(); // not a table size: never guessed
+describe('no conductor table (company table and IEC 60228 removed)', () => {
+  const span = (p: Omit<SpanProps, 'poles'>, subs = [sub('A', 'circle', 2)], s: ElectricalSettings = SET) =>
+    run(withProps([tr('T'), pole('A'), cable('c', ['T', 'A']), ...subs], {}, p), { A_T: '100' }, s).bySpan.get(spanKey('c', 0))!;
+  it('R and Rn are never derived from the material, section, cable kind or conductor temperature', () => {
+    const s = span({ ...AL95, rOhmPerKm: undefined, rNeutralOhmPerKm: undefined });
+    expect(s.missing).toEqual(['resistance', 'neutral']);
+    expect([s.r, s.rn, s.rSource, s.rnSource, s.computable]).toEqual([undefined, undefined, undefined, 'not-needed', false]);
+    for (const k of ['section-not-in-table', 'neutral-not-in-table', 'resistance-kind', 'resistance-bare', 'neutral-alloy', 'neutral-material']) expect(s.missing).not.toContain(k);
+  });
+  it('the conductor temperature is not needed and changes nothing', () => {
+    const a = span(AL95, undefined, { ...SET, conductorTempC: undefined }), b = span(AL95, undefined, { ...SET, conductorTempC: 90 });
+    expect(a.computable).toBe(true);
+    expect([a.dropV, a.r, a.rn]).toEqual([b.dropV, R95_70, R95_70]);
+    const r = run(withProps([tr('T'), pole('A'), cable('c', ['T', 'A']), sub('A', 'square')]), { A_T: '100' }, { ...SET, conductorTempC: undefined });
+    expect(r.settingsMissing).toEqual([]);
   });
 });
 
@@ -146,25 +154,26 @@ describe('nothing misleading is shown', () => {
     expect(r.bySpan.get(spanKey('c', 0))!.missing).toEqual(['resistance', 'reactance']);
   });
   it('the neutral is only required when neutral current flows', () => {
-    const noNeutral = { ...AL95, neutralCrossSectionMm2: undefined };
+    const noNeutral = { ...AL95, neutralCrossSectionMm2: undefined, rNeutralOhmPerKm: undefined };
     const three = run(withProps(base(), {}, noNeutral), { A_T: '40', A_B: '40' });
     expect(at(three, 'B').status).not.toBe('na');
     const single = run(withProps([...base(), sub('B', 'circle')], {}, noNeutral), { A_T: '40', A_B: '40' });
     expect(single.bySpan.get(spanKey('c', 0))!.missing).toEqual(['neutral']);
   });
-  it('a size that is not in the table is reported, never interpolated', () => {
+  it('any section is only a description: with R entered the span is computed (no table, nothing interpolated)', () => {
     const r = run(withProps(base(), {}, { ...AL95, crossSectionMm2: 90 }), { A_T: '40', A_B: '40' });
-    expect(r.bySpan.get(spanKey('c', 0))!.missing).toContain('section-not-in-table');
+    expect(r.bySpan.get(spanKey('c', 0))!.computable).toBe(true);
+    expect(r.bySpan.get(spanKey('c', 0))!.r).toBe(R95_70);
   });
   it('without a power factor nothing is computed and the setting is reported missing', () => {
     const r = run(withProps(base()), { A_T: '40', A_B: '40' }, { ...SET, powerFactor: undefined });
     expect(r.settingsMissing).toContain('powerFactor');
     expect(at(r, 'A')).toMatchObject({ status: 'na', reason: 'settings' });
   });
-  it('without a conductor temperature, table resistances are not used', () => {
+  it('without a conductor temperature nothing is missing (no table resistance exists)', () => {
     const r = run(withProps(base()), { A_T: '40', A_B: '40' }, { ...SET, conductorTempC: undefined });
-    expect(r.settingsMissing).toContain('conductorTempC');
-    expect(at(r, 'A').status).toBe('na');
+    expect(r.settingsMissing).toEqual([]);
+    expect(at(r, 'A').status).not.toBe('na');
   });
   it('a three-phase load behind a single-phase span is an error, not a number', () => {
     const r = run(withProps(base(), { c: { system: '1ph2w' } }), { A_T: '40', A_B: '40' });
@@ -195,11 +204,11 @@ describe('other source / independent spans', () => {
     expect(r.issues).toContainEqual({ kind: 'transformer-not-source', poleId: 'T' });
   });
   it('parallel cables of different colours on one route: each has its own properties and loads', () => {
-    const els = withProps([tr('T'), pole('A'), cable('r', ['T', 'A']), cable('b', ['T', 'A'], BLUE), sub('A', 'square'), sub('A', 'square', 1, '', BLUE)], { b: { crossSectionMm2: 50, neutralCrossSectionMm2: 50 } });
+    const els = withProps([tr('T'), pole('A'), cable('r', ['T', 'A']), cable('b', ['T', 'A'], BLUE), sub('A', 'square'), sub('A', 'square', 1, '', BLUE)], { b: { crossSectionMm2: 50, neutralCrossSectionMm2: 50, rOhmPerKm: 0.77, rNeutralOhmPerKm: 0.77 } }); // entered (synthetic)
     const r = run(els, { A_T: '100' });
     const red = r.byPole.get('A')!.find((p) => p.color === RED)!;
     const blue = r.byPole.get('A')!.find((p) => p.color === BLUE)!;
-    const r50 = 0.641 * (1 + 0.00403 * 50);
+    const r50 = 0.77;
     expect(red.dropV).toBeCloseTo(32 * ZPH * 0.1, 9);
     expect(blue.dropV).toBeCloseTo(32 * (r50 * 0.9 + 0.08 * Math.sqrt(0.19)) * 0.1, 9);
   });
@@ -237,11 +246,11 @@ describe('7.8 no misleading results', () => {
   });
 });
 
-describe('7.8 conductor data must match the conductor', () => {
+describe('conductor data: only entered values (no table, whatever the conductor)', () => {
   const one = (p: Partial<SpanProps>, subs = [sub('A', 'square', 1, '63')]) => run(withProps([tr('T'), pole('A'), cable('c', ['T', 'A']), ...subs], { c: p }), { A_T: '100' }).bySpan.get(spanKey('c', 0))!;
-  it('audit case: bare overhead conductors do not get IEC 60228 (insulated-cable) values', () => {
-    const s = one({ cableKind: 'bare', xOhmPerKm: 0.3 });
-    expect(s.missing).toContain('resistance-bare');
+  it('bare overhead conductors without R: R missing (nothing taken from a table)', () => {
+    const s = one({ cableKind: 'bare', xOhmPerKm: 0.3, rOhmPerKm: undefined });
+    expect(s.missing).toEqual(['resistance']);
     expect(s.rSource).toBeUndefined();
     expect(s.computable).toBe(false);
   });
@@ -251,36 +260,25 @@ describe('7.8 conductor data must match the conductor', () => {
     expect(s.rSource).toBe('manual');
     expect(s.provisional).toEqual([]);
   });
-  it('unknown or "other" cable kind: the table is not applied', () => {
-    expect(one({ cableKind: undefined }).missing).toContain('resistance-kind');
-    expect(one({ cableKind: 'other' }).missing).toContain('resistance-kind');
-    expect(one({ cableKind: 'underground' }).computable).toBe(true);
+  it('the cable kind does not matter for entered values', () => {
+    for (const cableKind of [undefined, 'other', 'underground', 'abc'] as const) expect(one({ cableKind }).computable).toBe(true);
   });
-  it('audit case: an aluminium-alloy neutral (ABC messenger) is never given plain-aluminium resistance', () => {
-    const s = one({ neutralMaterial: 'alloy', neutralCrossSectionMm2: 54.6 }, [sub('A', 'circle', 2)]);
-    expect(s.missing).toContain('neutral-alloy');
-    const s2 = one({ neutralMaterial: 'alloy', neutralCrossSectionMm2: 70 }, [sub('A', 'circle', 2)]);
-    expect(s2.missing).toContain('neutral-alloy'); // even when 70 mm² is a table size
-    expect(s2.rnSource).not.toBe('table');
-  });
-  it('the neutral material is not assumed from the phase material', () => {
-    expect(one({ neutralMaterial: undefined }, [sub('A', 'circle', 2)]).missing).toContain('neutral-material');
-    const cuN = one({ neutralMaterial: 'cu', neutralCrossSectionMm2: 50 }, [sub('A', 'circle', 2)]);
-    expect(cuN.rnSource).toBe('table');
-    expect(cuN.rn).toBeCloseTo(0.387 * (1 + 0.00393 * 50), 9);
+  it('a neutral without an entered Rn: missing, whatever its material and section (alloy, plain al / cu)', () => {
+    for (const n of [{ neutralMaterial: 'alloy', neutralCrossSectionMm2: 54.6 }, { neutralMaterial: 'cu', neutralCrossSectionMm2: 50 }, { neutralMaterial: undefined }] as const) {
+      const s = one({ ...n, rNeutralOhmPerKm: undefined }, [sub('A', 'circle', 2)]);
+      expect(s.missing).toEqual(['neutral']);
+      expect(s.rnSource).not.toBe('table');
+    }
   });
   it('an entered Rn from a stated source is used for an alloy neutral', () => {
     const s = one({ neutralMaterial: 'alloy', neutralCrossSectionMm2: 54.6, rNeutralOhmPerKm: 0.63 }, [sub('A', 'circle', 2)]);
     expect([s.computable, s.rnSource, s.rn]).toEqual([true, 'manual', 0.63]);
   });
   it('values typed per span without a stated source make the result provisional (warning, not hidden)', () => {
-    expect(one({ dataSource: undefined }).provisional).toContain('source-unknown');          // X typed
+    expect(one({ dataSource: undefined }).provisional).toContain('source-unknown');
     expect(one({ dataSource: '  ' }).provisional).toContain('source-unknown');
     expect(one({ rOhmPerKm: 0.4, dataSource: undefined }).provisional).toContain('source-unknown');
     expect(one({}).provisional).toEqual([]);                                                  // source given
-  });
-  it('no interpolation: a size between table rows is not computed', () => {
-    expect(one({ crossSectionMm2: 90 }).missing).toContain('section-not-in-table');
   });
 });
 

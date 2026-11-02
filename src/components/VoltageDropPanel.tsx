@@ -20,8 +20,8 @@ import { spanAt } from '../utils/spanModel';
 import { SpanPropertiesSheet, spanSummary } from './SpanPropertiesSheet';
 import { CableEndsDialog } from './CableEndsDialog';
 import { DEFAULT_POWER_FACTOR, isPowerFactorDefault } from '../utils/electricalSettings';
-import { planMissingDefaults } from '../utils/spanDefaults';
-import { ALPHA_SOURCE, CONDUCTOR_TABLE_SOURCE } from '../data/conductors';
+import { planDefaultFill, spansWithoutLibraryCable, usableDefault } from '../utils/defaultCable';
+import { useCableLibrary } from '../store/cableLibraryStore';
 import { ProposedConsumerSheet } from './ProposedConsumerSheet';
 import { E2ResultsPanel } from './E2ResultsPanel';
 import { proposalLoadText, proposedConsumers } from '../utils/proposedConsumers';
@@ -70,7 +70,7 @@ export const voltageDropReportText = (r: VoltageDropResult, name: (id: string) =
   const model = s.loadModel ?? 'constant-current';
   lines.push(tr('vd.report.title'));
   lines.push(tr('vd.report.nominal', { vph: s.phaseVoltage, vll: s.lineVoltage, limit: s.limitPercent, minPh: s.minPhaseVoltage, minLL: s.minLineVoltage }));
-  lines.push(tr('vd.report.pfLine', { pf: s.powerFactor ?? tr('vd.report.pfNotEntered'), pfDefault: powerFactorDefault ? tr('vd.report.pfDefault') : '', temp: s.conductorTempC ?? tr('vd.report.tempNotEntered'), mode: s.singlePhaseMode === 'worst' ? tr('vd.report.modeWorst') : tr('vd.report.modeBalanced') }));
+  lines.push(tr('vd.report.pfLine', { pf: s.powerFactor ?? tr('vd.report.pfNotEntered'), pfDefault: powerFactorDefault ? tr('vd.report.pfDefault') : '', mode: s.singlePhaseMode === 'worst' ? tr('vd.report.modeWorst') : tr('vd.report.modeBalanced') }));
   lines.push(tr('vd.report.loadModel', { model: loadModelLabel(model, tr), note: model === 'constant-power' ? tr('vd.report.constantPowerNote') : '' }));
   if (s.studyProposedConsumers) lines.push(tr('vd.report.studyProposed'));
   if (s.studySuggestedSplits) lines.push(tr('vd.report.studySplits'));
@@ -98,7 +98,7 @@ export const voltageDropReportText = (r: VoltageDropResult, name: (id: string) =
     for (const i of r.issues) lines.push(`- ${issueText(i, name, tr)}`);
   }
   lines.push('');
-  lines.push(tr('vd.report.resistance', { table: CONDUCTOR_TABLE_SOURCE, alpha: ALPHA_SOURCE }));
+  lines.push(tr('vd.report.resistance'));
   lines.push(tr('vd.report.loads'));
   lines.push(tr('vd.report.thermal'));
   return lines.join('\n');
@@ -109,8 +109,12 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
   const t = useT();
   const locale = useLocale((st) => st.locale);
   const pfDefault = isPowerFactorDefault(electrical);
-  // spans with missing properties (old drawings): filled only on request, in one undo step (Stage 7.13)
-  const defaultsPlan = useMemo(() => planMissingDefaults(elements), [elements]);
+  // spans without a library cable: linked to the default cable only on request, in one undo step
+  // (its snapshot; a span with a library cable is never changed)
+  const defaultState = useCableLibrary((s) => s.defaultCable);
+  const defaultCable = usableDefault(defaultState);
+  const unlinked = useMemo(() => spansWithoutLibraryCable(elements), [elements]);
+  const defaultsPlan = useMemo(() => planDefaultFill(elements, defaultCable, Date.now()), [elements, defaultCable]);
   const [confirmDefaults, setConfirmDefaults] = useState(false);
   const applyDefaults = () => {
     if (!defaultsPlan.updates.length) return;
@@ -179,7 +183,8 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
             <h3 className="mb-2 text-[15px] font-semibold text-ios-label">{t('vd.settings.title')}</h3>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <NumField field="pf" label={t('vd.settings.pf')} value={form.pf} onChange={(v) => setF('pf', v)} hint={pfDefault ? t('vd.settings.pfDefaultHint', { pf: DEFAULT_POWER_FACTOR }) : undefined} placeholder={t('vd.settings.pfPlaceholder', { pf: DEFAULT_POWER_FACTOR })} />
-              <NumField field="temp" label={t('vd.settings.temp')} value={form.temp} onChange={(v) => setF('temp', v)} hint={t('vd.settings.tempHint')} />
+              {/* the conductor temperature is not used by any calculation (no conductor table): not shown;
+                  a stored value is kept as it is (the form carries it unchanged) */}
               <NumField field="limit" label={t('vd.settings.limit')} value={form.limit} onChange={(v) => setF('limit', v)} />
               <NumField field="near" label={t('vd.settings.near')} value={form.near} onChange={(v) => setF('near', v)} />
               <NumField field="minPh" label={t('vd.settings.minPh')} value={form.minPh} onChange={(v) => setF('minPh', v)} />
@@ -280,19 +285,26 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
             {endSplits.length > 0 && <p className="mt-2 text-[12px] text-ios-tertiary">{t('vd.split.endPoints', { list: [...new Set(endSplits.map((e) => name(e.poleId)))].join(t('common.listSep')) })}</p>}
           </section>
 
-          {/* old drawings: spans with missing properties, filled only on request (Stage 7.13) */}
-          {(defaultsPlan.empty > 0 || defaultsPlan.partial > 0) && (
-            <section aria-label={t('vd.defaults.section')} className="mb-3 rounded-ctl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900" data-vd-missing-defaults={`${defaultsPlan.empty}/${defaultsPlan.partial}`}>
-              <p>{defaultsPlan.empty > 0 && t('vd.defaults.empty', { n: defaultsPlan.empty })}{defaultsPlan.empty > 0 && defaultsPlan.partial > 0 && t('common.listSep')}{defaultsPlan.partial > 0 && t('vd.defaults.partial', { n: defaultsPlan.partial })}.</p>
-              <p className="mt-1">{t('vd.defaults.explain', { mark: t('vd.defaultsReviewShort') })}</p>
-              {!confirmDefaults ? (
-                <button type="button" className="ui-tinted-btn mt-2 !w-auto !px-3" data-vd-action="fill-defaults" onClick={() => setConfirmDefaults(true)}>{t('vd.defaults.fill', { n: defaultsPlan.empty + defaultsPlan.partial })}</button>
+          {/* spans without a library cable: the default cable, only on request */}
+          {unlinked > 0 && (
+            <section aria-label={t('vd.defaults.section')} className="mb-3 rounded-ctl border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-900" data-vd-missing-defaults={unlinked}>
+              <p>{t('vd.defaults.empty', { n: unlinked })}</p>
+              {defaultCable ? (
+                <>
+                  <p className="mt-1">{t('vd.defaults.explain', { name: `\u2068${defaultCable.snapshot.name}\u2069`, n: defaultCable.revision })}</p>
+                  {defaultState.kind === 'newer' && <p className="mt-1" data-vd-default-newer>{t('defaultCable.newer', { n: defaultState.latest, m: defaultCable.revision })}</p>}
+                  {!confirmDefaults ? (
+                    <button type="button" className="ui-tinted-btn mt-2 !w-auto !px-3" data-vd-action="fill-defaults" onClick={() => setConfirmDefaults(true)}>{t('vd.defaults.fill', { n: defaultsPlan.spans })}</button>
+                  ) : (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span>{t('vd.defaults.willFill', { n: defaultsPlan.spans })}</span>
+                      <button type="button" className="min-h-[36px] rounded-ctl bg-ios-blue px-4 text-[15px] font-semibold text-white" data-vd-action="confirm-defaults" onClick={applyDefaults}>{t('vd.defaults.confirm')}</button>
+                      <button type="button" className="min-h-[36px] rounded-ctl bg-ios-fill px-4 text-[15px] text-ios-blue" data-vd-action="cancel-defaults" onClick={() => setConfirmDefaults(false)}>{t('common.cancel')}</button>
+                    </div>
+                  )}
+                </>
               ) : (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span>{t('vd.defaults.willFill', { n: defaultsPlan.empty + defaultsPlan.partial })}</span>
-                  <button type="button" className="min-h-[36px] rounded-ctl bg-ios-blue px-4 text-[15px] font-semibold text-white" data-vd-action="confirm-defaults" onClick={applyDefaults}>{t('vd.defaults.confirm')}</button>
-                  <button type="button" className="min-h-[36px] rounded-ctl bg-ios-fill px-4 text-[15px] text-ios-blue" data-vd-action="cancel-defaults" onClick={() => setConfirmDefaults(false)}>{t('common.cancel')}</button>
-                </div>
+                <p className="mt-1 font-medium" data-vd-default-cable={defaultState.kind}>{t(defaultState.kind === 'missing' ? 'defaultCable.missing' : defaultState.kind === 'unreadable' ? 'defaultCable.unreadable' : 'defaultCable.none')}</p>
               )}
             </section>
           )}
@@ -360,6 +372,7 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
                             {sp.missing.length > 0 && <div className="text-amber-900">{t('vd.missing', { list: sp.missing.map((m) => missingLabel(m, t)).join(t('common.reasonSep')) })}</div>}
                             {sp.review.map((r) => <div key={r} className="text-amber-900">⚠ {reviewLabel(r, t)}</div>)}
                             {sp.inherited && <div className="text-ios-secondary">{t('vd.inherited')}</div>}
+                            {props?.cableType && <div className="text-ios-blue" data-vd-span-e2>{t('defaultCable.spanE2')}</div>}
                           </div>
                           <button type="button" className="ui-tinted-btn !w-auto !min-h-[30px] flex-shrink-0 !px-3" data-vd-action="edit-span" onClick={() => setEditing({ cableId: sp.cableId, index: sp.index })}>{t('common.edit')}</button>
                         </li>
@@ -401,7 +414,7 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
             <p className="font-medium text-ios-label">{t('vd.method.title')}</p>
             <p>{t('vd.method.p1')}</p>
             <p>{t('vd.method.p2')}</p>
-            <p>{t('vd.method.p3', { table: CONDUCTOR_TABLE_SOURCE, alpha: ALPHA_SOURCE })}</p>
+            <p>{t('vd.method.p3')}</p>
             <p>{t('vd.method.p4')}</p>
           </section>
           <div className="flex gap-2">

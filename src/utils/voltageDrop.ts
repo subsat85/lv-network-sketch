@@ -1,5 +1,4 @@
 import type { CableElement, DistanceFlag, DrawingElement, ElectricalSettings, SpanProps, SpanReview } from '../types/drawing';
-import { tableResistance } from '../data/conductors';
 import { buildNetwork, Circuit, Network, NetworkIssue, NetSpan } from './network';
 import { pairKey } from './cableSegments';
 import { isPlainDistance } from './distances';
@@ -168,30 +167,19 @@ export const spanLength = (distances: Record<string, string>, a: string, b: stri
 
 interface Resolved { r?: number; x?: number; rn?: number; parallel: number; rSource?: 'table' | 'manual'; rnSource?: 'table' | 'manual' | 'not-needed'; missing: MissingItem[]; usesTable: boolean }
 
-// IEC 60228 (Table 2, class 2) is the conductor standard of INSULATED cables:
-// it is applied to ABC and underground cables only. Bare overhead conductors
-// (other standards) and cables of unknown kind need R entered per span.
-const TABLE_KINDS: ReadonlySet<string> = new Set(['abc', 'underground']);
-
+// No conductor table is used (the company table and IEC 60228 were removed): R and Rn are the values
+// entered for the span, nothing is derived from its material, cross-section, cable kind or the
+// conductor temperature. A span without them has them missing. (`usesTable` / the 'table' sources
+// stay in the result shape for the readers of E1, and are never set.)
 const resolveImpedance = (p: SpanProps | undefined, settings: ElectricalSettings, needNeutral: boolean): Resolved => {
   const missing: MissingItem[] = [];
-  let usesTable = false;
-  const tableKind = !!p?.cableKind && TABLE_KINDS.has(p.cableKind);
-  const kindMissing: MissingItem = p?.cableKind === 'bare' ? 'resistance-bare' : 'resistance-kind';
-  const temp = settings.conductorTempC;
+  const usesTable = false;
   const parallel = p?.parallel === undefined ? 1 : p.parallel;
   if (!(Number.isInteger(parallel) && parallel >= 1)) missing.push('parallel');
 
   let r: number | undefined, rSource: Resolved['rSource'];
   if (isPos(p?.rOhmPerKm)) { r = p!.rOhmPerKm; rSource = 'manual'; }
-  else if (p?.material && isPos(p.crossSectionMm2) && !tableKind) missing.push(kindMissing);
-  else if (p?.material && isPos(p.crossSectionMm2)) {
-    usesTable = true;
-    if (temp !== undefined) {
-      const t = tableResistance(p.material, p.crossSectionMm2!, temp);
-      if (t === null) missing.push('section-not-in-table'); else { r = t; rSource = 'table'; }
-    } else if (tableResistance(p.material, p.crossSectionMm2!, 20) === null) missing.push('section-not-in-table');
-  } else missing.push('resistance');
+  else missing.push('resistance');
 
   let x: number | undefined;
   const pf = settings.powerFactor;
@@ -202,19 +190,7 @@ const resolveImpedance = (p: SpanProps | undefined, settings: ElectricalSettings
   let rn: number | undefined, rnSource: Resolved['rnSource'] = 'not-needed';
   if (needNeutral) {
     if (isPos(p?.rNeutralOhmPerKm)) { rn = p!.rNeutralOhmPerKm; rnSource = 'manual'; }
-    else if (isPos(p?.neutralCrossSectionMm2)) {
-      const nm = p!.neutralMaterial;
-      if (!nm) missing.push('neutral-material');
-      else if (nm === 'alloy') missing.push('neutral-alloy');
-      else if (!tableKind) missing.push(kindMissing);
-      else {
-        usesTable = true;
-        if (temp !== undefined) {
-          const t = tableResistance(nm, p!.neutralCrossSectionMm2!, temp);
-          if (t === null) missing.push('neutral-not-in-table'); else { rn = t; rnSource = 'table'; }
-        } else if (tableResistance(nm, p!.neutralCrossSectionMm2!, 20) === null) missing.push('neutral-not-in-table');
-      }
-    } else missing.push('neutral');
+    else missing.push('neutral');
   }
   return { r, x, rn, parallel, rSource, rnSource, missing, usesTable };
 };
@@ -266,7 +242,6 @@ export const computeVoltageDrop = (
       const needNeutral = system === '1ph2w' || (!balancedMode && I1 > 0);
       const z = resolveImpedance(props, settings, needNeutral);
       missing.push(...z.missing);
-      if (z.usesTable && settings.conductorTempC === undefined) settingsMissing.add('conductorTempC');
       const phaseCurrentA = system === '1ph2w' ? I1 : balancedMode ? I3 + I1 / 3 : I3 + I1;
       const res: SpanResult = {
         key: spanKey(s.cableId, s.index), cableId: s.cableId, index: s.index, spanId: s.spanId,

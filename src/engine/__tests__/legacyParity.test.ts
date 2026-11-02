@@ -12,7 +12,7 @@ import type { ProjectDocument } from '../model';
 // E1: the core runs the existing engine unchanged. These tests prove it on the 240
 // golden networks (and on constant power / the studies, which golden does not cover).
 
-const golden = JSON.parse(readFileSync(new URL('../../utils/__tests__/fixtures/vd-golden-7_8.json', import.meta.url), 'utf8'));
+const golden = JSON.parse(readFileSync(new URL('../../utils/__tests__/fixtures/vd-golden-no-tables.json', import.meta.url), 'utf8'));
 const CASES = [...goldenCases(), ...goldenTreeCases()];
 const docOf = (g: GoldenCase, flags: Record<string, DistanceFlag> = {}, electrical: ElectricalSettings = g.settings): ProjectDocument =>
   ({ elements: g.elements, connectionDistances: g.distances, distanceFlags: flags, electrical });
@@ -78,7 +78,7 @@ const VARIANTS: { name: string; cases: GoldenCase[] }[] = [
   { name: 'studies on + constant power', cases: CASES.map(withStudies).map((g) => ({ ...g, settings: { ...g.settings, loadModel: 'constant-power' as const } })) },
 ];
 
-describe('P1. the core gives the golden results (recorded from 7.8)', () => {
+describe('P1. the core gives the golden results (recorded without conductor tables)', () => {
   it('covers 240 networks', () => expect(CASES).toHaveLength(240));
   it('the copy of goldenOutput is the same as goldenOutput (so P1 checks what golden checks)', () => {
     for (const g of CASES) expect(outputOf(buildNetwork(g.elements), computeVoltageDrop(g.elements, g.distances, g.settings))).toEqual(goldenOutput(g));

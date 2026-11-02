@@ -10,6 +10,7 @@ import { layoutProposalBoxes, proposalGeometry } from '../utils/proposalDrawing'
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
 import { VoltageDropOverlay } from './VoltageDropOverlay';
 import type { VoltageDropResult } from '../utils/voltageDrop';
+import { autoConsumerOffset, squareLabelY } from '../utils/consumerPlacement';
 import type { DistanceFlag } from '../types/drawing';
 import { useT } from '../store/localeStore';
 import { TransformerTableSvg } from './TransformerTableSvg';
@@ -390,6 +391,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
       if (cons.proposal) return <ProposalSvg key={cons.id} elements={elements} consumer={cons} poleRadius={POLE_RADIUS * poleSizeScale} scale={consumerSizeScale} layout={boxLayout} />;
       
       let cx, cy;
+      let stackDy = 0; // the stack direction from the pole (placed by hand: label above, as before)
       if (cons.hasManualPosition) {
         cx = cons.x;
         cy = cons.y;
@@ -397,15 +399,10 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
         const consumersOnPole = elements.filter(e => e.type === 'consumer' && !(e as ConsumerElement).proposal && (e as ConsumerElement).poleId === cons.poleId);
         const index = consumersOnPole.findIndex(e => e.id === cons.id);
         const placement = getSmartPlacement(cons.poleId, elements);
-        const radius = POLE_RADIUS * poleSizeScale;
-        const consumerRadius = 16 * consumerSizeScale;
-        const margin = 5 * consumerSizeScale;
-        const spacing = consumerRadius * 2 + margin;
-        const startOffset = radius + consumerRadius + margin;
-        const stackOffset = index * spacing;
-        const totalOffset = startOffset + stackOffset;
+        const totalOffset = autoConsumerOffset(consumersOnPole as ConsumerElement[], index, POLE_RADIUS * poleSizeScale, consumerSizeScale, placement.dy !== 0);
         cx = placement.x + placement.dx * totalOffset;
         cy = placement.y + placement.dy * totalOffset;
+        stackDy = placement.dy;
       }
 
       const consumerRadius = 16 * consumerSizeScale;
@@ -422,7 +419,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
           {cons.label && (
             <text 
               x={cons.variant === 'square' ? 0 : consumerRadius} 
-              y={cons.variant === 'square' ? -(consumerRadius + 10) : 0} 
+              y={cons.variant === 'square' ? squareLabelY(consumerRadius, stackDy) : 0} 
               dy=".3em" 
               textAnchor={cons.variant === 'square' ? "middle" : "start"} 
               fill={cons.color} 

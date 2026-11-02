@@ -15,6 +15,18 @@ import { ProjectDataError } from '../utils/projectMigration';
 import { saveFile, openFile } from '../utils/filePickers';
 import { useLocale, useT } from '../store/localeStore';
 import { directionOf } from '../i18n';
+import type { ImportCableReport } from '../utils/defaultCable';
+import type { Tr } from '../utils/vdLabels';
+
+/** What the import did to an old drawing's cable data (null for a file kept as it is). */
+export const importCableNotice = (c: ImportCableReport | undefined, tr: Tr): string | null => {
+  if (!c || c.kind !== 'old') return null;
+  const lines: string[] = [];
+  if (c.cleared > 0) lines.push(tr('defaultCable.importCleared', { n: c.cleared }));
+  if (c.linked > 0) lines.push(tr('defaultCable.importLinked', { n: c.linked }));
+  if (c.needDefault) lines.push(tr('defaultCable.importNeedDefault'));
+  return lines.length ? lines.join('\n') : null;
+};
 
 interface ProjectManagerProps {
   isOpen: boolean;
@@ -216,6 +228,9 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
       setProjectName(res.projectName);
       await refreshProjects();
       onClose();
+      // an old drawing: say what was done to its cable data (and that a default cable is needed)
+      const notice = importCableNotice(res.cables, t);
+      if (notice) alert(notice);
     } finally {
       setIsLoading(false);
     }

@@ -39,7 +39,7 @@ const network = () => {
     { id: 'c', type: 'cable', x: 0, y: 0, poleIds: ['T', 'A', 'B'], cableIndex: 0, offset: 0, strokeColor: '#ff0000', fillColor: 'none', strokeWidth: 2 } as CableElement,
     { id: 'u', type: 'consumer', x: 0, y: 0, poleId: 'B', color: '#ff0000', count: 1, variant: 'square', label: '63', strokeColor: '#f00', fillColor: '#f00', strokeWidth: 2 } as DrawingElement]);
   const c = els[3] as CableElement;
-  els = els.map((e) => (e.id === 'c' ? withSpanProps(c, c.spanIds![0], { poles: ['T', 'A'], system: '3ph4w', cableKind: 'abc', material: 'al', crossSectionMm2: 95, xOhmPerKm: 0.08, dataSource: 'test' }) : e));
+  els = els.map((e) => (e.id === 'c' ? withSpanProps(c, c.spanIds![0], { poles: ['T', 'A'], system: '3ph4w', cableKind: 'abc', material: 'al', crossSectionMm2: 95, rOhmPerKm: 0.38448, xOhmPerKm: 0.08, dataSource: 'test' }) : e));
   return els;
 };
 
@@ -98,7 +98,7 @@ describe('voltage drop texts', () => {
     expect(text).toContain('  Pole 1: 2.40 V (1.04%)'); // the same numbers as the Arabic report
     expect(text).toContain('  Pole 2: cannot be calculated');
     expect(text).toContain('Supply system (number of phases)');
-    expect(text).toContain('IEC 60228');
+    expect(text).not.toContain('IEC 60228'); // no conductor table any more
     expect(text).toContain('Load model: Constant current');
     expect(text).toContain('is thermally safe');
     // the Arabic report has the same lines with the same numbers

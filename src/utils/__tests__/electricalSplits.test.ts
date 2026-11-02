@@ -193,9 +193,9 @@ describe('A. network topology', () => {
 });
 
 describe('B. voltage-drop calculation (hand-checked)', () => {
-  // Al 95 mm² at 70 °C: R = 0.38448 Ω/km; cos φ 0.9: R cos φ + X sin φ = 0.380903 Ω/km (as voltageDrop.test.ts)
+  // R = 0.38448 Ω/km entered (synthetic); cos φ 0.9: R cos φ + X sin φ = 0.380903 Ω/km (as voltageDrop.test.ts)
   const ZPH = 0.38448 * 0.9 + 0.08 * Math.sqrt(1 - 0.81);
-  const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', xOhmPerKm: 0.08, system: '3ph4w', dataSource: 'test' };
+  const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', rOhmPerKm: 0.38448, xOhmPerKm: 0.08, rNeutralOhmPerKm: 0.38448, system: '3ph4w', dataSource: 'test' }; // R / Rn entered (synthetic): no conductor table
   const SET = (study: boolean): ElectricalSettings => ({ ...DEFAULT_ELECTRICAL, powerFactor: 0.9, conductorTempC: 70, studySuggestedSplits: study });
   const withProps = (els: DrawingElement[]) => normalizeElements(els).map((e) => {
     if (e.type !== 'cable') return e;
