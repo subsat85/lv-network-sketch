@@ -1317,6 +1317,8 @@ export const en: Dict = {
     },
   },
   defaultCable: {
+    noSystem: 'Supply system not set: E2 cannot calculate this section. Set it by hand in the section properties («Edit»).',
+    noSystemCount: '{n} section(s) linked to a library cable have no supply system: E2 cannot calculate them. Set the system by hand in each section\'s properties («Edit» in the sections list); no system is assumed.',
     badge: 'Default cable (revision {n})',
     set: 'Set revision {n} as the default cable',
     setFailed: 'The default cable could not be saved; nothing changed.',

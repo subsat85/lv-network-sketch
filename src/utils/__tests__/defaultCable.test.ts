@@ -131,10 +131,12 @@ describe('choosing the default cable', () => {
 
 describe('applying the default', () => {
   const D = () => asDefault(rev1);
-  it('a newly drawn span with no properties is linked to it (snapshot, circuit defaults); nothing copied into the old fields', () => {
+  it('a newly drawn span with no properties is linked to it (snapshot only: no system, no parallel assumed); nothing copied into the old fields', () => {
     const k = normalizeElements([cableEl('k', ['A', 'B'])])[0] as CableElement;
     const out = withDefaultCableSpan(k, 0, D(), 5);
-    expect(spanAt(out, 0).props).toEqual({ poles: ['A', 'B'], system: '3ph4w', parallel: 1, cableType: { typeId: rev1.id, revision: 1, snapshot: rev1, assignedAt: 5 } });
+    expect(spanAt(out, 0).props).toEqual({ poles: ['A', 'B'], cableType: { typeId: rev1.id, revision: 1, snapshot: rev1, assignedAt: 5 } });
+    expect(spanAt(out, 0).props).not.toHaveProperty('system');
+    expect(spanAt(out, 0).props).not.toHaveProperty('parallel');
     // no default: nothing (no table values any more)
     expect(withDefaultCableSpan(k, 0, undefined)).toBe(k);
     // a span with a record (a copy of its neighbour) is left as it is
@@ -191,6 +193,32 @@ describe('applying the default', () => {
   });
 });
 
+describe('system and parallel are never filled in (kept when present, unset when missing)', () => {
+  const D = () => asDefault(rev1);
+  it('linkDefaultCable keeps existing values and leaves missing ones unset (not derived from the cable)', () => {
+    expect(linkDefaultCable({ poles: ['A', 'B'], system: '1ph2w', parallel: 2 }, ['A', 'B'], D())).toMatchObject({ system: '1ph2w', parallel: 2 });
+    const none = linkDefaultCable({ poles: ['A', 'B'], dataSource: 'x' }, ['A', 'B'], D());
+    expect(none).not.toHaveProperty('system');
+    expect(none).not.toHaveProperty('parallel');
+    const onlySystem = linkDefaultCable({ poles: ['A', 'B'], system: '3ph4w' }, ['A', 'B'], D());
+    expect(onlySystem.system).toBe('3ph4w');
+    expect(onlySystem).not.toHaveProperty('parallel');
+  });
+  it('«link the default cable» on an existing drawing: an empty span gets no system / parallel; a span with them keeps them', () => {
+    const els = drawingWith([undefined, { system: '1ph2w', parallel: 2 }, { parallel: 3 }]);
+    const plan = planDefaultFill(els, D(), 1);
+    const k = { ...(els.find((e) => e.id === 'k') as CableElement), ...plan.updates[0].changes } as CableElement;
+    const recs = k.spanIds!.map((_, i) => spanAt(k, i).props!);
+    expect(recs.map((r) => [r.system, r.parallel])).toEqual([[undefined, undefined], ['1ph2w', 2], [undefined, 3]]);
+    for (const r of recs) expect(r.cableType!.typeId).toBe(rev1.id);
+  });
+  it('importing an old drawing: the file\'s own system / parallel are kept, missing ones stay unset', async () => {
+    const p = await planImport(fileOf(drawingWith([{ rOhmPerKm: 0.3, material: 'al' }, { system: '1ph2w', rOhmPerKm: 0.3 }, undefined])), { getMeta: async () => [], defaultCable: async () => D() });
+    const recs = spanRecords((p as { plan: { data: { elements: DrawingElement[] } } }).plan.data.elements);
+    expect(recs.map((r) => [r!.system, r!.parallel])).toEqual([[undefined, undefined], ['1ph2w', undefined], [undefined, undefined]]);
+  });
+});
+
 describe('importing a drawing file (planImport only)', () => {
   const plan = async (json: string, def?: DefaultCable) => {
     const p = await planImport(json, { getMeta: async () => [], defaultCable: async () => def });
@@ -209,7 +237,7 @@ describe('importing a drawing file (planImport only)', () => {
     const recs = spanRecords(p.data.elements);
     expect(recs[0]).toEqual({ poles: ['T', 'A'], system: '3ph4w', parallel: 1, cableType: { typeId: rev1.id, revision: 1, snapshot: rev1, assignedAt: expect.any(Number) } });
     expect(recs[1]).toEqual({ poles: ['A', 'B'], system: '1ph2w', parallel: 2, cableType: expect.objectContaining({ typeId: rev1.id }) }); // system / parallel kept
-    expect(recs[2]).toMatchObject({ poles: ['B', 'C'], system: '3ph4w', parallel: 1, cableType: { typeId: rev1.id } });
+    expect(recs[2]).toEqual({ poles: ['B', 'C'], cableType: expect.objectContaining({ typeId: rev1.id }) }); // an empty span: no system / parallel assumed
     for (const r of recs) for (const k of ['rOhmPerKm', 'xOhmPerKm', 'rNeutralOhmPerKm', 'material', 'crossSectionMm2', 'dataSource', 'review', 'inherited', 'cableKind']) expect(r, k).not.toHaveProperty(k);
     // the snapshot's missing Xn stays missing (no table, nothing invented)
     expect('value' in recs[0]!.cableType!.snapshot.xn).toBe(false);

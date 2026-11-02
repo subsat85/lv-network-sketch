@@ -53,14 +53,12 @@ export const defaultCableState = (cable: DefaultCable | undefined, types: readon
 export const usableDefault = (s: DefaultCableState): DefaultCable | undefined => (s.kind === 'ok' || s.kind === 'newer' ? s.cable : undefined);
 
 /**
- * The span linked to the default cable (its snapshot, never the latest revision). The span's
- * supply system and parallel count are kept; when the span has none, the circuit defaults
- * 3-phase 4-wire and one complete set are written (these describe the circuit, not the cable).
+ * The span linked to the default cable (its snapshot, never the latest revision). The span's own
+ * supply system and parallel count are kept as they are; when the span has none they stay unset —
+ * nothing is assumed or derived from the cable (E2 reports a span without a supply system).
  */
 export const linkDefaultCable = (stored: SpanProps | undefined, poles: [string, string], d: DefaultCable, now?: number): SpanProps => {
   const base: SpanProps = { ...(stored ?? { poles }), poles };
-  if (base.system === undefined) base.system = '3ph4w';
-  if (base.parallel === undefined) base.parallel = 1;
   return linkSpanCable(base, poles, d.snapshot, now);
 };
 

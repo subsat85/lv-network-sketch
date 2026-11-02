@@ -1,13 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
-import type { CableElement, ElectricalSettings, SymbolElement } from '../types/drawing';
+import type { CableElement, ElectricalSettings, SpanProps, SymbolElement } from '../types/drawing';
 import { useVoltageDrop } from '../utils/useVoltageDrop';
 import type { CircuitResult, VoltageDropResult } from '../utils/voltageDrop';
 import { AR_TR, circuitStatusLabel, fmt, issueText, loadModelLabel, missingLabel, POLE_STATUS_MARK, poleStatusLabel, provisionalLabel, reviewLabel, settingMissingLabel, type Tr } from '../utils/vdLabels';
 import { useLocale, useT } from '../store/localeStore';
 import { directionOf } from '../i18n';
-import type { PoleResult } from '../utils/voltageDrop';
+import type { MissingItem, PoleResult } from '../utils/voltageDrop';
+import { spanCableTypeProblem } from '../utils/cableTypeModel';
 
 /** status text of a pole result; a provisional value is never shown as a plain "within the limit" */
 export const poleStatusText = (p: PoleResult, tr: Tr = AR_TR) => {
@@ -104,6 +105,24 @@ export const voltageDropReportText = (r: VoltageDropResult, name: (id: string) =
   return lines.join('\n');
 };
 
+// a span linked to a library cable is calculated by E2 from its snapshot: E1's «R / X / Rn not
+// entered» are not shown for it (E1 itself is unchanged and still reads only the span's own fields)
+const E2_VALUES: ReadonlySet<MissingItem> = new Set(['resistance', 'reactance', 'neutral']);
+export const linkedSpanView = (props: SpanProps | undefined, missing: readonly MissingItem[]) => {
+  const linked = !!props?.cableType && spanCableTypeProblem(props.cableType) === null;
+  return { linked, missing: linked ? missing.filter((m) => !E2_VALUES.has(m)) : [...missing], systemMissing: linked && !props!.system };
+};
+/** spans linked to a library cable without a supply system: E2 cannot calculate them (nothing is assumed) */
+export const linkedSpansWithoutSystem = (elements: readonly { type: string }[]): number => {
+  let n = 0;
+  for (const e of elements) {
+    if (e.type !== 'cable') continue;
+    const c = e as CableElement;
+    for (let i = 0; i < c.poleIds.length - 1; i++) if (linkedSpanView(spanAt(c, i).props, []).systemMissing) n++;
+  }
+  return n;
+};
+
 export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { elements, electrical, updateElectricalSettings, saveHistory, showVoltageDrop, setShowVoltageDrop, updateSymbolModifiers, updateElements, updateElement } = useDrawingStore();
   const t = useT();
@@ -132,6 +151,7 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
   const [copied, setCopied] = useState(false);
   // E2 study (preview), read only: a separate panel (decision D-C)
   const [showE2, setShowE2] = useState(false);
+  const noSystem = useMemo(() => linkedSpansWithoutSystem(elements), [elements]);
   const parsed = fromForm(form, t);
   const dirty = JSON.stringify(toForm(electrical)) !== JSON.stringify(form);
   const setF = (k: keyof SettingsForm, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -178,6 +198,11 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))] text-[14px]">
+          {/* E2 results (spans linked to the library are calculated there), at the top */}
+          <div className="mb-3 flex flex-col gap-2" data-vd-e2-top>
+            <button type="button" className="ui-tinted-btn !w-auto self-start" data-vd-action="open-e2" onClick={() => setShowE2(true)}>{t('e2.open')}</button>
+            {noSystem > 0 && <p className="rounded-ctl bg-amber-50 px-3 py-2 text-[13px] text-amber-900" role="alert" data-vd-linked-no-system={noSystem}>⚠ {t('defaultCable.noSystemCount', { n: noSystem })}</p>}
+          </div>
           {/* settings */}
           <section aria-label={t('vd.settings.title')} className="mb-4 rounded-ctl border border-ios-separator p-3">
             <h3 className="mb-2 text-[15px] font-semibold text-ios-label">{t('vd.settings.title')}</h3>
@@ -356,23 +381,29 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
                 </div>
               )}
 
-              {c.spans.length > 0 && (
-                <details className="border-t border-ios-separator" open={c.spans.some((s) => s.missing.length > 0)}>
-                  <summary className="cursor-pointer px-3 py-2 text-[13px] font-medium text-ios-label">{t('vd.spans', { n: c.spans.length, m: c.spans.filter((s) => s.missing.length > 0).length })}</summary>
+              {c.spans.length > 0 && (() => {
+                  // what each span shows: E1's missing items, without R / X / Rn for a span linked to the library
+                  const viewOf = (sp: (typeof c.spans)[number]) => { const cab = cables.get(sp.cableId); return linkedSpanView(cab ? spanAt(cab, sp.index).props : undefined, sp.missing); };
+                  const flagged = c.spans.filter((s) => { const v = viewOf(s); return v.missing.length > 0 || v.systemMissing; }).length;
+                  return (
+                <details className="border-t border-ios-separator" open={flagged > 0}>
+                  <summary className="cursor-pointer px-3 py-2 text-[13px] font-medium text-ios-label">{t('vd.spans', { n: c.spans.length, m: flagged })}</summary>
                   <ul className="flex flex-col">
                     {c.spans.map((sp) => {
                       const cab = cables.get(sp.cableId);
                       const props = cab ? spanAt(cab, sp.index).props : undefined;
+                      const view = linkedSpanView(props, sp.missing);
                       return (
                         <li key={sp.key} className="flex items-start gap-2 border-t border-ios-separator px-3 py-2 text-[13px]" data-vd-span={sp.key}>
                           <span className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ backgroundColor: sp.color }} />
                           <div className="min-w-0 flex-1">
                             <div className="text-ios-label">{name(sp.fromPole)} ← {name(sp.toPole)}: {sp.lengthM !== undefined ? t('vd.spanLength', { n: sp.lengthM }) : t('vd.spanLengthUnknown')} · {spanSummary(props, t)}</div>
                             <div className="text-ios-secondary">{t('vd.spanCurrent', { i: fmt(sp.phaseCurrentA, 1), i3: fmt(sp.threePhaseA, 1), i1: fmt(sp.singlePhaseA, 1), drop: sp.computable ? `${fmt(sp.dropV)} V` : '—' })}{sp.cumulativeDropV !== undefined ? t('vd.spanCumulative', { v: fmt(sp.cumulativeDropV) }) : ''}</div>
-                            {sp.missing.length > 0 && <div className="text-amber-900">{t('vd.missing', { list: sp.missing.map((m) => missingLabel(m, t)).join(t('common.reasonSep')) })}</div>}
+                            {view.missing.length > 0 && <div className="text-amber-900" data-vd-span-missing>{t('vd.missing', { list: view.missing.map((m) => missingLabel(m, t)).join(t('common.reasonSep')) })}</div>}
                             {sp.review.map((r) => <div key={r} className="text-amber-900">⚠ {reviewLabel(r, t)}</div>)}
                             {sp.inherited && <div className="text-ios-secondary">{t('vd.inherited')}</div>}
-                            {props?.cableType && <div className="text-ios-blue" data-vd-span-e2>{t('defaultCable.spanE2')}</div>}
+                            {view.linked && <div className="text-ios-blue" data-vd-span-e2>{t('defaultCable.spanE2')}</div>}
+                            {view.systemMissing && <div className="font-medium text-amber-900" data-vd-span-no-system>⚠ {t('defaultCable.noSystem')}</div>}
                           </div>
                           <button type="button" className="ui-tinted-btn !w-auto !min-h-[30px] flex-shrink-0 !px-3" data-vd-action="edit-span" onClick={() => setEditing({ cableId: sp.cableId, index: sp.index })}>{t('common.edit')}</button>
                         </li>
@@ -380,7 +411,8 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
                     })}
                   </ul>
                 </details>
-              )}
+                  );
+                })()}
               {c.circuit.inferredJunctions.length > 0 && (
                 <details className="border-t border-ios-separator" data-vd-inferred={c.circuit.inferredJunctions.length}>
                   <summary className="cursor-pointer px-3 py-2 text-[13px] font-medium text-ios-label">{t('vd.inferred', { n: c.circuit.inferredJunctions.length })}</summary>
@@ -419,7 +451,6 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
           </section>
           <div className="flex gap-2">
             <button type="button" className="ui-tinted-btn !w-auto" data-vd-action="copy-report" onClick={copyReport}>{copied ? t('vd.copied') : t('vd.copy')}</button>
-            <button type="button" className="ui-tinted-btn !w-auto" data-vd-action="open-e2" onClick={() => setShowE2(true)}>{t('e2.open')}</button>
           </div>
         </div>
       </div>
