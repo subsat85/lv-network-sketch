@@ -2,17 +2,18 @@ import type { ElectricalSettings } from '../types/drawing';
 
 /**
  * Starting values of the voltage-drop settings. 230/400 V is the nominal LV
- * system; 5 % and 218 V / 380 V are reference starting points to be checked
- * against the standard that applies to the project — they are editable and are
- * not presented as a legal limit. The conductor temperature has no default: the
- * calculation reports it as missing (where the IEC table needs it) until entered.
- * The power factor is not stored by default either; see effectiveSettings.
+ * system; cos φ 0.9 and the 8 % drop limit are the approved project defaults, and
+ * 218 V / 380 V are reference starting points to be checked against the standard
+ * that applies to the project — all editable. They are used for a new project and
+ * for any value a saved project does not contain; a saved value is always kept.
+ * The conductor temperature has no default (no calculation uses it).
  * The default single-phase nominal load is 4 A (the approved design value).
  */
 export const DEFAULT_ELECTRICAL: ElectricalSettings = {
   phaseVoltage: 230,
   lineVoltage: 400,
-  limitPercent: 5,
+  powerFactor: 0.9,
+  limitPercent: 8,
   nearLimitFraction: 0.8,
   minPhaseVoltage: 218,
   minLineVoltage: 380,
@@ -58,10 +59,10 @@ export const readElectricalSettings = (raw: unknown): { settings: ElectricalSett
 };
 
 /**
- * Power factor used when a project has none (Stage 7.13). It is applied only when
- * calculating (effectiveSettings) and shown as «افتراضي»; it is never written into
- * the project, so opening a project changes neither the saved project nor the
- * autosave draft. A power factor saved in the project is always used as it is.
+ * The default power factor. A new project, and a project saved without one, get it as a
+ * project setting (DEFAULT_ELECTRICAL / readElectricalSettings). effectiveSettings still applies it
+ * to settings given to the engine directly without one (shown as «افتراضي»); a power factor saved
+ * in the project is always used as it is.
  */
 export const DEFAULT_POWER_FACTOR = 0.9;
 export const isPowerFactorDefault = (s: ElectricalSettings) => s.powerFactor === undefined;

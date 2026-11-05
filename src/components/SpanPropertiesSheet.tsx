@@ -1,11 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import type { CableElement, CableKind, ConductorMaterial, DrawingElement, SpanProps, SupplySystem } from '../types/drawing';
 import { hasElectrical, spanAt, withSpanProps } from '../utils/spanModel';
 import { pairKey } from '../utils/cableSegments';
 import { spanKey } from '../utils/spanLength';
-import { reasonLabel, voltageView, warningLabel } from '../utils/e2Presentation';
+import { cachedVoltageView, reasonLabel, warningLabel } from '../utils/e2Presentation';
+import { applySpanEdit, lengthToSave, spanRecordToSave } from '../utils/spanEdit';
+import { useSpanEditPreview } from '../store/spanEditStore';
+import { DEFAULT_SUPPLY_SYSTEM, supplySystemOf } from '../utils/supplySystem';
 import { linkDefaultCable, usableDefault } from '../utils/defaultCable';
 import { AR_TR, CABLE_KIND_LABEL, cableKindLabel, fmt, reviewLabel, type Tr } from '../utils/vdLabels';
 import { useLocale, useT } from '../store/localeStore';
@@ -20,6 +23,8 @@ import { SpanCablePicker, SpanCableSection } from './cables/SpanCableLink';
 // Editing the electrical properties of one span of one cable (Stage 7.2).
 // Nothing is written until "حفظ"; the save is one undo step. The length is the
 // span distance of the drawing (shared by cables on the same two poles).
+// While the sheet is open, its values are calculated at once — in the sheet's check and on the
+// drawing — exactly as «حفظ» will write them (utils/spanEdit.ts), so saving changes no result.
 
 interface Props {
   cableId: string;
@@ -34,7 +39,8 @@ export type Form = {
 
 export const toForm = (p: SpanProps | undefined, length: string): Form => ({
   length,
-  system: p?.system ?? '', cableKind: p?.cableKind ?? '', material: p?.material ?? '',
+  // a span with no stored supply system shows (and is calculated with) the default 3ph+N
+  system: supplySystemOf(p), cableKind: p?.cableKind ?? '', material: p?.material ?? '',
   section: p?.crossSectionMm2?.toString() ?? '', neutral: p?.neutralCrossSectionMm2?.toString() ?? '', neutralMaterial: p?.neutralMaterial ?? '',
   parallel: p?.parallel?.toString() ?? '', r: p?.rOhmPerKm?.toString() ?? '', x: p?.xOhmPerKm?.toString() ?? '',
   rn: p?.rNeutralOhmPerKm?.toString() ?? '', source: p?.dataSource ?? '',
@@ -55,7 +61,6 @@ export const fromForm = (f: Form, poles: [string, string], keep: SpanProps | und
   const parallel = check(tr('span.parallel'), f.parallel);
   if (parallel !== undefined && !Number.isInteger(parallel)) errors.push(tr('span.parallelInteger'));
   const props: SpanProps = { poles };
-  if (f.system) props.system = f.system;
   if (f.cableKind) props.cableKind = f.cableKind;
   if (f.material) props.material = f.material;
   const sec = check(tr('span.sectionName'), f.section); if (sec !== undefined) props.crossSectionMm2 = sec;
@@ -70,6 +75,10 @@ export const fromForm = (f: Form, poles: [string, string], keep: SpanProps | und
   // C0 (G1): the span's library cable type (reference, exact snapshot, overrides, verification) is not
   // edited by this form and is kept exactly as stored
   if (keep?.cableType !== undefined) props.cableType = keep.cableType;
+  // the supply system is stored when it was stored already or is chosen other than the default; a
+  // span saved without one keeps none (it is read with the default 3ph+N anyway): saving the form
+  // does not add a value the user did not change
+  if (f.system && (f.system !== DEFAULT_SUPPLY_SYSTEM || keep?.system !== undefined)) props.system = f.system;
   // an unresolved cable type merge stays unresolved: saving this form does not choose a cable type
   if (keep && cableTypeMergeConflict(keep)) {
     props.mergedFrom = keep.mergedFrom;
@@ -158,20 +167,29 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, picking]);
 
-  const draft = useMemo(() => (a && b ? fromForm(form, [a, b], stored, t) : null), [form, a, b, stored, t]);
-  // live check of this span with the values in the form (nothing saved): the E2 result of the
-  // drawing as it would be with them
+  // (t is a new function on every render: the draft follows the language, not t's identity, so the
+  // live result below is calculated again only when a value changes)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const draft = useMemo(() => (a && b ? fromForm(form, [a, b], stored, t) : null), [form, a, b, stored, locale]);
+  // the drawing as «حفظ» would leave it (nothing saved): calculated at once by E2 for this sheet's
+  // check AND shared with the drawing, the panel and the preview (spanEditStore) while the sheet is open
+  const base = useMemo(() => ({ elements, connectionDistances, distanceFlags, electrical }), [elements, connectionDistances, distanceFlags, electrical]);
+  const edited = useMemo(() => (cable && draft && spanId ? applySpanEdit(base, { cableId: cable.id, index, props: draft.props, length: form.length, confirmMeasured }) : null),
+    [base, cable, draft, spanId, index, form.length, confirmMeasured]);
+  const setEditPreview = useSpanEditPreview((st) => st.setPreview);
+  useLayoutEffect(() => { setEditPreview(edited ? { base, doc: edited } : null); }, [base, edited, setEditPreview]);
+  useEffect(() => () => setEditPreview(null), [setEditPreview]);
   const preview = useMemo(() => {
-    if (!cable || !draft || !spanId) return null;
-    const els = elements.map((e) => (e.id === cable.id ? withSpanProps(cable, spanId, draft.props) : e));
-    const d = { ...connectionDistances };
-    if (form.length.trim()) d[distKey] = form.length.trim(); else delete d[distKey];
-    const flags = { ...distanceFlags };
-    if (form.length.trim() !== (connectionDistances[distKey] ?? '') || confirmMeasured) delete flags[distKey];
-    const r = voltageView({ elements: els, connectionDistances: d, distanceFlags: flags, electrical });
+    if (!cable || !edited) return null;
+    const r = cachedVoltageView(edited);
     const circuit = r.circuits.find((c) => c.spans.some((s) => s.cableId === cable.id && s.index === index));
-    return { span: r.bySpan.get(spanKey(cable.id, index)), circuit };
-  }, [elements, connectionDistances, electrical, distanceFlags, confirmMeasured, cable, spanId, index, form, distKey, draft]);
+    // E2 does not calculate a circuit until every span of it has its data: the OTHER spans that hold it
+    // back (E2's blockedBy), so a complete span here is not taken for a span whose cable was not read
+    const key = spanKey(cable.id, index);
+    const blocked = new Set(r.study.circuits.find((c) => c.id === circuit?.circuit.id)?.solve.blockedBy ?? []);
+    const others = circuit?.spans.filter((x) => x.key !== key && blocked.has(x.key)) ?? [];
+    return { span: r.bySpan.get(key), circuit, others, ownBlocked: blocked.has(key) };
+  }, [edited, cable, index]);
 
   if (!cable || !a || !b || !spanId || !draft) return null;
 
@@ -192,10 +210,11 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
     saveHistory();
     // review / inherited marks are cleared: the user has looked at the values and saved them.
     // A record without any electrical value is not kept (editing only the length leaves the cable as it was).
-    const next = hasElectrical(draft.props) || draft.props.legacyV2 !== undefined ? draft.props : undefined;
+    // exactly what the live result was calculated with (utils/spanEdit.ts)
+    const next = spanRecordToSave(draft.props);
     if (next || stored) updateElement(cable.id, withSpanProps(cable, spanId, next));
-    const len = form.length.trim();
-    if (len && (len !== connectionDistances[distKey] || (lengthEstimated && confirmMeasured))) updateConnectionDistance(distKey, len);
+    const len = lengthToSave(form.length, connectionDistances[distKey], lengthEstimated, confirmMeasured);
+    if (len !== undefined) updateConnectionDistance(distKey, len);
     saveHistory();
     onClose();
   };
@@ -260,7 +279,7 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
           <Field label={t('span.system')} group>
             <div className="ui-segment self-start" role="radiogroup" aria-label={t('span.system')}>
               {([['3ph4w', t('span.system3')], ['1ph2w', t('span.system1')]] as const).map(([v, l]) => (
-                <button key={v} type="button" role="radio" aria-checked={form.system === v} data-span-system={v} className={`ui-segment-item ${form.system === v ? 'is-active' : ''}`} onClick={() => set('system', form.system === v ? '' : v)}>{l}</button>
+                <button key={v} type="button" role="radio" aria-checked={form.system === v} data-span-system={v} className={`ui-segment-item ${form.system === v ? 'is-active' : ''}`} onClick={() => set('system', v)}>{l}</button>
               ))}
             </div>
           </Field>
@@ -322,7 +341,10 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
             {s && s.computable && s.provisional && s.warnings.length > 0 && (
               <ul className="list-disc ps-5 text-amber-900" data-span-provisional>{s.warnings.map((w) => <li key={w}>{t('span.provisional', { reason: warningLabel(w, t) })}</li>)}</ul>
             )}
-            {s && s.reasons.length > 0 && preview?.circuit?.status === 'ok' && (
+            {s && s.reasons.length > 0 && preview?.circuit?.status === 'ok' && !preview.ownBlocked && preview.others.length > 0 && (
+              <p className="text-amber-900" data-span-blocked-by={preview.others.map((x) => x.key).join(' ')}>{t('span.blockedByOthers', { list: preview.others.map((x) => `${name(x.fromPole)}–${name(x.toPole)}`).join(t('common.listSep')) })}</p>
+            )}
+            {s && s.reasons.length > 0 && preview?.circuit?.status === 'ok' && (preview.ownBlocked || preview.others.length === 0) && (
               <div>
                 <p className="font-medium text-ios-label">{t('span.missingTitle')}</p>
                 <ul className="list-disc ps-5 text-ios-secondary" data-span-reasons>{s.reasons.map((m) => <li key={m}>{reasonLabel(m, t)}</li>)}</ul>
@@ -360,7 +382,8 @@ export const spanSummary = (p: SpanProps | undefined, tr: Tr = AR_TR): string =>
   if (p.cableType) parts.push(tr('defaultCable.summary', { name: `\u2068${p.cableType.snapshot.name}\u2069`, n: p.cableType.revision }));
   if (p.material || p.crossSectionMm2) parts.push(`${p.material === 'cu' ? 'Cu' : p.material === 'al' ? 'Al' : ''} ${p.crossSectionMm2 ?? '?'} mm²`.trim());
   if (p.parallel && p.parallel > 1) parts.push(`×${p.parallel}`);
-  if (p.system) parts.push(p.system === '3ph4w' ? '3φ+N' : '1φ+N');
+  // the stored supply system, or (with the span's other data) the default 3ph+N it is calculated with
+  if (p.system || parts.length) parts.push(supplySystemOf(p) === '3ph4w' ? '3φ+N' : '1φ+N');
   if (p.rOhmPerKm) parts.push(`R ${p.rOhmPerKm}`);
   return parts.length ? parts.join(' · ') : tr('span.summaryIncomplete');
 };

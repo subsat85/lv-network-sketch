@@ -78,7 +78,7 @@ export const goldenCases = (): GoldenCase[] => {
       const k = [p, e.poleIds[i + 1]].sort().join('_');
       if (rnd(7) !== 0) distances[k] = ['30', '40', '45.5', '50', '1', '60', 'abc'][rnd(7)];
     });
-    const settings: ElectricalSettings = { ...DEFAULT_ELECTRICAL, powerFactor: rnd(5) ? 0.9 : undefined, conductorTempC: rnd(5) ? 70 : undefined, singlePhaseMode: rnd(3) ? 'worst' : 'balanced' };
+    const settings: ElectricalSettings = { ...DEFAULT_ELECTRICAL, limitPercent: 5 /* the settings the golden record was made with (the default is 8 % since) */, powerFactor: rnd(5) ? 0.9 : undefined, conductorTempC: rnd(5) ? 70 : undefined, singlePhaseMode: rnd(3) ? 'worst' : 'balanced' };
     out.push({ name: `net${t}`, elements: norm, distances, settings });
   }
   return out;
@@ -134,7 +134,7 @@ export const goldenTreeCases = (): GoldenCase[] => {
       });
       return c;
     });
-    const settings: ElectricalSettings = { ...DEFAULT_ELECTRICAL, powerFactor: [0.85, 0.9, 1][rnd(3)], conductorTempC: [20, 70, 90][rnd(3)], singlePhaseMode: rnd(3) ? 'worst' : 'balanced' };
+    const settings: ElectricalSettings = { ...DEFAULT_ELECTRICAL, limitPercent: 5 /* the settings the golden record was made with (the default is 8 % since) */, powerFactor: [0.85, 0.9, 1][rnd(3)], conductorTempC: [20, 70, 90][rnd(3)], singlePhaseMode: rnd(3) ? 'worst' : 'balanced' };
     out.push({ name: `tree${t}`, elements: norm, distances, settings });
   }
   return out;

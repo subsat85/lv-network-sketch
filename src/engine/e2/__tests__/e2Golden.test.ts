@@ -7,6 +7,9 @@ import { digest, e2Raw } from './e2GoldenDigest';
 // numbers, phasors, reasons and structure E2 gave at bbfe219 (recorded from that commit, before
 // this change), with no phase allocation as the app had then. And the results with each
 // Single-Phase Load Allocation Method are recorded too (regression record of this change).
+// A span saved without a supply system is read with the approved default, 3ph+N: for the 12 networks
+// that have such spans the record is bbfe219's E2 result with '3ph4w' written on them (the same
+// equations; only the missing input now has its default).
 const golden = JSON.parse(readFileSync(new URL('./fixtures/e2-golden.json', import.meta.url), 'utf8')) as Record<'noAllocation' | 'worst' | 'balanced', Record<string, string>>;
 const cases = [...goldenCases(), ...goldenTreeCases()];
 

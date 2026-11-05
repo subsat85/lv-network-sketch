@@ -121,9 +121,11 @@ export const buildNetwork = (b: BuildInput): { circuits: E2Circuit[]; issues: Da
     // a conversion request stored on a value is not carried out in the calculation: the value is used as entered
     for (const property of typed?.conversionNotApplied ?? [])
       issues.push({ code: 'cable-type:conversion-not-applied', severity: 'reported', target: { kind: 'span', id: br.key }, params: { property } });
+    // the supply system as read (the stored one, or the default 3ph+N for a span saved without one)
+    const sys = br.system.value;
     const resolveProps: SpanProps | undefined = typed && props
-      ? { poles: props.poles, ...(props.parallel !== undefined ? { parallel: props.parallel } : {}), ...(props.system ? { system: props.system } : {}) }
-      : props;
+      ? { poles: props.poles, ...(props.parallel !== undefined ? { parallel: props.parallel } : {}), ...(sys ? { system: sys } : {}) }
+      : props && !props.system && sys ? { ...props, system: sys } : props;
     const resolved = resolveSpan(br.key, resolveProps, entry, sel, settings, origin);
     const blocked: Resolved = { reason: 'cable-type-conflict', warnings: [] };
     const rs = conflict ? { ...resolved, r: blocked, x: blocked, rn: blocked, xn: blocked, np: blocked, nN: blocked, issues: [] } : resolved;
@@ -141,7 +143,7 @@ export const buildNetwork = (b: BuildInput): { circuits: E2Circuit[]; issues: Da
     ];
     const inputs: InputRef[] = [
       ...(L !== undefined ? [{ name: 'L', element: br.key, provenance: 'project', value: L } as InputRef] : []),
-      ...(br.system.value ? [{ name: 'system', element: br.key, provenance: 'project', value: br.system.value } as InputRef] : []),
+      ...(br.system.value ? [{ name: 'system', element: br.key, provenance: br.system.provenance === 'default' ? 'default' : 'project', value: br.system.value } as InputRef] : []),
     ];
     const system = br.system.value;
     let phase: Phase | undefined, topologyReason: UnavailableReason | undefined;

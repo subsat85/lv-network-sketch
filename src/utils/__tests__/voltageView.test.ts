@@ -24,7 +24,7 @@ let k = 0;
 const sub = (poleId: string, variant: 'circle' | 'square', count = 1, label = '', color = RED): ConsumerElement =>
   ({ id: `u${++k}`, type: 'consumer', x: 0, y: 0, poleId, color, count, variant, label, strokeColor: color, fillColor: color, strokeWidth: 2 });
 const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, rOhmPerKm: R, xOhmPerKm: X, rNeutralOhmPerKm: R, system: '3ph4w', parallel: 1, dataSource: 'test' };
-const SET: ElectricalSettings = { ...DEFAULT_ELECTRICAL, powerFactor: PF };
+const SET: ElectricalSettings = { ...DEFAULT_ELECTRICAL, powerFactor: PF, limitPercent: 5 }; // the lengths below are chosen for a 5 % limit (the default is 8 %)
 const withProps = (els: DrawingElement[], per: Record<string, Partial<SpanProps>> = {}, base: Omit<SpanProps, 'poles'> = AL95) =>
   normalizeElements(els).map((e) => {
     if (e.type !== 'cable') return e;

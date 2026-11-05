@@ -7,10 +7,11 @@ import { planDefaultFill } from '../../utils/defaultCable';
 import { normalizeElements, withSpanProps } from '../../utils/spanModel';
 import { computeVoltageView } from '../../utils/__tests__/vdTestView';
 import { DEFAULT_ELECTRICAL } from '../../utils/electricalSettings';
-import { linkedSpanView, linkedSpansWithoutSystem } from '../VoltageDropPanel';
+import { linkedSpanView } from '../VoltageDropPanel';
 
-// The voltage-drop panel and spans linked to a library cable: E2 calculates them from their snapshot,
-// and a missing supply system is pointed out (never filled in).
+// The voltage-drop panel and spans linked to a library cable: E2 calculates them from their snapshot.
+// A span saved without a supply system is calculated with the default 3ph+N (it is not written on the
+// span, and no cable value is assumed).
 // ALL VALUES ARE SYNTHETIC.
 
 const v = (value: number, basis: string) => ({ value, unit: 'ohm/km', basis, verification: { status: 'unverified' } }) as never;
@@ -36,19 +37,21 @@ describe('spans linked to a library cable in the voltage-drop panel (E2)', () =>
     expect(spans[0].computable).toBe(true);
     expect(spans[0].reasons).toEqual([]);
     const k = els.find((e) => e.id === 'k') as CableElement;
-    expect(linkedSpanView(k.spanProps![k.spanIds![0]])).toEqual({ linked: true, systemMissing: false });
-    expect(linkedSpansWithoutSystem(els)).toBe(0);
+    expect(linkedSpanView(k.spanProps![k.spanIds![0]])).toEqual({ linked: true });
   });
-  it('2. linked, no system: pointed out (nothing assumed); no value is computed for it', () => {
+  it('2. linked, no system stored: calculated with the default 3ph+N (the same as 3ph+N stored)', () => {
     const els = drawing([linkSpanCable(undefined, ['T', 'A'], REV, 1), linkSpanCable({ poles: ['A', 'B'], system: '1ph2w' }, ['A', 'B'], REV, 1)]);
     const spans = spansOf(els);
     const k = els.find((e) => e.id === 'k') as CableElement;
-    expect(linkedSpanView(k.spanProps![k.spanIds![0]])).toEqual({ linked: true, systemMissing: true });
-    expect(linkedSpansWithoutSystem(els)).toBe(1);
-    expect(spans[0].computable).toBe(false);
-    expect(spans[0].dropV).toBeUndefined();
-    expect(spans[0].reasons.length).toBeGreaterThan(0);
-    // the system was not filled in, and parallel was not touched
+    expect(linkedSpanView(k.spanProps![k.spanIds![0]])).toEqual({ linked: true });
+    // exactly what 3ph+N stored on it gives (here a three-phase subscriber behind the stored 1ph+N span:
+    // the circuit is refused either way, and the stored 1ph+N is kept and used)
+    const explicit = spansOf(drawing([linkSpanCable({ poles: ['T', 'A'], system: '3ph4w' }, ['T', 'A'], REV, 1), linkSpanCable({ poles: ['A', 'B'], system: '1ph2w' }, ['A', 'B'], REV, 1)]));
+    expect(spans).toEqual(explicit);
+    // a valid circuit: calculated
+    const ok = spansOf(drawing([linkSpanCable(undefined, ['T', 'A'], REV, 1), linkSpanCable(undefined, ['A', 'B'], REV, 1)]));
+    expect(ok.map((x) => [x.computable, x.reasons.length])).toEqual([[true, 0], [true, 0]]);
+    // the system was not written on the span, and parallel was not touched
     expect(k.spanProps![k.spanIds![0]].system).toBeUndefined();
     expect(k.spanProps![k.spanIds![0]].parallel).toBeUndefined();
   });
@@ -56,22 +59,21 @@ describe('spans linked to a library cable in the voltage-drop panel (E2)', () =>
     const own: SpanProps = { poles: ['T', 'A'], system: '3ph4w', material: 'al', crossSectionMm2: 120 };
     const els = drawing([own, { poles: ['A', 'B'], system: '3ph4w', rOhmPerKm: 0.3, xOhmPerKm: 0.07, dataSource: 'test' }]);
     const spans = spansOf(els);
-    expect(linkedSpanView(own)).toEqual({ linked: false, systemMissing: false });
+    expect(linkedSpanView(own)).toEqual({ linked: false });
     expect(spans[0].reasons).toEqual(['impedance-missing']);
-    expect(linkedSpanView(undefined)).toEqual({ linked: false, systemMissing: false });
+    expect(linkedSpanView(undefined)).toEqual({ linked: false });
   });
-  it('a span linked to the default cable without a system (none is filled in) is pointed out until the user sets one', () => {
+  it('spans linked to the default cable (no system written): calculated at once with the default 3ph+N', () => {
     const d = { typeId: REV.id, revision: REV.revision, snapshot: REV, selectedAt: 1 };
     const els = drawing([undefined, undefined]);
     const filled = planDefaultFill(els, d, 1);
-    const after = els.map((e) => (e.id === 'k' ? { ...e, ...filled.updates[0].changes } : e));
-    expect(linkedSpansWithoutSystem(after)).toBe(2);
+    const after = els.map((e) => (e.id === 'k' ? { ...e, ...filled.updates[0].changes } : e)) as typeof els;
     const k = after.find((e) => e.id === 'k') as CableElement;
-    const set = withSpanProps(k, k.spanIds![0], { ...k.spanProps![k.spanIds![0]], system: '3ph4w' });
-    expect(linkedSpansWithoutSystem(after.map((e) => (e.id === 'k' ? set : e)))).toBe(1);
+    expect(k.spanIds!.map((id) => k.spanProps![id].system)).toEqual([undefined, undefined]);
+    expect(spansOf(after).map((s) => s.computable)).toEqual([true, true]);
   });
   it('a cable type record that cannot be read is not treated as linked', () => {
     const bad = { poles: ['T', 'A'], cableType: { typeId: 'x', revision: 1, snapshot: {} } } as unknown as SpanProps;
-    expect(linkedSpanView(bad)).toEqual({ linked: false, systemMissing: false });
+    expect(linkedSpanView(bad)).toEqual({ linked: false });
   });
 });

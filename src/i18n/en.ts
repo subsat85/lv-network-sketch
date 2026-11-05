@@ -322,6 +322,7 @@ export const en: Dict = {
     cumulative: ' — cumulative at its end {v} V',
     provisional: 'Estimated: {reason}',
     missingTitle: 'Data missing for the calculation:',
+    blockedByOthers: 'This section\'s data are read, but the network is not calculated until the data of these sections are complete: {list}',
     notInNetwork: 'This section is not part of a connected network.',
     copyPrevious: 'Copy from the Previous Section',
     clear: 'Clear Properties',
@@ -1307,8 +1308,6 @@ export const en: Dict = {
     },
   },
   defaultCable: {
-    noSystem: 'Supply system not set: E2 cannot calculate this section. Set it by hand in the section properties («Edit»).',
-    noSystemCount: '{n} section(s) linked to a library cable have no supply system: E2 cannot calculate them. Set the system by hand in each section\'s properties («Edit» in the sections list); no system is assumed.',
     badge: 'Default cable (revision {n})',
     set: 'Set revision {n} as the default cable',
     setFailed: 'The default cable could not be saved; nothing changed.',

@@ -46,7 +46,8 @@ const fromForm = (f: SettingsForm, tr: Tr): { changes: Partial<ElectricalSetting
   const req = (label: string, s: string, ok: (v: number) => boolean) => { const v = n(s); if (v === undefined || !Number.isFinite(v) || !ok(v)) { errors.push(label); return undefined; } return v; };
   const opt = (label: string, s: string, ok: (v: number) => boolean) => { const v = n(s); if (v === undefined) return undefined; if (!Number.isFinite(v) || !ok(v)) { errors.push(label); return undefined; } return v; };
   const changes: Partial<ElectricalSettings> = {
-    powerFactor: opt(tr('vd.field.pf'), f.pf, (v) => v > 0 && v <= 1),
+    // required (a project always has one: 0.9 by default)
+    powerFactor: req(tr('vd.field.pf'), f.pf, (v) => v > 0 && v <= 1),
     conductorTempC: opt(tr('vd.field.temp'), f.temp, (v) => v >= -40 && v <= 250),
     limitPercent: req(tr('vd.field.limit'), f.limit, (v) => v > 0 && v < 100),
     nearLimitFraction: (req(tr('vd.field.near'), f.near, (v) => v > 0 && v <= 100) ?? 80) / 100,
@@ -117,21 +118,9 @@ export const voltageDropReportText = (r: VoltageView, name: (id: string) => stri
   return lines.join('\n');
 };
 
-/** a span linked to a library cable (a readable snapshot), and whether it has no supply system */
-export const linkedSpanView = (props: SpanProps | undefined) => {
-  const linked = !!props?.cableType && spanCableTypeProblem(props.cableType) === null;
-  return { linked, systemMissing: linked && !props!.system };
-};
-/** spans linked to a library cable without a supply system: E2 cannot calculate them (nothing is assumed) */
-export const linkedSpansWithoutSystem = (elements: readonly { type: string }[]): number => {
-  let n = 0;
-  for (const e of elements) {
-    if (e.type !== 'cable') continue;
-    const c = e as CableElement;
-    for (let i = 0; i < c.poleIds.length - 1; i++) if (linkedSpanView(spanAt(c, i).props).systemMissing) n++;
-  }
-  return n;
-};
+/** a span linked to a library cable (a readable snapshot). A span without a stored supply system is
+ *  calculated with the default 3ph+N (utils/supplySystem.ts), so it is no longer pointed out. */
+export const linkedSpanView = (props: SpanProps | undefined) => ({ linked: !!props?.cableType && spanCableTypeProblem(props.cableType) === null });
 
 export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const { elements, electrical, updateElectricalSettings, saveHistory, showVoltageDrop, setShowVoltageDrop, updateSymbolModifiers, updateElements, updateElement } = useDrawingStore();
@@ -161,7 +150,6 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
   const [copied, setCopied] = useState(false);
   // E2 study (preview), read only: a separate panel (decision D-C)
   const [showE2, setShowE2] = useState(false);
-  const noSystem = useMemo(() => linkedSpansWithoutSystem(elements), [elements]);
   const parsed = fromForm(form, t);
   const dirty = JSON.stringify(toForm(electrical)) !== JSON.stringify(form);
   const setF = (k: keyof SettingsForm, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -211,7 +199,6 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
           {/* E2 results (spans linked to the library are calculated there), at the top */}
           <div className="mb-3 flex flex-col gap-2" data-vd-e2-top>
             <button type="button" className="ui-tinted-btn !w-auto self-start" data-vd-action="open-e2" onClick={() => setShowE2(true)}>{t('e2.open')}</button>
-            {noSystem > 0 && <p className="rounded-ctl bg-amber-50 px-3 py-2 text-[13px] text-amber-900" role="alert" data-vd-linked-no-system={noSystem}>⚠ {t('defaultCable.noSystemCount', { n: noSystem })}</p>}
           </div>
           {/* settings */}
           <section aria-label={t('vd.settings.title')} className="mb-4 rounded-ctl border border-ios-separator p-3">
@@ -407,9 +394,8 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
               )}
 
               {c.spans.length > 0 && (() => {
-                  // spans E2 could not calculate (with E2's reasons), and linked spans without a supply system
-                  const viewOf = (sp: VdSpan) => { const cab = cables.get(sp.cableId); return linkedSpanView(cab ? spanAt(cab, sp.index).props : undefined); };
-                  const flagged = c.status === 'ok' ? c.spans.filter((s) => s.reasons.length > 0 || viewOf(s).systemMissing).length : 0;
+                  // spans E2 could not calculate (with E2's reasons)
+                  const flagged = c.status === 'ok' ? c.spans.filter((s) => s.reasons.length > 0).length : 0;
                   return (
                 <details className="border-t border-ios-separator" open={flagged > 0}>
                   <summary className="cursor-pointer px-3 py-2 text-[13px] font-medium text-ios-label">{t('vd.spans', { n: c.spans.length, m: flagged })}</summary>
@@ -429,7 +415,6 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
                             {(props?.review ?? []).map((r) => <div key={r} className="text-amber-900">⚠ {reviewLabel(r, t)}</div>)}
                             {props?.inherited && <div className="text-ios-secondary">{t('vd.inherited')}</div>}
                             {view.linked && <div className="text-ios-blue" data-vd-span-e2>{t('defaultCable.spanE2')}</div>}
-                            {view.systemMissing && <div className="font-medium text-amber-900" data-vd-span-no-system>⚠ {t('defaultCable.noSystem')}</div>}
                           </div>
                           <button type="button" className="ui-tinted-btn !w-auto !min-h-[30px] flex-shrink-0 !px-3" data-vd-action="edit-span" onClick={() => setEditing({ cableId: sp.cableId, index: sp.index })}>{t('common.edit')}</button>
                         </li>

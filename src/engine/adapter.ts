@@ -8,6 +8,7 @@ import { buildNetwork, type Network, type NetSpan } from '../utils/network';
 import { networkOptions, spanKey, spanLength } from '../utils/spanLength';
 import { consumerLoad, SINGLE_PHASE_AMPS } from '../utils/loads';
 import { pairKey } from '../utils/cableSegments';
+import { DEFAULT_SUPPLY_SYSTEM } from '../utils/supplySystem';
 import type { ElectricalNetwork, NetBranch, NetBus, NetCircuit, NetLoad, ProjectDocument, Sourced } from './model';
 
 // a single-phase subscriber's load is the project's default single-phase nominal load (a project
@@ -55,7 +56,8 @@ export const toNetwork = (doc: ProjectDocument, settings: ElectricalSettings): {
       key: spanKey(s.cableId, s.index), cableId: s.cableId, index: s.index, spanId: s.spanId,
       fromPole: s.fromPole, toPole: s.toPole, fromBus: s.fromBus, toBus: s.toBus, color: s.color,
       lengthM, ...(len.missing ? { lengthMissing: len.missing } : {}),
-      system: props?.system ? { value: props.system, provenance: 'project', status: 'complete' } : { provenance: 'missing', status: 'missing' },
+      // a span saved without a supply system is read with the approved default, 3ph+N (supplySystem.ts)
+      system: props?.system ? { value: props.system, provenance: 'project', status: 'complete' } : { value: DEFAULT_SUPPLY_SYSTEM, provenance: 'default', status: 'complete', note: 'default-supply-system' },
     };
   };
 

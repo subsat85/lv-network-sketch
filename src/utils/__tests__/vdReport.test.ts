@@ -17,14 +17,16 @@ describe('voltage-drop report text', () => {
       { id: 'u', type: 'consumer', x: 0, y: 0, poleId: 'B', color: '#ff0000', count: 1, variant: 'square', label: '63', strokeColor: '#f00', fillColor: '#f00', strokeWidth: 2 } as DrawingElement,
       { id: 'w', type: 'consumer', x: 0, y: 0, poleId: 'C', color: '#0000ff', count: 1, variant: 'square', label: '20', strokeColor: '#00f', fillColor: '#00f', strokeWidth: 2 } as DrawingElement]);
     const c = els.find((e) => e.id === 'c') as CableElement;
-    // c: both spans with data; d: no supply system (E2 gives no value for it, and says why)
+    // c: both spans with data; d: no span data at all (read with the default 3ph+N; no R / X is assumed:
+    // E2 gives no value for it, and says why)
     els = els.map((e) => (e.id === 'c' ? [0, 1].reduce((x, i) => withSpanProps(x, x.spanIds![i], { poles: [x.poleIds[i], x.poleIds[i + 1]], ...DATA }), c) : e));
     const r = computeVoltageView(els, { A_T: '100', A_B: '50', C_T2: '40' }, { ...DEFAULT_ELECTRICAL, powerFactor: 0.9 });
     const text = voltageDropReportText(r, poleNamer(els), new Map(els.filter((e): e is CableElement => e.type === 'cable').map((x) => [x.id, x])));
     expect(text).toContain('المصدر محول 1');
     expect(text).toContain('عمود 1 (a): 2.40 V (1.04%)'); // 63 A, 100 m: the E2 phasor value (≈ 63 × 0.380903 × 0.1)
-    expect(text).toContain('عمود 3: غير قابل للحساب (نظام التغذية غير محدد)');
-    expect(text).toContain('الشبكة 2: غير قابل للحساب (نظام التغذية غير محدد)'); // not «computed»: E2 has no value for it
+    expect(text).toContain('عمود 3: غير قابل للحساب (ممانعة الطور (R أو X) غير معروفة)');
+    expect(text).toContain('الشبكة 2: غير قابل للحساب (ممانعة الطور (R أو X) غير معروفة)'); // not «computed»: E2 has no value for it
+    expect(text).not.toContain('نظام التغذية غير محدد'); // the default 3ph+N is used
     expect(text).not.toContain('IEC 60228'); // no conductor table any more
     expect(text).toContain('لا يعني أن الكابل آمن حراريًا'); // approved term «كابل»
     expect(text).toContain('نموذج الحمل: تيار ثابت');

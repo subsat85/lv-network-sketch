@@ -34,7 +34,8 @@ const ISSUES: NetworkIssue[] = [
 ];
 
 const pole = (id: string, symbolId = 'lv-pole') => ({ id, type: 'symbol', symbolId, x: 0, y: 0, width: 24, height: 24, strokeColor: '#000', fillColor: '#fff', strokeWidth: 2 }) as DrawingElement;
-// network 1 (red): T–A–B with data on both spans; network 2 (blue): T2–C without a supply system
+// network 1 (red): T–A–B with data on both spans; network 2 (blue): T2–C with no span data (read with the
+// default supply system 3ph+N; no R / X is assumed, so it is not calculated)
 const network = () => {
   const DATA = { system: '3ph4w' as const, cableKind: 'abc' as const, material: 'al' as const, crossSectionMm2: 95, rOhmPerKm: 0.38448, xOhmPerKm: 0.08, parallel: 1, dataSource: 'test' };
   let els = normalizeElements([pole('T', 'transformer'), pole('A'), pole('B'), pole('T2', 'transformer'), pole('C'),
@@ -101,7 +102,8 @@ describe('voltage drop texts', () => {
     expect(text.split('\n')[0]).toBe('Voltage Drop Report');
     expect(text).toContain('source Transformer 1 (transformer)');
     expect(text).toContain('  Pole 1 (a): 2.40 V (1.04%)'); // the same numbers as the Arabic report
-    expect(text).toContain(`  Pole 3: cannot be calculated (${en.e2.reason['system-missing']})`);
+    expect(text).toContain(`  Pole 3: cannot be calculated (${en.e2.reason['impedance-missing']})`);
+    expect(text).not.toContain(en.e2.reason['system-missing']); // the default 3ph+N is used, never «not set»
     expect(text).toContain('Engine E2');
     expect(text).not.toContain('IEC 60228'); // no conductor table any more
     expect(text).toContain('Load model: Constant current');
