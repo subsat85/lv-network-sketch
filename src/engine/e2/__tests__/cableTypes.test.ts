@@ -5,7 +5,6 @@ import { assignCableType, createCableType, editCableType, latestRevision, setCab
 import { cableTypeEntry } from '../catalogue/cableTypes';
 import { issueTextKey } from '../../../utils/e2Presentation';
 import { runStudyE2 } from '../index';
-import { runStudy } from '../../index';
 import type { CircuitResult } from '../model';
 import type { PhaseAllocation } from '../phases';
 import { drawing, REF, TOL } from './references';
@@ -201,15 +200,6 @@ describe('engineering correction: R, X, RN, XN reach the AC equations exactly as
     expect(h2.revisions[0]).toEqual(latestRevision(h1));
     expect(JSON.stringify(used)).toBe(usedBefore);
     expect(inputOf(study({ ...SPAN, cableType: used.cableType }, { tempC: 70 }).c, 'R')!.value).toBe(0.5);
-  });
-  it('C11. E1 is not changed: the same results with or without a cable type on the span', () => {
-    const t = full();
-    const legacy = { ...SPAN, cableKind: 'abc' as const, material: 'al' as const, crossSectionMm2: 70, rOhmPerKm: 0.5, xOhmPerKm: 0.08, rNeutralOhmPerKm: 0.6, dataSource: 'synthetic' };
-    const plain = drawing({ Lm: 100, props: legacy, consumers: [{ variant: 'circle', count: 5 }], electrical: { conductorTempC: 70 } }).doc;
-    // the same document (same span id), only the cable type added to the span
-    const typed = { ...plain, elements: plain.elements.map((e) => (e.type === 'cable' ? { ...e, spanProps: Object.fromEntries(Object.entries(e.spanProps!).map(([k, v]) => [k, { ...v, cableType: use(t) }])) } : e)) };
-    expect(JSON.stringify(typed)).toContain('"cableType"');
-    expect(JSON.stringify(runStudy(typed))).toBe(JSON.stringify(runStudy(plain)));
   });
   it('C12. the same inputs give the same phasors, drops and losses as the Stage A catalogue path', () => {
     const t = full({ rn: res(0.5, 'ac'), xn: val(0.08, 'ac-50hz') });

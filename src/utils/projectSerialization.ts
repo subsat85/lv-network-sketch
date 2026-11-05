@@ -94,7 +94,7 @@ const SPAN_NUM_FIELDS = ['crossSectionMm2', 'neutralCrossSectionMm2', 'parallel'
 const spanPropsProblem = (sp: unknown): string | null => {
   if (!isObj(sp)) return t('dialogs.file.notObject');
   if (sp.poles !== undefined && (!Array.isArray(sp.poles) || sp.poles.length !== 2 || !sp.poles.every(isStr))) return 'poles';
-  // X = 0 is an entered value (as in the span form, E1 and E2); the others must be > 0
+  // X = 0 is an entered value (as in the span form and E2); the others must be > 0
   for (const k of SPAN_NUM_FIELDS) if (sp[k] !== undefined && !(isNum(sp[k]) && ((sp[k] as number) > 0 || (k === 'xOhmPerKm' && sp[k] === 0)))) return k;
   if (sp.material !== undefined && sp.material !== 'al' && sp.material !== 'cu') return 'material';
   if (sp.neutralMaterial !== undefined && !['al', 'cu', 'alloy'].includes(sp.neutralMaterial as string)) return 'neutralMaterial';

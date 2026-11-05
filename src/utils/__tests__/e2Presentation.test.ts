@@ -23,13 +23,15 @@ const quantities = (c: CircuitResult): Quantity<unknown>[] => [c.pLossW, c.qAbso
   ...c.spans.flatMap((s) => [...Object.values(s.current), ...Object.values(s.perSetCurrentA), ...Object.values(s.arithmeticSumA), ...Object.values(s.dropV), s.pLossW, s.qAbsorbedVar])];
 
 describe('the input adapter (decision D-B)', () => {
-  it('an existing project, no allocation, the empty catalogue: nothing is filled in', () => {
+  it('an existing project, the allocation method of the project, the empty catalogue: nothing is filled in', () => {
     const r = runE2Study(fourStatusDoc());
     expect(r.inputOrigin).toBe('legacy-project');
     expect(r.catalogueErrors).toEqual([]);
-    // the single-phase subscribers have no phase: their circuit has no voltage result
+    // the single-phase subscribers are placed by the project's method (Worst Case: all on phase a);
+    // their neutral current needs the neutral impedance, which is not known: no value, never assumed
+    expect(r.allocationMethod).toBe('worst');
     const green = byColour(r, 'k3');
-    expect(green.completeness).toMatchObject({ status: 'unavailable', reason: 'phase-allocation-missing' });
+    expect(green.completeness).toMatchObject({ status: 'unavailable', reason: 'neutral-impedance-missing' });
     for (const q of quantities(green).filter((q) => q.status === 'unavailable' || q.status === 'not-run')) expect(q.value).toBeUndefined();
     // no catalogue value anywhere
     expect(JSON.stringify(r)).not.toContain('"provenance":"catalogue"');
@@ -104,14 +106,14 @@ describe('spans', () => {
 });
 
 describe('issues', () => {
-  it('every issue is kept, those that block first; the E1 network fields, source and circuits are kept', () => {
+  it('every issue is kept, those that block first; the network fields, source and circuits are kept', () => {
     const r = runE2Study(networkIssueDoc());
     const v = issueViews(r);
     expect(v).toHaveLength(r.issues.length);
     const loop = v.find((i) => i.code === 'network:loop')!;
-    expect(loop).toMatchObject({ severity: 'reported', source: 'e1-network', fields: [['poleIds', 'A,B,T']] });
+    expect(loop).toMatchObject({ severity: 'reported', source: 'drawing-network', fields: [['poleIds', 'A,B,T']] });
     expect(loop.circuitIds).toEqual([r.circuits[0].id]);
-    expect(v.find((i) => i.code === 'network:legacy-jumper')).toMatchObject({ target: { kind: 'element', id: 'L' }, source: 'e1-network', fields: [['elementId', 'L']] });
+    expect(v.find((i) => i.code === 'network:legacy-jumper')).toMatchObject({ target: { kind: 'element', id: 'L' }, source: 'drawing-network', fields: [['elementId', 'L']] });
     const four = issueViews(runE2Study(fourStatusDoc()));
     expect(four[0]).toMatchObject({ code: 'parallel-invalid', severity: 'blocks', target: { kind: 'span', id: 'k4#0' }, fields: [['value', '1.5']] });
     expect(four.find((i) => i.code === 'network:orphan-consumer')).toMatchObject({ severity: 'provisional', fields: [['consumerId', 'orphan'], ['poleId', 'F'], ['color', '#123456']] });
@@ -188,11 +190,11 @@ describe('names and reason groups', () => {
   });
   it('a missing input: its input, no entered value', () => {
     const c = r.circuits.find((x) => x.completeness.status === 'unavailable')!;
-    const g = reasonGroups(c, r.issues).groups.find((x) => x.reason === 'phase-allocation-missing')!;
-    expect(g).toMatchObject({ status: 'unavailable', inputKey: 'e2.inputOf.phase-allocation-missing' });
-    expect(g.blockedBy).toContain('uC');
+    const g = reasonGroups(c, r.issues).groups.find((x) => x.reason === 'neutral-impedance-missing')!;
+    expect(g).toMatchObject({ status: 'unavailable', inputKey: 'e2.inputOf.neutral-impedance-missing' });
+    expect(g.blockedBy).toContain('k3#0');
     // one group per reason: the elements the result names are merged
-    expect(reasonGroups(c, r.issues).groups.filter((x) => x.reason === 'phase-allocation-missing')).toHaveLength(1);
+    expect(reasonGroups(c, r.issues).groups.filter((x) => x.reason === 'neutral-impedance-missing')).toHaveLength(1);
     expect(g.entered).toBeUndefined();
   });
   it('every reason that is about an input has the name of that input in both languages', () => {

@@ -57,7 +57,7 @@ describe('E2 results: rendering', () => {
     const c = circuitHtml(render(r, d.elements, 'ar'), ids.k3);
     expect(c).toContain('data-e2-q="unavailable"');
     expect(c).not.toMatch(/data-e2-q="unavailable"[^>]*><bdi[^>]*>0/);
-    expect(c).toContain(translate('ar', 'e2.reason.phase-allocation-missing'));
+    expect(c).toContain(translate('ar', 'e2.reason.neutral-impedance-missing'));
     expect(c).not.toMatch(/>0\.00 V</);
   });
 
@@ -94,7 +94,7 @@ describe('E2 results: rendering', () => {
     const nh = render(n, networkIssueDoc().elements, 'ar');
     for (const code of ['network:loop', 'network:legacy-jumper']) expect(nh).toContain(`data-e2-issue="${code}"`);
     expect(nh).toContain(translate('ar', 'e2.issue.network.loop'));
-    expect(nh).toContain('e1-network');
+    expect(nh).toContain('drawing-network');
     expect(nh).toContain('poleIds=A,B,T');
     expect(nh).toContain(n.circuits[0].id);
   });
@@ -131,7 +131,7 @@ describe('E2 results: names, reasons and inputs (rendering)', () => {
   it('the user reads names, not ids: no span key, subscriber id, colour code or circuit id outside the technical details', () => {
     for (const l of ['ar', 'en'] as const) {
       const v = visible(render(r, d.elements, l));
-      for (const raw of ['k1#0', 'k1#1', 'k4#0', 'uA', 'uC', 'uD', '#ff0000', '#0000ff', 'net:', 'parallel-invalid', 'phase-allocation-missing', 'source-unknown']) expect(v, `${l}: ${raw}`).not.toContain(raw);
+      for (const raw of ['k1#0', 'k1#1', 'k4#0', 'uA', 'uC', 'uD', '#ff0000', '#0000ff', 'net:', 'parallel-invalid', 'neutral-impedance-missing', 'source-unknown']) expect(v, `${l}: ${raw}`).not.toContain(raw);
     }
     const v = visible(render(r, d.elements, 'ar'));
     // span: its poles, its number and its cable; subscriber: its kind, count and pole
@@ -142,7 +142,7 @@ describe('E2 results: names, reasons and inputs (rendering)', () => {
 
   it('the ids and codes stay in the technical details', () => {
     const tech = techOnly(render(r, d.elements, 'ar'));
-    for (const raw of ['k1#1', 'k4#0', 'uC', '#ff0000', ids.k4, 'parallel-invalid', 'phase-allocation-missing', 'source-unknown', 'e1-network', 'color=#123456']) expect(tech, raw).toContain(raw);
+    for (const raw of ['k1#1', 'k4#0', 'uC', '#ff0000', ids.k4, 'parallel-invalid', 'neutral-impedance-missing', 'source-unknown', 'drawing-network', 'color=#123456']) expect(tech, raw).toContain(raw);
   });
 
   it('each reason once per circuit, linked from the values it affects', () => {
@@ -154,7 +154,7 @@ describe('E2 results: names, reasons and inputs (rendering)', () => {
     expect(notRun).toContain('id="e2-c4-r1"');
     expect(count(notRun, 'data-e2-ref="1"')).toBeGreaterThanOrEqual(4);
     const unavailable = circuitHtml(html, ids.k3);
-    expect(count(visible(unavailable), translate('ar', 'e2.reason.phase-allocation-missing'))).toBe(1);
+    expect(count(visible(unavailable), translate('ar', 'e2.reason.neutral-impedance-missing'))).toBe(1);
     // the affected values are listed with the group: the nodes and the span of that circuit
     expect(unavailable).toContain(translate('ar', 'e2.group.affected'));
     expect(visible(unavailable)).toContain(translate('ar', 'poles.pole', { n: 3 }));
@@ -169,9 +169,10 @@ describe('E2 results: names, reasons and inputs (rendering)', () => {
     expect(g).toContain('data-e2-input-problem="parallel-invalid"');
   });
 
-  it('a missing input: its name, "missing", and the subscriber it is about', () => {
+  it('a missing input: its name, "missing", the element it is about, and the subscriber on that circuit', () => {
     const g = visible(circuitHtml(render(r, d.elements, 'ar'), ids.k3)).replace(/<[^>]+>/g, '');
-    expect(g).toContain(`${translate('ar', 'e2.inputOf.phase-allocation-missing')} · ${translate('ar', 'e2.group.missing')}`);
+    expect(g).toContain(`${translate('ar', 'e2.inputOf.neutral-impedance-missing')} · ${translate('ar', 'e2.group.missing')}`);
+    expect(g).toContain(translate('ar', 'e2.name.span', { from: translate('ar', 'poles.transformer', { n: 3 }), to: translate('ar', 'poles.pole', { n: 3 }), n: 1, cable: 3 }));
     expect(g).toContain(translate('ar', 'e2.name.consumerSingle', { count: 3, pole: translate('ar', 'poles.pole', { n: 3 }) }));
   });
 

@@ -12,7 +12,7 @@ import { spanAt, withSpanProps } from './spanModel';
 // The default is applied only by explicit actions: a newly drawn span with no properties, the
 // «fill with the default cable» button, and the import of an old drawing (planImport). A span that
 // already has a library cable is never changed by any of them. R / X / Rn / Xn are never copied into
-// the span's own (E1) fields, and no value is derived from a material or a cross-section.
+// the span's own fields, and no value is derived from a material or a cross-section.
 
 export interface DefaultCable {
   typeId: string;

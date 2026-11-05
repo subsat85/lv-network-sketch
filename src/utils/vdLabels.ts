@@ -1,5 +1,5 @@
 import type { CableKind, SpanReview } from '../types/drawing';
-import type { MissingItem, PoleStatus, ProvisionalReason, SettingMissing } from './voltageDrop';
+import type { PoleStatus, VoltageView } from './e2Presentation';
 import type { CircuitStatus, NetworkIssue } from './network';
 import { ar } from '../i18n/ar';
 import { translate, type TKey, type TParams } from '../i18n';
@@ -12,9 +12,6 @@ import { translate, type TKey, type TParams } from '../i18n';
 export type Tr = (key: TKey, params?: TParams) => string;
 export const AR_TR: Tr = (key, params) => translate('ar', key, params);
 
-export const missingLabel = (m: MissingItem, tr: Tr = AR_TR) => tr(`vd.missingItem.${m}`);
-export const provisionalLabel = (r: ProvisionalReason, tr: Tr = AR_TR) => tr(`vd.provisional.${r}`);
-export const settingMissingLabel = (m: SettingMissing, tr: Tr = AR_TR) => tr(`vd.settingMissing.${m}`);
 export const reviewLabel = (r: SpanReview, tr: Tr = AR_TR) => tr(`vd.review.${r}`);
 export const cableKindLabel = (k: CableKind, tr: Tr = AR_TR) => tr(`vd.cableKind.${k}`);
 export const poleStatusLabel = (s: PoleStatus, tr: Tr = AR_TR) => tr(`vd.status.${s}`);
@@ -25,9 +22,6 @@ export const endLinkHint = (k: keyof typeof ar.vd.endLinkHint, tr: Tr = AR_TR) =
 
 // The Arabic tables, for the screens not translated yet. Typed by the data unions: a missing
 // dictionary entry is a TypeScript error.
-export const MISSING_LABEL: Record<MissingItem, string> = ar.vd.missingItem;
-export const PROVISIONAL_LABEL: Record<ProvisionalReason, string> = ar.vd.provisional;
-export const SETTING_MISSING_LABEL: Record<SettingMissing, string> = ar.vd.settingMissing;
 export const REVIEW_LABEL: Record<SpanReview, string> = ar.vd.review;
 export const CABLE_KIND_LABEL: Record<CableKind, string> = ar.vd.cableKind;
 export const POLE_STATUS_LABEL: Record<PoleStatus, string> = ar.vd.status;
@@ -44,6 +38,13 @@ export const LOAD_MODEL_LABEL = { 'constant-current': 'تيار ثابت', 'cons
 export const PROVISIONAL_MARK = '≈';
 /** status symbol shown next to the value (colour is never used for status) */
 export const POLE_STATUS_MARK: Record<PoleStatus, string> = { ok: '✓', near: '⚠', over: '‼', na: '؟' };
+/** before every value calculated with the Worst Case method (the drawing, the preview, the PDF) */
+export const WORST_CASE_MARK = '▲';
+/** the allocation method of the results, with the Worst Case guarantee (how the worst was found) */
+export const methodLabel = (v: Pick<VoltageView, 'method' | 'worstCase'>, tr: Tr = AR_TR): string =>
+  v.method === 'worst'
+    ? `${tr('vd.methodName.worst')}${v.worstCase ? ` — ${tr(`vd.worstCase.${v.worstCase}`)}` : ''}`
+    : tr('vd.methodName.balanced');
 
 export const issueText = (i: NetworkIssue, poleName: (id: string) => string, tr: Tr = AR_TR): string => {
   switch (i.kind) {

@@ -2,20 +2,28 @@
 //
 // This is the ONLY file of the app that imports the E2 engine (src/engine/e2): the approved,
 // documented exception to the purity rule N5 (src/engine/__tests__/purity.test.ts). It imports
-// nothing else of src/engine (E1 stays out of the app).
+// nothing else of src/engine.
 //
-//   project document → runStudyE2 (E1 topology → E2 build → E2 sweep) → E2StudyResult
+//   project document → runStudyE2 (topology → E2 build → E2 sweep) → E2StudyResult
 //                    → the helpers below (names, counts, texts) → E2ResultsPanel
+//                    → voltageView (the per-pole / per-span view) → the voltage-drop panel, the
+//                      drawing overlay, the preview / PDF / share image, the text report, the span
+//                      sheet's live check and the comparison of a proposed subscriber's connection
+// E2 is the only electrical calculation of the app: every voltage-drop value shown anywhere comes
+// from here.
 //
-// Inputs (decision D-B): an existing project ('legacy-project'), the app's catalogue (empty),
-// no catalogue selection, no phase allocation. Nothing missing is filled in, nothing is saved.
+// Inputs: an existing project ('legacy-project'), the app's catalogue (empty), no catalogue
+// selection, the phase allocation of the project's Single-Phase Load Allocation Method.
+// Nothing missing is filled in, nothing is saved.
 // No electrical calculation is done here: every number shown is a Quantity of the E2 result,
 // with its own status; a value that is not there is shown as '—', never as 0.
 
-import { runStudyE2, type E2StudyResult } from '../engine/e2';
+import { runStudyE2, type E2StudyResult, type WorstCaseGuarantee } from '../engine/e2';
 import type { CircuitResult, SpanResult } from '../engine/e2/model';
 import type { InputName, InputRef, Phasor, Quantity, QuantityStatus, UnavailableReason, WarningCode } from '../engine/e2/quantity';
 import type { CableElement, DistanceFlag, DrawingElement, ElectricalSettings } from '../types/drawing';
+import { buildNetwork, type Circuit, type Network, type NetworkIssue } from './network';
+import { networkOptions, spanKey, spanLength } from './spanLength';
 import { ar } from '../i18n/ar';
 import type { TKey, TParams } from '../i18n';
 
@@ -33,9 +41,14 @@ export interface E2DocumentInput {
   electrical: Readonly<ElectricalSettings>;
 }
 
-/** The E2 study of a document, with the inputs of decision D-B. */
+/**
+ * The E2 study of a document: an existing project ('legacy-project'), the app's catalogue (empty),
+ * no catalogue selection, and the phases of the single-phase subscribers from the project's
+ * Single-Phase Load Allocation Method (settings.singlePhaseMode; Equal Phase Current when not stored).
+ */
 export const runE2Study = (d: E2DocumentInput): E2StudyResult =>
-  runStudyE2({ elements: d.elements, connectionDistances: d.connectionDistances, distanceFlags: d.distanceFlags, electrical: d.electrical }, { inputOrigin: 'legacy-project' });
+  runStudyE2({ elements: d.elements, connectionDistances: d.connectionDistances, distanceFlags: d.distanceFlags, electrical: d.electrical },
+    { inputOrigin: 'legacy-project', allocationMethod: d.electrical.singlePhaseMode === 'worst' ? 'worst' : 'balanced' });
 
 // ---------- every code the result can carry, each with its text (checked by the compiler) ----------
 
@@ -294,4 +307,214 @@ export const reasonGroups = (c: CircuitResult, issues: readonly E2Issue[]): { gr
     if (at) { if (!at.kinds.includes(kind)) at.kinds.push(kind); } else g.affected.push({ place, kinds: [kind] });
   }
   return { groups: [...groups.values()], groupOf: (q) => of.get(q) };
+};
+
+// ---------- the voltage-drop view: one row per pole and per span, from the E2 result only ----------
+//
+// Every number here is read from an E2 Quantity (nothing is calculated): a pole's value is the one
+// of its worst phase (the highest phase-to-neutral drop of the node), a span's drop is its largest
+// phase drop, its currents are the E2 phase and neutral currents. A value E2 does not give stays
+// undefined (shown as '—', never 0), with E2's reason.
+
+export type PoleStatus = 'ok' | 'near' | 'over' | 'na';
+export type VdPhase = 'a' | 'b' | 'c';
+const VD_PHASES: readonly VdPhase[] = ['a', 'b', 'c'];
+
+export interface VdPole {
+  poleId: string;
+  bus: string;
+  circuitId: string;
+  /** colour of the cable feeding this point (for display) */
+  color: string;
+  status: PoleStatus;
+  /** worst phase of the node: its drop (V), % of the nominal phase voltage, phase-to-neutral voltage */
+  phase?: VdPhase;
+  dropV?: number;
+  percent?: number;
+  phaseV?: number;
+  /** lowest phase-to-phase voltage of the node, where every line voltage is known */
+  lineV?: number;
+  consumerIds: string[];
+  /** why there is no value (E2's reason) */
+  reason?: UnavailableReason;
+  /** the value is provisional (E2 status), with the warnings it carries */
+  provisional: boolean;
+  warnings: WarningCode[];
+}
+export interface VdSpan {
+  key: string;
+  cableId: string;
+  index: number;
+  spanId: string | undefined;
+  fromPole: string;
+  toPole: string;
+  color: string;
+  lengthM?: number;
+  /** every phase the span has got a value */
+  computable: boolean;
+  /** why values are missing (E2's reasons, each once) */
+  reasons: UnavailableReason[];
+  /** the largest phase drop of the span, V, and its phase */
+  dropV?: number;
+  dropPhase?: VdPhase;
+  /** the drop at the span's end (worst phase of its downstream node), V */
+  cumulativeDropV?: number;
+  /** E2 currents, A (magnitudes): a, b, c and the neutral */
+  currentA: Partial<Record<VdPhase | 'n', number>>;
+  provisional: boolean;
+  warnings: WarningCode[];
+}
+export interface VdCircuit {
+  circuit: Circuit;
+  status: Circuit['status'];
+  spans: VdSpan[];
+  poles: VdPole[];
+  maxPercent?: number;
+  worstPoleId?: string;
+  worstPhase?: VdPhase;
+  worstProvisional?: boolean;
+  loadModel: 'constant-current' | 'constant-power';
+  converged?: boolean;
+  iterations?: number;
+  /** why the circuit was not solved (E2) */
+  reason?: UnavailableReason;
+  /** E2's status of the circuit's result as a whole, and why it is not complete */
+  completeness: { status: QuantityStatus; reason?: UnavailableReason };
+  /** Worst Case only: how the worst distribution of this circuit was found (engine/e2/worstCase.ts) */
+  worstCase?: WorstCaseGuarantee;
+}
+export type { WorstCaseGuarantee };
+/** the least certain of the circuits' Worst Case guarantees ('searched' < 'exhaustive' < 'condition') */
+export const weakestGuarantee = (circuits: readonly VdCircuit[]): WorstCaseGuarantee | undefined => {
+  const g = new Set(circuits.map((c) => c.worstCase).filter((x) => x && x !== 'not-needed'));
+  return g.has('searched') ? 'searched' : g.has('exhaustive') ? 'exhaustive' : g.has('condition') ? 'condition' : undefined;
+};
+export interface VoltageView {
+  settings: ElectricalSettings;
+  /** the Single-Phase Load Allocation Method the results were calculated with */
+  method: 'worst' | 'balanced';
+  /** Worst Case only: the least certain guarantee over the circuits (undefined: nothing to choose) */
+  worstCase?: WorstCaseGuarantee;
+  circuits: VdCircuit[];
+  /** pole id → results at that pole (one per circuit / bus) */
+  byPole: Map<string, VdPole[]>;
+  /** span key → its result */
+  bySpan: Map<string, VdSpan>;
+  /** problems of the drawing's network (each once) */
+  issues: NetworkIssue[];
+  network: Network;
+  study: E2StudyResult;
+}
+
+const valueOf = (q: Quantity<number> | undefined): number | undefined => (q && hasValue(q) && Number.isFinite(q.value) ? q.value : undefined);
+
+/** The voltage-drop view of a document (E2 only). */
+export const voltageView = (d: E2DocumentInput, study: E2StudyResult = runE2Study(d)): VoltageView => {
+  const settings = study.settings;
+  const network = buildNetwork(d.elements as DrawingElement[], networkOptions(settings));
+  const e2 = new Map(study.circuits.map((c) => [c.id, c]));
+  const byPole = new Map<string, VdPole[]>();
+  const bySpan = new Map<string, VdSpan>();
+  const circuits: VdCircuit[] = [];
+  const loadModel = settings.loadModel ?? 'constant-current';
+
+  for (const circuit of network.circuits) {
+    const r = e2.get(circuit.id);
+    const nodes = new Map((r?.nodes ?? []).map((n) => [n.bus, n]));
+    const e2spans = new Map((r?.spans ?? []).map((s) => [s.key, s]));
+    const poleOf = (bus: string) => network.poleOfBus.get(bus)!;
+    const colorAt = new Map<string, string>();
+    for (const s of circuit.spans) { if (!colorAt.has(s.toBus)) colorAt.set(s.toBus, s.color); if (!colorAt.has(s.fromBus)) colorAt.set(s.fromBus, s.color); }
+
+    const poles: VdPole[] = [];
+    const worstAt = new Map<string, { phase: VdPhase; dropV: number } | undefined>();
+    for (const bus of circuit.buses) {
+      if (circuit.status === 'ok' && bus === circuit.sourceBus) continue;
+      const n = nodes.get(bus);
+      const pole: VdPole = { poleId: poleOf(bus), bus, circuitId: circuit.id, color: colorAt.get(bus) ?? '#000000', status: 'na', consumerIds: circuit.busLoad.get(bus)?.consumerIds ?? [], provisional: false, warnings: [] };
+      if (n) {
+        let worst: VdPhase | undefined;
+        for (const p of VD_PHASES) {
+          const v = valueOf(n.dropPercent[p]);
+          // the first phase wins a tie (equal within rounding): a balanced node reads phase a
+          if (v !== undefined && (worst === undefined || v > valueOf(n.dropPercent[worst])! + 1e-9)) worst = p;
+        }
+        if (worst && n.limit !== 'na') {
+          const q = n.dropPercent[worst];
+          pole.phase = worst;
+          pole.percent = valueOf(q);
+          pole.dropV = valueOf(n.dropV[worst]);
+          pole.phaseV = hasValue(n.voltage[worst]) ? n.voltage[worst].value!.magnitude : undefined;
+          const lines = (['ab', 'bc', 'ca'] as const).map((k) => n.lineV[k]);
+          if (lines.every((l) => valueOf(l) !== undefined)) pole.lineV = Math.min(...lines.map((l) => l.value!));
+          pole.status = n.limit;
+          pole.provisional = q.status === 'provisional';
+          pole.warnings = [...q.warnings];
+          worstAt.set(bus, pole.dropV !== undefined ? { phase: worst, dropV: pole.dropV } : undefined);
+        } else {
+          const q = VD_PHASES.map((p) => n.dropPercent[p]).find((x) => !hasValue(x) && x.reason !== 'phase-not-present') ?? n.dropPercent.a;
+          pole.reason = q.reason;
+        }
+      } else pole.reason = 'circuit-not-computed';
+      poles.push(pole);
+    }
+
+    const spans: VdSpan[] = circuit.spans.map((s) => {
+      const key = spanKey(s.cableId, s.index);
+      const x = e2spans.get(key);
+      const len = spanLength(d.connectionDistances as Record<string, string>, s.fromPole, s.toPole);
+      const sp: VdSpan = { key, cableId: s.cableId, index: s.index, spanId: s.spanId, fromPole: s.fromPole, toPole: s.toPole, color: s.color, ...(len.m !== undefined ? { lengthM: len.m } : {}), computable: false, reasons: [], currentA: {}, provisional: false, warnings: [] };
+      if (x) {
+        const drops = VD_PHASES.map((p) => ({ p, q: x.dropV[p] }));
+        const present = drops.filter(({ q }) => hasValue(q) || q.reason !== 'phase-not-present');
+        const missing = present.filter(({ q }) => !hasValue(q));
+        sp.reasons = [...new Set([...missing.map(({ q }) => q.reason!), ...(missing.length ? [] : (['a', 'b', 'c', 'n'] as const).map((k) => x.current[k]).filter((q) => !hasValue(q) && q.reason !== 'phase-not-present').map((q) => q.reason!))].filter(Boolean))];
+        sp.computable = present.length > 0 && missing.length === 0;
+        for (const { p, q } of drops) {
+          const v = valueOf(q);
+          if (v !== undefined && (sp.dropV === undefined || v > sp.dropV + 1e-9)) { sp.dropV = v; sp.dropPhase = p; }
+        }
+        for (const k of ['a', 'b', 'c', 'n'] as const) { const q = x.current[k]; if (hasValue(q)) sp.currentA[k] = q.value!.magnitude; }
+        const ref = present.find(({ q }) => hasValue(q))?.q;
+        sp.provisional = !!ref && ref.status === 'provisional';
+        sp.warnings = ref ? [...ref.warnings] : [];
+      } else sp.reasons = ['circuit-not-computed'];
+      const end = worstAt.get(s.toBus);
+      if (end) sp.cumulativeDropV = end.dropV;
+      bySpan.set(key, sp);
+      return sp;
+    });
+
+    const cr: VdCircuit = { circuit, status: circuit.status, spans, poles, loadModel, completeness: r ? { status: r.completeness.status, ...(r.completeness.reason ? { reason: r.completeness.reason } : {}) } : { status: 'not-run', reason: 'circuit-not-computed' } };
+    const wc = study.worstCase?.[circuit.id];
+    if (wc) cr.worstCase = wc.guarantee;
+    if (r) {
+      if (r.solve.reason) cr.reason = r.solve.reason;
+      if (loadModel === 'constant-power' && r.solve.status !== 'not-run') { cr.converged = r.solve.converged ?? false; if (r.solve.iterations !== undefined) cr.iterations = r.solve.iterations; }
+      if (r.worst) {
+        const p = poles.find((x) => x.bus === r.worst!.bus && x.percent !== undefined);
+        if (p) { cr.maxPercent = p.percent; cr.worstPoleId = p.poleId; cr.worstPhase = p.phase; cr.worstProvisional = p.provisional; }
+      }
+    }
+    for (const p of poles) byPole.set(p.poleId, [...(byPole.get(p.poleId) ?? []), p]);
+    circuits.push(cr);
+  }
+  // network problems, each once
+  const seen = new Set<string>();
+  const issues: NetworkIssue[] = [];
+  for (const i of [...network.issues, ...network.circuits.flatMap((c) => c.issues)]) { const k = JSON.stringify(i); if (!seen.has(k)) { seen.add(k); issues.push(i); } }
+  const method = study.allocationMethod ?? (settings.singlePhaseMode === 'worst' ? 'worst' : 'balanced');
+  const worstCase = method === 'worst' ? weakestGuarantee(circuits) : undefined;
+  return { settings, method, ...(worstCase ? { worstCase } : {}), circuits, byPole, bySpan, issues, network, study };
+};
+
+// the last view, kept while the document parts it was made from are the same objects (the drawing
+// overlay, the panel and the preview share one calculation instead of one each)
+let last: { d: E2DocumentInput; view: VoltageView } | undefined;
+/** voltageView, calculated once per document state */
+export const cachedVoltageView = (d: E2DocumentInput): VoltageView => {
+  if (last && last.d.elements === d.elements && last.d.connectionDistances === d.connectionDistances && last.d.distanceFlags === d.distanceFlags && last.d.electrical === d.electrical) return last.view;
+  const view = voltageView(d);
+  last = { d, view };
+  return view;
 };

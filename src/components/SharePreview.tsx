@@ -3,8 +3,8 @@ import { X, Share2, FileDown, RotateCcw, RotateCw, ZoomIn, ZoomOut, Maximize, Im
 import { useDrawingStore } from '../store/drawingStore';
 import { PreviewCanvas } from './PreviewCanvas';
 import html2canvas from 'html2canvas';
-import { useVoltageDrop } from '../utils/useVoltageDrop';
-import { loadModelLabel, POLE_STATUS_MARK } from '../utils/vdLabels';
+import { useVoltageView } from '../utils/useE2Study';
+import { loadModelLabel, methodLabel, POLE_STATUS_MARK, WORST_CASE_MARK } from '../utils/vdLabels';
 import { DEFAULT_POWER_FACTOR, isPowerFactorDefault } from '../utils/electricalSettings';
 import jsPDF from 'jspdf';
 import { t as tCurrent, useLocale, useT } from '../store/localeStore';
@@ -27,7 +27,7 @@ export const SharePreview: React.FC<SharePreviewProps> = ({ onClose }) => {
   const { elements, connectionDistances, connectionLabelOffsets, poleSizeScale, consumerVariant, currentProjectName, attachedImage, setAttachedImage, distanceTextScale, consumerSizeScale, showDistanceLabels } = useDrawingStore();
   // voltage-drop badges go into the shared image / PDF when they are shown on the drawing
   const showVoltageDrop = useDrawingStore((st) => st.showVoltageDrop);
-  const voltageDrop = useVoltageDrop(showVoltageDrop);
+  const voltageDrop = useVoltageView(showVoltageDrop);
   const distanceFlags = useDrawingStore((st) => st.distanceFlags);
   const electrical = useDrawingStore((st) => st.electrical);
   const t = useT();
@@ -389,7 +389,7 @@ export const SharePreview: React.FC<SharePreviewProps> = ({ onClose }) => {
                 // the "start" (with "end" the Arabic legend ran off the page and was cut in the PDF)
                 // {na} is the mark exactly as drawn on the poles (POLE_STATUS_MARK, «؟» in both languages); the words follow the language
                 <text x={A4_WIDTH - 40} y={A4_HEIGHT - 40} textAnchor={directionOf(locale) === 'rtl' ? 'start' : 'end'} fontSize={22} fill="#374151" fontFamily="sans-serif" direction={directionOf(locale)} ref={legendRef} data-vd-legend>
-                  {t('share.legend', { model: loadModelLabel(electrical.loadModel ?? 'constant-current', t), pf: isPowerFactorDefault(electrical) ? t('share.pfDefault', { pf: DEFAULT_POWER_FACTOR }) : String(electrical.powerFactor), limit: electrical.limitPercent, na: POLE_STATUS_MARK.na })}
+                  {t('share.legend', { model: loadModelLabel(electrical.loadModel ?? 'constant-current', t), pf: isPowerFactorDefault(electrical) ? t('share.pfDefault', { pf: DEFAULT_POWER_FACTOR }) : String(electrical.powerFactor), limit: electrical.limitPercent, nominal: electrical.singlePhaseNominalA ?? 4, method: voltageDrop.method === 'worst' ? `${WORST_CASE_MARK} ${methodLabel(voltageDrop, t)}` : methodLabel(voltageDrop, t), na: POLE_STATUS_MARK.na })}
                 </text>
               )}
             </svg>

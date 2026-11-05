@@ -57,10 +57,11 @@ export const ProposedConsumerSheet: React.FC<{ poleId: string; consumerId?: stri
     color: existing?.color ?? '#000000', strokeColor: existing?.strokeColor ?? '#000000', fillColor: existing?.fillColor ?? '#000000',
     proposal: existing?.proposal ?? { status: 'proposed' },
   }), [existing, id, poleId, variant, countOk, n, label]);
-  const load = consumerLoad(draft);
+  const single = electrical.singlePhaseNominalA ?? SINGLE_PHASE_AMPS;
+  const load = consumerLoad(draft, single);
   const comparison = useMemo(
-    () => (countOk && ampsOk ? compareConnections(elements, connectionDistances, settings, distanceFlags, draft, candidates) : null),
-    [countOk, ampsOk, elements, connectionDistances, settings, distanceFlags, draft, candidates],
+    () => (countOk && ampsOk ? compareConnections(elements, connectionDistances, electrical, distanceFlags, draft, candidates) : null),
+    [countOk, ampsOk, elements, connectionDistances, electrical, distanceFlags, draft, candidates],
   );
   const chosenCand = candidates.find((c) => candKey(c) === chosen);
   const valid = countOk && ampsOk && !!chosenCand;
@@ -135,8 +136,8 @@ export const ProposedConsumerSheet: React.FC<{ poleId: string; consumerId?: stri
           </div>
           {!countOk && <p className="text-[13px] text-ios-red" data-proposal-error="count">{t('proposal.countInvalid')}</p>}
           {!ampsOk && <p className="text-[13px] text-ios-red" data-proposal-error="amps">{t('proposal.ampsInvalid')}</p>}
-          <p className="text-[12px] text-ios-tertiary">{t('proposal.rules', { single: SINGLE_PHASE_AMPS, three: THREE_PHASE_DEFAULT_AMPS })}</p>
-          {countOk && ampsOk && <p className="text-[13px]" data-proposed-load={load.amps}>{t('proposal.load')}<b>{proposalLoadText(draft)}</b>{load.kind === 'three' && load.source === 'three-phase-default' ? t('proposal.loadDefault') : ''}</p>}
+          <p className="text-[12px] text-ios-tertiary">{t('proposal.rules', { single, three: THREE_PHASE_DEFAULT_AMPS })}</p>
+          {countOk && ampsOk && <p className="text-[13px]" data-proposed-load={load.amps}>{t('proposal.load')}<b>{proposalLoadText(draft, single)}</b>{load.kind === 'three' && load.source === 'three-phase-default' ? t('proposal.loadDefault') : ''}</p>}
 
           <section aria-label={t('proposal.cableSection')} className="flex flex-col gap-2">
             <span className="text-[13px] font-medium text-ios-secondary">{t('proposal.chooseCable')}</span>

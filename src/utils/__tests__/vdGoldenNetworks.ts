@@ -1,10 +1,8 @@
-// Deterministic random networks used to prove that results of existing projects
-// do not change (Stage 7.9). The generator must never be changed once the golden
-// file (vd-golden-7_8.json) has been recorded from the Stage 7.8 code.
+// Deterministic random networks (drawings only) used to prove that results of existing projects
+// do not change. The generator must never be changed: the E2 golden record
+// (fixtures/e2-golden.json, e2Golden.test.ts) was made from these drawings.
 import type { CableArcElement, CableElement, ConsumerElement, DrawingElement, ElectricalSettings, SpanProps, SymbolElement } from '../../types/drawing';
 import { normalizeElements, withSpanProps } from '../spanModel';
-import { buildNetwork } from '../network';
-import { computeVoltageDrop } from '../voltageDrop';
 import { DEFAULT_ELECTRICAL } from '../electricalSettings';
 
 const COLORS = ['#ff0000', '#0000ff', '#00aa00'];
@@ -84,20 +82,6 @@ export const goldenCases = (): GoldenCase[] => {
     out.push({ name: `net${t}`, elements: norm, distances, settings });
   }
   return out;
-};
-
-/** Everything a user sees from the topology and the calculation, as plain data. */
-export const goldenOutput = (g: GoldenCase) => {
-  const n = buildNetwork(g.elements);
-  const r = computeVoltageDrop(g.elements, g.distances, g.settings);
-  const round = (v: number | undefined) => (v === undefined ? null : Math.round(v * 1e9) / 1e9);
-  return {
-    circuits: n.circuits.map((c) => ({ status: c.status, source: c.sourcePoleId ?? null, kind: c.sourceKind ?? null, spans: c.spans.map((s) => `${s.cableId}#${s.index}:${s.fromPole}>${s.toPole}`), issues: c.issues.map((i) => JSON.stringify(i)).sort() })),
-    issues: n.issues.map((i) => JSON.stringify(i)).sort(),
-    settingsMissing: r.settingsMissing,
-    spans: [...r.bySpan.values()].map((s) => ({ k: s.key, ok: s.computable, dv: round(s.dropV), cum: round(s.cumulativeDropV), i: round(s.phaseCurrentA), miss: s.missing, prov: s.provisional })).sort((a, b) => a.k.localeCompare(b.k)),
-    poles: [...r.byPole.entries()].map(([p, list]) => ({ p, r: list.map((x) => ({ st: x.status, dv: round(x.dropV), pc: round(x.percent), ll: round(x.lineV), why: x.reason ?? null, prov: x.provisional })) })).sort((a, b) => a.p.localeCompare(b.p)),
-  };
 };
 
 /** Radial trees from one transformer with complete data: most spans are computed. */

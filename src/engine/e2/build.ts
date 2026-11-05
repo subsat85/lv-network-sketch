@@ -1,4 +1,4 @@
-// E2: the drawing → the network of the sweep. The topology is E1's (toNetwork, built
+// E2: the drawing → the network of the sweep. The topology is the drawing's (toNetwork, built
 // once from the existing buildNetwork, unchanged); here every span gets its conductor
 // impedances with their sources (catalogue/resolve.ts) and every load its phases
 // (phases.ts). Nothing in the document is written; what is missing stays missing.
@@ -33,7 +33,7 @@ export interface BuildInput {
 const NEUTRAL_ORDER: UnavailableReason[] = ['cable-type-conflict', 'parallel-invalid', 'length-missing', 'length-suspect', 'neutral-conductor-missing', 'neutral-impedance-missing', 'settings-missing', 'parallel-conflict', 'neutral-parallel-unknown'];
 const PHASE_ORDER: UnavailableReason[] = ['cable-type-conflict', 'parallel-invalid', 'length-missing', 'length-suspect', 'phase-parallel-unknown', 'impedance-missing', 'settings-missing'];
 
-/** F1: an E1 network issue as a DataIssue: code network:<kind>, the same target as E1, every field kept */
+/** F1: a network issue of the drawing as a DataIssue: code network:<kind>, its target, every field kept */
 const EXCLUDING: ReadonlySet<string> = new Set(['orphan-consumer', 'proposed-consumer-unconnected']);
 const paramsOf = (i: NetworkIssue): Record<string, string | number> => {
   const out: Record<string, string | number> = {};
@@ -62,7 +62,7 @@ export const buildNetwork = (b: BuildInput): { circuits: E2Circuit[]; issues: Da
   if (b.powerFactorDefaulted) issues.push({ code: 'setting-default:powerFactor', severity: 'reported', target: { kind: 'settings', id: 'powerFactor' }, params: { value: settings.powerFactor! } });
   const settingsWarnings: WarningCode[] = b.powerFactorDefaulted ? ['power-factor-default'] : [];
 
-  // F1: every network issue of E1 (global and per circuit), once each, with the circuits it was found in.
+  // F1: every network issue of the drawing (global and per circuit), once each, with the circuits it was found in.
   // A consumer left out of the calculation (orphan, unconnected proposal) makes its circuits provisional.
   const e1 = new Map<string, { issue: NetworkIssue; circuits: string[] }>();
   const seen = (i: NetworkIssue, circuitId?: string) => {
@@ -76,17 +76,17 @@ export const buildNetwork = (b: BuildInput): { circuits: E2Circuit[]; issues: Da
   for (const { issue: i, circuits: cs } of e1.values()) {
     issues.push({
       code: `network:${i.kind}`, severity: EXCLUDING.has(i.kind) ? 'provisional' : 'reported', target: networkIssueTarget(i),
-      params: { ...paramsOf(i), source: 'e1-network', ...(cs.length ? { circuitIds: cs.join(',') } : {}) },
+      params: { ...paramsOf(i), source: 'drawing-network', ...(cs.length ? { circuitIds: cs.join(',') } : {}) },
     });
   }
-  // the junctions E1's 'auto' rule made (to review), as E1 reports them
+  // the junctions the drawing's 'auto' rule made (to review), as the network reports them
   for (const lc of legacy.circuits) for (const j of lc.inferredJunctions)
-    issues.push({ code: 'network:inferred-junction', severity: 'reported', target: { kind: 'pole', id: j.poleId }, params: { circuitId: lc.id, cableId: j.cableId, end: j.end, withCableIds: j.withCableIds.join(','), source: 'e1-network' } });
+    issues.push({ code: 'network:inferred-junction', severity: 'reported', target: { kind: 'pole', id: j.poleId }, params: { circuitId: lc.id, cableId: j.cableId, end: j.end, withCableIds: j.withCableIds.join(','), source: 'drawing-network' } });
 
   // Q6: consumers connected to no cable of their colour at their pole → the circuits at that pole
   const orphanPoles = new Map<string, string[]>();
   // F2: a proposal that could not be connected and blocks no circuit (no cable at its pole) → the circuits
-  // at its pole or of the cable it names. (Where it blocks a circuit, E1 does not compute that circuit: not-run.)
+  // at its pole or of the cable it names. (Where it blocks a circuit, the network has no 'ok' circuit there: not-run.)
   const unconnected: { consumerId: string; poleId: string; cableId?: string }[] = [];
   for (const i of legacy.issues) {
     if (i.kind === 'orphan-consumer') orphanPoles.set(i.poleId, [...(orphanPoles.get(i.poleId) ?? []), i.consumerId]);
@@ -107,7 +107,7 @@ export const buildNetwork = (b: BuildInput): { circuits: E2Circuit[]; issues: Da
     const conflict = cableTypeMergeConflict(props);
     if (conflict) issues.push({ code: 'cable-type:merge-conflict', severity: 'blocks', target: { kind: 'span', id: br.key }, params: { records: props!.mergedFrom!.length } });
     const typed = !conflict && props?.cableType ? cableTypeEntry(props.cableType) : undefined;
-    // the difference with E1 is stated: E1 keeps using the span's own R / X / Rn, E2 uses the cable type
+    // stated: the span's own R / X / Rn are not used when the span has a cable type (its snapshot is)
     const legacyFields = typed && props ? ([['R', props.rOhmPerKm], ['X', props.xOhmPerKm], ['RN', props.rNeutralOhmPerKm]] as const).filter(([, v]) => v !== undefined).map(([n]) => n) : [];
     if (legacyFields.length) issues.push({ code: 'cable-type:legacy-values-ignored', severity: 'reported', target: { kind: 'span', id: br.key }, params: { fields: legacyFields.join(',') } });
     const sel = conflict ? undefined : typed ? { entryId: typed.entryId } : selection[br.key] ?? selection[br.cableId];

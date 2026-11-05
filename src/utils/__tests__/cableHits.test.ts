@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cableChoices, cablesNear, isAmbiguous } from '../cableHits';
 import { calculateCablePath } from '../cableLayout';
 import { normalizeElements, withSpanProps } from '../spanModel';
-import { computeVoltageDrop } from '../voltageDrop';
+import { computeVoltageView } from './vdTestView';
 import { DEFAULT_ELECTRICAL } from '../electricalSettings';
 import type { CableElement, ConsumerElement, DrawingElement, SpanProps, SymbolElement } from '../../types/drawing';
 
@@ -85,7 +85,7 @@ describe('a view only', () => {
     const d: Record<string, string> = { A_T: '50', A_B: '60', F1_F2: '40' };
     const S = { ...DEFAULT_ELECTRICAL, powerFactor: 0.9, conductorTempC: 70 };
     const before = JSON.stringify(els);
-    const flat = () => JSON.stringify([...computeVoltageDrop(els, d, S).byPole.entries()].map(([p, l]) => [p, l.map((x) => [x.bus, x.status, x.percent])]));
+    const flat = () => JSON.stringify([...computeVoltageView(els, d, S).byPole.entries()].map(([p, l]) => [p, l.map((x) => [x.bus, x.status, x.percent])]));
     const vd0 = flat();
     for (const p of [{ x: 300, y: 0 }, { x: 100, y: 3 }, { x: 100, y: 300 }]) cableChoices(els, cablesNear(els, p, 14));
     expect(JSON.stringify(els)).toBe(before);

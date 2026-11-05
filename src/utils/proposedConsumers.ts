@@ -1,6 +1,6 @@
 import type { CableElement, ConsumerElement, ConsumerProposal, DistanceFlag, DrawingElement, ElectricalSettings } from '../types/drawing';
 import { consumerLoad } from './loads';
-import { computeVoltageDrop, type CircuitResult, type PoleResult, type VoltageDropResult } from './voltageDrop';
+import { voltageView, type VdCircuit, type VdPole, type VoltageView } from './e2Presentation';
 import { splitSideKey } from './splitStudy';
 import { t } from '../store/localeStore';
 
@@ -75,7 +75,7 @@ export interface CandidateResult {
   /** why not, in words for the panel */
   reason?: string;
   /** voltage at the subscriber's pole and its drop there */
-  atPole?: PoleResult;
+  atPole?: VdPole;
   /** maximum drop of the network it joins, % (with the subscriber), and before it */
   maxPercent?: number;
   maxPercentBefore?: number;
@@ -95,7 +95,7 @@ export interface Comparison {
   noRecommendation?: string;
 }
 
-const circuitWithBus = (r: VoltageDropResult, bus: string): CircuitResult | undefined => r.circuits.find((c) => c.circuit.buses.includes(bus));
+const circuitWithBus = (r: VoltageView, bus: string): VdCircuit | undefined => r.circuits.find((c) => c.circuit.buses.includes(bus));
 
 /**
  * The comparison of the connection points at the subscriber's pole. `draft` is the
@@ -107,14 +107,15 @@ export const compareConnections = (
   draft: ConsumerElement, candidates: ConnectionCandidate[],
 ): Comparison => {
   const others = elements.filter((e) => e.id !== draft.id);
-  const before = computeVoltageDrop(others, distances, settings, flags);
+  // each candidate is calculated by E2 (the same calculation as everywhere else in the app)
+  const study = (els: DrawingElement[]) => voltageView({ elements: els, connectionDistances: distances, distanceFlags: flags, electrical: settings });
+  const before = study(others);
   const results: CandidateResult[] = candidates.map((candidate) => {
     const trial: ConsumerElement = { ...draft, color: candidate.color, strokeColor: candidate.color, fillColor: candidate.color, proposal: { ...(draft.proposal ?? { status: 'proposed' }), status: 'confirmed', connection: connectionOf(candidate) } };
-    const r = computeVoltageDrop([...others, trial], distances, settings, flags);
+    const r = study([...others, trial]);
     const atPole = (r.byPole.get(draft.poleId) ?? []).find((p) => p.consumerIds.includes(draft.id));
     const circuit = atPole ? circuitWithBus(r, atPole.bus) : undefined;
     const base: CandidateResult = { candidate, computable: false, violations: [], atPole, sourcePoleId: circuit?.circuit.sourcePoleId };
-    if (r.settingsMissing.length) return { ...base, reason: t('proposal.reasonSettings') };
     if (!atPole || !circuit) return { ...base, reason: t('proposal.reasonNotConnected') };
     if (circuit.status !== 'ok') return { ...base, reason: t('proposal.reasonNetwork') };
     if (atPole.status === 'na' || circuit.maxPercent === undefined) return { ...base, reason: t('proposal.reasonPath') };
@@ -138,8 +139,8 @@ export const compareConnections = (
 };
 
 /** The load of a proposed subscriber in words: «3φ 63 A», «1φ ×2 = 8 A». */
-export const proposalLoadText = (c: Pick<ConsumerElement, 'variant' | 'label' | 'count'>) => {
-  const l = consumerLoad(c);
+export const proposalLoadText = (c: Pick<ConsumerElement, 'variant' | 'label' | 'count'>, singleAmps?: number) => {
+  const l = consumerLoad(c, singleAmps);
   if (l.invalid) return t('proposal.loadInvalid');
   const n = l.count > 1 ? ` ×${l.count}` : '';
   return `${l.kind === 'single' ? '1φ' : '3φ'}${n} ${fmtA(l.amps)} A`;

@@ -193,11 +193,22 @@ export interface ElectricalSettings {
    */
   ambientTempC?: number;
   /**
-   * How single-phase loads with an unknown phase are handled:
-   * 'worst'    — all of them on the phase being checked (an upper bound);
-   * 'balanced' — split equally over the three phases (an assumption the user chose).
+   * Single-Phase Load Allocation Method: how E2 places single-phase subscribers on the phases
+   * (the drawing stores no phase for them). The stored values are the ones projects always had:
+   * 'balanced' — Equal Phase Current (the default; also when not stored): the subscribers spread
+   *              over a, b and c so the nominal currents of every span are as equal as possible.
+   * 'worst'    — Worst Case: the distribution with the highest phase-to-neutral drop (%) at any
+   *              node (engine/e2/worstCase.ts: all on one phase when the condition proves it,
+   *              otherwise found by enumeration or a search, and the results say which).
+   * Neither is the actual distribution on site; the results say which one was used.
    */
   singlePhaseMode: 'worst' | 'balanced';
+  /**
+   * Default Single-Phase Nominal Load, A: the nominal (design) current of one single-phase
+   * subscriber, used for every single-phase subscriber. 4 A unless the project sets another value;
+   * a project saved before this setting existed reads as 4 A.
+   */
+  singlePhaseNominalA: number;
   /**
    * How loads respond to the voltage (Stage 7.9). 'constant-current' (default, and
    * the value of every project saved before): the rule currents as they are.

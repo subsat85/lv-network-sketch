@@ -77,12 +77,14 @@ describe('Q7 no phase inheritance from a 1ph2w span', () => {
   });
   it('2. with an explicit valid allocation it is calculated on that phase', () => {
     const c = study(alloc({ u0: { b: 5, source: 'site-survey', ...checked } }, SPAN_B));
-    expect(c.solve.status).toBe('provisional');
+    // the single-phase load is the project's default single-phase nominal load (a project setting, 4 A):
+    // not a default value any more, so a verified allocation gives a computed result
+    expect(c.solve.status).toBe('computed');
     expect(c.loads[0].currentA.b.value).toBe(20);
     expect(c.loads[0].currentA.b.inputs).toContainEqual(expect.objectContaining({ name: 'phase', provenance: 'allocation', value: 'a0 b5 c0', ref: 'site-survey' }));
     const A = c.nodes.find((n) => n.poleId === 'A')!;
     expect(A.dropV.b.value).toBeGreaterThan(0);
-    expect(A.dropV.b.warnings).toEqual(['load-default']);
+    expect(A.dropV.b.warnings).toEqual([]);
     expect(A.voltage.a.reason).toBe('phase-not-present');
   });
   it('3. a missing allocation never gives a computed (or provisional) voltage, drop, current or loss', () => {
@@ -98,7 +100,7 @@ describe('Q7 no phase inheritance from a 1ph2w span', () => {
   });
   it('the verification field of a 1ph2w span: missing → allocation-unverified; invalid → refused', () => {
     const unverified = study(alloc({ u0: { b: 5, source: 'design', ...checked } }, { 'k1#0': { phase: 'b', source: 'design' } }));
-    expect(unverified.nodes.find((n) => n.poleId === 'A')!.dropV.b.warnings.slice().sort()).toEqual(['allocation-unverified', 'load-default']);
+    expect(unverified.nodes.find((n) => n.poleId === 'A')!.dropV.b.warnings.slice().sort()).toEqual(['allocation-unverified']);
     expect(spanPhase(alloc({}, { 'k1#0': { phase: 'b', source: 'design', verification: { status: 'maybe' as never } } }), 'k1#0')).toBe('invalid');
     expect(spanPhase(alloc({}, { 'k1#0': { phase: 'b', source: 'design', verification: { status: 'approved', by: 'synthetic', on: '2026-10-31' } } }), 'k1#0')).toEqual({ phase: 'b', source: 'design', verified: true });
     // F9: approved without by / on is not approved

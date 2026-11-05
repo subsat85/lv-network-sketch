@@ -1,6 +1,6 @@
 import type { DrawingElement, Point } from '../types/drawing';
-import type { VoltageDropResult } from './voltageDrop';
-import { POLE_STATUS_MARK, PROVISIONAL_MARK } from './vdLabels';
+import type { VdPole, VoltageView } from './e2Presentation';
+import { POLE_STATUS_MARK, PROVISIONAL_MARK, WORST_CASE_MARK } from './vdLabels';
 import { poleTag } from './poleNames';
 import { addCircle, addRect, drawingObstacles, layoutBadges, poleTagAnchor, poleTagRect, POLE_TAG_FONT_FACTOR, type LayoutContext, type Rect } from './overlayLayout';
 
@@ -34,12 +34,14 @@ export interface VdLayoutOptions {
   minFont?: number;
 }
 
-export const badgeText = (r: VoltageDropResult['circuits'][number]['poles'][number]) => {
-  const prov = r.status !== 'na' && r.provisional.length > 0;
-  return r.status === 'na' ? `${POLE_STATUS_MARK.na}` : prov ? `${PROVISIONAL_MARK}${r.percent!.toFixed(1)}% ⚑` : `${r.percent!.toFixed(1)}% ${POLE_STATUS_MARK[r.status]}`;
+/** the badge of a pole; `worst`: calculated with the Worst Case method (marked ▲, Equal Phase Current unmarked) */
+export const badgeText = (r: VdPole, worst = false) => {
+  const prov = r.status !== 'na' && r.provisional;
+  const w = worst && r.status !== 'na' ? WORST_CASE_MARK : '';
+  return r.status === 'na' ? `${POLE_STATUS_MARK.na}` : prov ? `${w}${PROVISIONAL_MARK}${r.percent!.toFixed(1)}% ⚑` : `${w}${r.percent!.toFixed(1)}% ${POLE_STATUS_MARK[r.status]}`;
 };
 
-export const vdOverlayLayout = (elements: DrawingElement[], result: VoltageDropResult, opts: VdLayoutOptions): VdOverlayLayout => {
+export const vdOverlayLayout = (elements: DrawingElement[], result: VoltageView, opts: VdLayoutOptions): VdOverlayLayout => {
   const { ctx } = opts;
   const min = opts.minFont ?? 0;
   const fs = Math.max(opts.fs, min);
@@ -71,7 +73,7 @@ export const vdOverlayLayout = (elements: DrawingElement[], result: VoltageDropR
     if (p) out.junctions.push({ poleId: pid, x: p.x + R * 0.9, y: p.y + R + fs, fontSize: sz(opts.fs * 0.9) });
   }
   for (const s of result.bySpan.values()) {
-    if (s.computable || !s.missing.length) continue;
+    if (s.computable || !s.reasons.length) continue;
     const a = poles.get(s.fromPole), b = poles.get(s.toPole);
     if (a && b) out.missing.push({ key: s.key, x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 - fs * 0.6, color: s.color, fontSize: sz(opts.fs * 1.1) });
   }
@@ -85,8 +87,8 @@ export const vdOverlayLayout = (elements: DrawingElement[], result: VoltageDropR
     const p = poles.get(poleId);
     if (!p) continue;
     const items = list.map((r) => {
-      const text = badgeText(r);
-      return { key: `${poleId}:${r.bus}`, bus: r.bus, text, status: r.status, color: r.color, provisional: r.status !== 'na' && r.provisional.length > 0, w: Math.max(fs * 1.6, text.length * fs * 0.62 + fs * 0.6) };
+      const text = badgeText(r, result.method === 'worst');
+      return { key: `${poleId}:${r.bus}`, bus: r.bus, text, status: r.status, color: r.color, provisional: r.status !== 'na' && r.provisional, w: Math.max(fs * 1.6, text.length * fs * 0.62 + fs * 0.6) };
     });
     groups.push({ poleId, x: p.x, y: p.y, widths: items.map((i) => i.w), items });
   }

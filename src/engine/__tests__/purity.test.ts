@@ -4,13 +4,18 @@ import { join, relative, resolve, sep } from 'path';
 import type { CableElement, ConsumerElement, DistanceFlag, DrawingElement, ElectricalSettings } from '../../types/drawing';
 import { goldenCases, goldenTreeCases, type GoldenCase } from '../../utils/__tests__/vdGoldenNetworks';
 import { serializeProject, validateProjectFile } from '../../utils/projectSerialization';
-import { runStudy, studyWith } from '../index';
+import { runStudyE2 } from '../e2';
 import type { ProjectDocument } from '../model';
 
-// E1: the core never writes to the drawing document, gives the same result every time,
-// and is not imported by the app. If a test here fails because of the EXISTING engine
-// (a TypeError thrown in src/utils/network.ts or voltageDrop.ts), E1 stops: the existing
-// engine is not changed and the inputs are not copied to hide it.
+// The calculation core (E2) never writes to the drawing document, gives the same result every
+// time, and is imported by the app through one adapter only.
+// study: as the app calculates (the project's allocation method); studyOthers: with the other
+// method and with no allocation (the engine's API as such).
+const study = (doc: ProjectDocument) => runStudyE2(doc, { inputOrigin: 'legacy-project', allocationMethod: doc.electrical.singlePhaseMode });
+const studyOthers = (doc: ProjectDocument, settings: ElectricalSettings) => [
+  runStudyE2({ ...doc, electrical: settings }, { inputOrigin: 'legacy-project', allocationMethod: settings.singlePhaseMode === 'worst' ? 'balanced' : 'worst' }),
+  runStudyE2({ ...doc, electrical: settings }, { inputOrigin: 'e2-input' }),
+];
 
 const CASES = [...goldenCases(), ...goldenTreeCases()];
 const withVariants = (g: GoldenCase): { g: GoldenCase; settings: ElectricalSettings }[] => [
@@ -46,7 +51,7 @@ const serial = (v: unknown) => JSON.stringify(v, (_k, x) => {
   return x;
 });
 
-describe('N1. deep-frozen document: runStudy and studyWith write nothing (a write throws in strict mode)', () => {
+describe('N1. deep-frozen document: the study writes nothing (a write throws in strict mode)', () => {
   it('the freeze really blocks writes here', () => {
     const o = deepFreeze({ a: [{ b: 1 }], s: [2, 1] });
     expect(() => { (o.a[0] as { b: number }).b = 2; }).toThrow(TypeError);
@@ -58,8 +63,8 @@ describe('N1. deep-frozen document: runStudy and studyWith write nothing (a writ
     let runs = 0;
     for (const base of cases) for (const { g, settings } of withVariants(base)) {
       const doc = deepFreeze(docOf(g, settings));
-      expect(() => runStudy(doc), g.name).not.toThrow();
-      expect(() => studyWith(doc, deepFreeze({ ...settings })), g.name).not.toThrow();
+      expect(() => study(doc), g.name).not.toThrow();
+      expect(() => studyOthers(doc, deepFreeze({ ...settings })), g.name).not.toThrow();
       runs++;
     }
     expect(runs).toBe(cases.length * 3);
@@ -72,8 +77,8 @@ describe('N2. not frozen: the document is the same after the calculation', () =>
       const doc = docOf(g, settings);
       const before = structuredClone(doc);
       const text = JSON.stringify(doc);
-      runStudy(doc);
-      studyWith(doc, settings);
+      study(doc);
+      studyOthers(doc, settings);
       expect(doc).toEqual(before);
       expect(JSON.stringify(doc)).toBe(text);
     }
@@ -84,10 +89,10 @@ describe('N3. the same document gives the same result', () => {
   it('two calls, serialised in full, are identical', () => {
     for (const base of [...CASES, ...CASES.map(studied)]) for (const { g, settings } of withVariants(base)) {
       const doc = docOf(g, settings);
-      expect(serial(studyWith(doc, settings))).toBe(serial(studyWith(doc, settings)));
-      expect(serial(runStudy(doc))).toBe(serial(runStudy(doc)));
+      expect(serial(studyOthers(doc, settings))).toBe(serial(studyOthers(doc, settings)));
+      expect(serial(study(doc))).toBe(serial(study(doc)));
     }
-  });
+  }, 60_000); // E2 runs three studies of 960 documents here
 });
 
 const ENGINE_DIR = resolve(__dirname, '..');
@@ -100,8 +105,9 @@ const filesUnder = (dir: string): string[] => readdirSync(dir).flatMap((n) => {
 describe('N4. the core\'s own source: no randomness, no clock, no UI', () => {
   it('src/engine (tests excluded)', () => {
     const files = filesUnder(ENGINE_DIR).filter((f) => relative(ENGINE_DIR, f).split(sep).includes('__tests__') === false);
-    expect(files.map((f) => relative(ENGINE_DIR, f)).sort()).toEqual(['adapter.ts', 'index.ts', 'issues.ts', 'model.ts', 'solver.ts', join('solvers', 'legacy.ts'), 'version.ts',
-      ...['index.ts', 'version.ts', 'quantity.ts', 'assumptions.ts', 'complex.ts', join('catalogue', 'schema.ts'), join('catalogue', 'entries.ts'), join('catalogue', 'resolve.ts'), join('catalogue', 'cableTypes.ts'), 'phases.ts', 'model.ts', 'build.ts', 'sweep.ts', 'losses.ts', 'limits.ts'].map((f) => join('e2', f))].sort());
+    // the core is E2 and the reading of the drawing it uses (adapter, model, issues); no other engine
+    expect(files.map((f) => relative(ENGINE_DIR, f)).sort()).toEqual(['adapter.ts', 'issues.ts', 'model.ts',
+      ...['index.ts', 'version.ts', 'quantity.ts', 'assumptions.ts', 'complex.ts', join('catalogue', 'schema.ts'), join('catalogue', 'entries.ts'), join('catalogue', 'resolve.ts'), join('catalogue', 'cableTypes.ts'), 'phases.ts', 'allocation.ts', 'worstCase.ts', 'model.ts', 'build.ts', 'sweep.ts', 'losses.ts', 'limits.ts'].map((f) => join('e2', f))].sort());
     for (const f of files) {
       const code = readFileSync(f, 'utf8');
       expect(code, f).not.toMatch(/Math\.random|Date\.now|new Date\(/);
@@ -112,9 +118,8 @@ describe('N4. the core\'s own source: no randomness, no clock, no UI', () => {
   });
 });
 
-// N5 — approved exception (E2 UI integration, decision D-A): exactly ONE file of the app,
-// src/utils/e2Presentation.ts, may import the core, and only E2 (src/engine/e2…). No other
-// file imports src/engine, and no file outside src/engine imports E1 (src/engine/*.ts).
+// N5 — exactly ONE file of the app, src/utils/e2Presentation.ts, imports the core, and only
+// through E2's entry (src/engine/e2…). No other file imports src/engine.
 const N5_E2_ADAPTER = join('utils', 'e2Presentation.ts');
 const engineSpecifiers = (code: string): string[] =>
   [...code.matchAll(/(?:from|import)\s*\(?\s*['"]([^'"]*\/engine(?:\/[^'"]*)?)['"]/g)].map((m) => m[1]);
@@ -126,14 +131,14 @@ describe('N5. the app does not import the core (one approved E2 adapter only)', 
     const importers = outside.filter((f) => /(from|import)\s*\(?\s*['"][^'"]*\/engine(\/[^'"]*)?['"]/.test(readFileSync(f, 'utf8')));
     expect(importers.map((f) => relative(SRC_DIR, f))).toEqual([N5_E2_ADAPTER]);
   });
-  it('the adapter imports E2 only, never E1', () => {
+  it('the adapter imports E2 only', () => {
     const specs = engineSpecifiers(readFileSync(join(SRC_DIR, N5_E2_ADAPTER), 'utf8'));
     expect(specs.length).toBeGreaterThan(0);
     for (const s of specs) expect(s, s).toMatch(/^\.\.\/engine\/e2(\/[^/]+)*$/);
   });
 });
 
-describe('6.5 a project file: validate → runStudy → save gives the same file', () => {
+describe('6.5 a project file: validate → study → save gives the same file', () => {
   it('golden networks as exported projects', () => {
     const style = { strokeColor: '#000000', fillColor: 'transparent', strokeWidth: 2, fontSize: 16 };
     const strip = (json: string) => { const o = JSON.parse(json); delete o.metadata.exportedAt; return o; };
@@ -145,7 +150,7 @@ describe('6.5 a project file: validate → runStudy → save gives the same file
       const d = v.data;
       const save = () => serializeProject(d.elements, d.style, d.poleSizeScale, d.consumerVariant, d.connectionDistances, d.connectionLabelOffsets ?? {}, 'p1', 'test', d.distanceTextScale, d.consumerSizeScale, d.electrical, d.distanceFlags);
       const without = strip(save());
-      runStudy({ elements: d.elements, connectionDistances: d.connectionDistances, distanceFlags: d.distanceFlags ?? {}, electrical: d.electrical! });
+      study({ elements: d.elements, connectionDistances: d.connectionDistances, distanceFlags: d.distanceFlags ?? {}, electrical: d.electrical! });
       expect(strip(save()), g.name).toEqual(without);
     }
   });

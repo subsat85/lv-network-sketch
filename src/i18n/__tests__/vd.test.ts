@@ -5,14 +5,14 @@ import { ar } from '../ar';
 import { en } from '../en';
 import { translate, type TKey, type TParams } from '..';
 import { voltageDropReportText, poleStatusText } from '../../components/VoltageDropPanel';
-import { computeVoltageDrop } from '../../utils/voltageDrop';
+import { computeVoltageView } from '../../utils/__tests__/vdTestView';
+import { reasonLabel, warningLabel, type VdPole } from '../../utils/e2Presentation';
 import { normalizeElements, withSpanProps } from '../../utils/spanModel';
 import { DEFAULT_ELECTRICAL } from '../../utils/electricalSettings';
 import { poleNamer } from '../../utils/poleNames';
-import { issueText, MISSING_LABEL, CIRCUIT_STATUS_LABEL, LOAD_MODEL_LABEL, missingLabel, circuitStatusLabel, type Tr } from '../../utils/vdLabels';
+import { issueText, CIRCUIT_STATUS_LABEL, LOAD_MODEL_LABEL, circuitStatusLabel, type Tr } from '../../utils/vdLabels';
 import type { NetworkIssue } from '../../utils/network';
 import type { CableElement, DrawingElement } from '../../types/drawing';
-import type { PoleResult } from '../../utils/voltageDrop';
 
 // Batch 1 of phase 4: the voltage drop panel, its messages, tables and text report.
 
@@ -34,14 +34,19 @@ const ISSUES: NetworkIssue[] = [
 ];
 
 const pole = (id: string, symbolId = 'lv-pole') => ({ id, type: 'symbol', symbolId, x: 0, y: 0, width: 24, height: 24, strokeColor: '#000', fillColor: '#fff', strokeWidth: 2 }) as DrawingElement;
+// network 1 (red): T–A–B with data on both spans; network 2 (blue): T2–C without a supply system
 const network = () => {
-  let els = normalizeElements([pole('T', 'transformer'), pole('A'), pole('B'),
+  const DATA = { system: '3ph4w' as const, cableKind: 'abc' as const, material: 'al' as const, crossSectionMm2: 95, rOhmPerKm: 0.38448, xOhmPerKm: 0.08, parallel: 1, dataSource: 'test' };
+  let els = normalizeElements([pole('T', 'transformer'), pole('A'), pole('B'), pole('T2', 'transformer'), pole('C'),
     { id: 'c', type: 'cable', x: 0, y: 0, poleIds: ['T', 'A', 'B'], cableIndex: 0, offset: 0, strokeColor: '#ff0000', fillColor: 'none', strokeWidth: 2 } as CableElement,
-    { id: 'u', type: 'consumer', x: 0, y: 0, poleId: 'B', color: '#ff0000', count: 1, variant: 'square', label: '63', strokeColor: '#f00', fillColor: '#f00', strokeWidth: 2 } as DrawingElement]);
-  const c = els[3] as CableElement;
-  els = els.map((e) => (e.id === 'c' ? withSpanProps(c, c.spanIds![0], { poles: ['T', 'A'], system: '3ph4w', cableKind: 'abc', material: 'al', crossSectionMm2: 95, rOhmPerKm: 0.38448, xOhmPerKm: 0.08, dataSource: 'test' }) : e));
+    { id: 'd', type: 'cable', x: 0, y: 0, poleIds: ['T2', 'C'], cableIndex: 0, offset: 0, strokeColor: '#0000ff', fillColor: 'none', strokeWidth: 2 } as CableElement,
+    { id: 'u', type: 'consumer', x: 0, y: 0, poleId: 'B', color: '#ff0000', count: 1, variant: 'square', label: '63', strokeColor: '#f00', fillColor: '#f00', strokeWidth: 2 } as DrawingElement,
+    { id: 'w', type: 'consumer', x: 0, y: 0, poleId: 'C', color: '#0000ff', count: 1, variant: 'square', label: '20', strokeColor: '#00f', fillColor: '#00f', strokeWidth: 2 } as DrawingElement]);
+  const c = els.find((e) => e.id === 'c') as CableElement;
+  els = els.map((e) => (e.id === 'c' ? [0, 1].reduce((x, i) => withSpanProps(x, x.spanIds![i], { poles: [x.poleIds[i], x.poleIds[i + 1]], ...DATA }), c) : e));
   return els;
 };
+const D = { A_T: '100', A_B: '50', C_T2: '40' };
 
 describe('voltage drop texts', () => {
   it('the vd, common and poles sections have the same keys in both languages, all filled', () => {
@@ -72,32 +77,32 @@ describe('voltage drop texts', () => {
   });
 
   it('without a translator the texts stay Arabic (screens not translated yet read the same)', () => {
-    expect(missingLabel('length')).toBe(MISSING_LABEL.length);
     expect(circuitStatusLabel('ok')).toBe(CIRCUIT_STATUS_LABEL.ok);
-    expect(missingLabel('length', EN)).toBe('Section length not entered');
+    expect(reasonLabel('length-missing', AR)).toBe(ar.e2.reason['length-missing']);
+    expect(reasonLabel('length-missing', EN)).toBe(en.e2.reason['length-missing']);
     // the exported legend keeps its Arabic load model names
     expect(LOAD_MODEL_LABEL).toEqual({ 'constant-current': 'تيار ثابت', 'constant-power': 'قدرة ثابتة' });
   });
 
   it('pole status texts in both languages, provisional values never shown as plain «within the limit»', () => {
-    const base = { poleId: 'A', bus: 'A', color: '#f00', consumerIds: [], provisional: [] } as unknown as PoleResult;
+    const base = { poleId: 'A', bus: 'A', circuitId: 'c', color: '#f00', consumerIds: [], provisional: false, warnings: [] } as unknown as VdPole;
     expect(poleStatusText({ ...base, status: 'ok' }, EN)).toBe('✓ Within limit');
-    expect(poleStatusText({ ...base, status: 'na', reason: 'missing-data' } as PoleResult, EN)).toBe('? Cannot be calculated (missing data)');
-    expect(poleStatusText({ ...base, status: 'na', reason: 'missing-data' } as PoleResult)).toBe('؟ غير قابل للحساب (بيانات ناقصة)');
-    const prov = poleStatusText({ ...base, status: 'ok', provisional: ['review', 'inherited'] } as PoleResult, EN);
-    expect(prov).toBe('⚑ Estimated — needs review (estimated value: Within limit) — A section on the path has a review mark; Properties copied from the previous section and not confirmed');
+    expect(poleStatusText({ ...base, status: 'na', reason: 'length-missing' }, EN)).toBe(`? Cannot be calculated (${en.e2.reason['length-missing']})`);
+    expect(poleStatusText({ ...base, status: 'na', reason: 'length-missing' })).toBe(`؟ غير قابل للحساب (${ar.e2.reason['length-missing']})`);
+    const prov = poleStatusText({ ...base, status: 'ok', provisional: true, warnings: ['span-review', 'allocation-unverified'] }, EN);
+    expect(prov).toBe(`⚑ Estimated — needs review (estimated value: Within limit) — ${warningLabel('span-review', EN)}; ${warningLabel('allocation-unverified', EN)}`);
   });
 
   it('the text report in English: settings, poles, sections, warnings and method', () => {
     const els = network();
-    const r = computeVoltageDrop(els, { A_T: '100', A_B: '50' }, { ...DEFAULT_ELECTRICAL, powerFactor: 0.9, conductorTempC: 70 });
+    const r = computeVoltageView(els, D, { ...DEFAULT_ELECTRICAL, powerFactor: 0.9 });
     const cables = new Map(els.filter((e): e is CableElement => e.type === 'cable').map((x) => [x.id, x]));
     const text = voltageDropReportText(r, poleNamer(els, EN), cables, false, EN);
     expect(text.split('\n')[0]).toBe('Voltage Drop Report');
     expect(text).toContain('source Transformer 1 (transformer)');
-    expect(text).toContain('  Pole 1: 2.40 V (1.04%)'); // the same numbers as the Arabic report
-    expect(text).toContain('  Pole 2: cannot be calculated');
-    expect(text).toContain('Supply system (number of phases)');
+    expect(text).toContain('  Pole 1 (a): 2.40 V (1.04%)'); // the same numbers as the Arabic report
+    expect(text).toContain(`  Pole 3: cannot be calculated (${en.e2.reason['system-missing']})`);
+    expect(text).toContain('Engine E2');
     expect(text).not.toContain('IEC 60228'); // no conductor table any more
     expect(text).toContain('Load model: Constant current');
     expect(text).toContain('is thermally safe');

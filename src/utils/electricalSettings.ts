@@ -7,6 +7,7 @@ import type { ElectricalSettings } from '../types/drawing';
  * not presented as a legal limit. The conductor temperature has no default: the
  * calculation reports it as missing (where the IEC table needs it) until entered.
  * The power factor is not stored by default either; see effectiveSettings.
+ * The default single-phase nominal load is 4 A (the approved design value).
  */
 export const DEFAULT_ELECTRICAL: ElectricalSettings = {
   phaseVoltage: 230,
@@ -15,7 +16,8 @@ export const DEFAULT_ELECTRICAL: ElectricalSettings = {
   nearLimitFraction: 0.8,
   minPhaseVoltage: 218,
   minLineVoltage: 380,
-  singlePhaseMode: 'worst',
+  singlePhaseMode: 'balanced',
+  singlePhaseNominalA: 4,
   loadModel: 'constant-current',
 };
 
@@ -34,6 +36,7 @@ const CHECKS: Checks = {
   conductorTempC: (v) => num(v, (n) => n >= -40 && n <= 250),
   ambientTempC: (v) => num(v, (n) => n >= -60 && n <= 80),
   singlePhaseMode: (v) => (v === 'worst' || v === 'balanced' ? v : undefined),
+  singlePhaseNominalA: (v) => num(v, (n) => n > 0),
   loadModel: (v) => (v === 'constant-current' || v === 'constant-power' ? v : undefined),
   studySuggestedSplits: (v) => (typeof v === 'boolean' ? v : undefined),
   studyProposedConsumers: (v) => (typeof v === 'boolean' ? v : undefined),

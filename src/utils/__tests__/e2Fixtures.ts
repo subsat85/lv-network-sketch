@@ -15,7 +15,7 @@ const sub = (id: string, poleId: string, color: string, o: Partial<ConsumerEleme
   ({ id, type: 'consumer', x: 0, y: 0, poleId, color, count: 1, variant: 'square', label: '30', strokeColor: color, fillColor: color, strokeWidth: 2, ...o });
 const withSpans = (c: CableElement, props: Omit<SpanProps, 'poles'>[]): CableElement =>
   props.reduce((x, p, i) => withSpanProps(x, x.spanIds![i], { poles: [c.poleIds[i], c.poleIds[i + 1]], ...p }), c);
-export const SETTINGS: ElectricalSettings = { ...DEFAULT_ELECTRICAL, powerFactor: 0.9, conductorTempC: 70 };
+export const SETTINGS: ElectricalSettings = { ...DEFAULT_ELECTRICAL, powerFactor: 0.9, conductorTempC: 70, singlePhaseMode: 'worst' }; // the green circuit relies on Worst Case (one phase, so the neutral impedance is needed)
 
 /** a documented three-phase span (synthetic R / X with a source) */
 const DOCUMENTED: Omit<SpanProps, 'poles'> = { system: '3ph4w', cableKind: 'underground', parallel: 1, rOhmPerKm: 0.5, xOhmPerKm: 0.08, dataSource: 'synthetic test value' };
@@ -24,7 +24,8 @@ const DOCUMENTED: Omit<SpanProps, 'poles'> = { system: '3ph4w', cableKind: 'unde
  * Four circuits, each from its own transformer, one per status of the result:
  *   red    T–A–E (two spans, documented, three-phase loads)  → computed
  *   blue   T–B   (R / X typed without a source)               → provisional
- *   green  T–C   (single-phase subscribers, no allocation)    → unavailable
+ *   green  T–C   (single-phase subscribers, on phase a by the Worst Case method; their
+ *                 neutral current needs the span's neutral impedance, not known) → unavailable
  *   orange T–D   (parallel = 1.5)                             → not-run
  * and an orphan subscriber at pole F, which has no cable (it belongs to no circuit, so no circuit
  * is affected; an orphan at a pole of a circuit would make that circuit unbalanced, F8).
@@ -48,7 +49,7 @@ export const fourStatusDoc = (): E2DocumentInput => {
   return { elements, connectionDistances: distances, distanceFlags: {}, electrical: SETTINGS };
 };
 
-/** a loop and a pole-to-pole link of an old file: network issues of E1 */
+/** a loop and a pole-to-pole link of an old file: network issues of the drawing */
 export const networkIssueDoc = (): E2DocumentInput => ({
   elements: normalizeElements([pole('T', 'transformer'), pole('A'), pole('B'), cable('c', ['T', 'A', 'B', 'T'], RED),
     { id: 'L', type: 'jumper', fromPoleId: 'A', toPoleId: 'B', x: 0, y: 0, strokeColor: '#000', fillColor: 'none', strokeWidth: 2 } as DrawingElement]),

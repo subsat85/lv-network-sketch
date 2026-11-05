@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildNetwork, Circuit, Network } from '../network';
-import { computeVoltageDrop } from '../voltageDrop';
+import { chainDrops, computeVoltageView } from './vdTestView';
 import { normalizeElements, withSpanProps } from '../spanModel';
 import { DEFAULT_ELECTRICAL, readElectricalSettings } from '../electricalSettings';
 import { parseProjectFile, serializeProject } from '../projectSerialization';
@@ -193,65 +193,67 @@ describe('A. network topology', () => {
 });
 
 describe('B. voltage-drop calculation (hand-checked)', () => {
-  // R = 0.38448 Ω/km entered (synthetic); cos φ 0.9: R cos φ + X sin φ = 0.380903 Ω/km (as voltageDrop.test.ts)
-  const ZPH = 0.38448 * 0.9 + 0.08 * Math.sqrt(1 - 0.81);
-  const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', rOhmPerKm: 0.38448, xOhmPerKm: 0.08, rNeutralOhmPerKm: 0.38448, system: '3ph4w', dataSource: 'test' }; // R / Rn entered (synthetic): no conductor table
+  // R = 0.38448 Ω/km, X = 0.08 Ω/km entered (synthetic), cos φ 0.9, 100 m spans, balanced three-phase
+  // loads. Reference: an independent phasor solution of the chain (chainDrops, vdTestView.ts).
+  const chain = (...A: number[]) => chainDrops(A.map((a) => ({ Lm: 100, A: a })), 0.38448, 0.08);
+  const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', rOhmPerKm: 0.38448, xOhmPerKm: 0.08, rNeutralOhmPerKm: 0.38448, system: '3ph4w', parallel: 1, dataSource: 'test' }; // R / Rn entered (synthetic): no conductor table
   const SET = (study: boolean): ElectricalSettings => ({ ...DEFAULT_ELECTRICAL, powerFactor: 0.9, conductorTempC: 70, studySuggestedSplits: study });
   const withProps = (els: DrawingElement[]) => normalizeElements(els).map((e) => {
     if (e.type !== 'cable') return e;
     let c = e; c.poleIds.slice(0, -1).forEach((p, i) => { c = withSpanProps(c, c.spanIds![i], { ...AL95, poles: [p, c.poleIds[i + 1]] }); }); return c;
   });
   const D = { A_T: '100', A_B: '100', B_C: '100', C_T2: '100' };
-  const at = (r: ReturnType<typeof computeVoltageDrop>, p: string) => r.byPole.get(p) ?? [];
-  const okAt = (r: ReturnType<typeof computeVoltageDrop>, p: string) => { const l = at(r, p).filter((x) => x.status !== 'na'); expect(l, `computed result at ${p}`).toHaveLength(1); return l[0]; };
+  const at = (r: ReturnType<typeof computeVoltageView>, p: string) => r.byPole.get(p) ?? [];
+  const okAt = (r: ReturnType<typeof computeVoltageView>, p: string) => { const l = at(r, p).filter((x) => x.status !== 'na'); expect(l, `computed result at ${p}`).toHaveLength(1); return l[0]; };
 
   it('without a split: currents and drops of the whole line (reference)', () => {
-    const r = computeVoltageDrop(withProps(LINE()), D, SET(true));
+    const r = computeVoltageView(withProps(LINE()), D, SET(true));
     // T–A 105 A, A–B 95 A, B–C 32 A; each 0.1 km
-    expect(okAt(r, 'C').dropV).toBeCloseTo(ZPH * 0.1 * (105 + 95 + 32), 9);
+    expect(okAt(r, 'C').dropV).toBeCloseTo(chain(10, 63, 32)[2], 6);
   });
 
   it('split at B, consumers kept towards A: B carries only its own load; C is not supplied (no normal result)', () => {
-    const r = computeVoltageDrop(withProps(LINE(split('B', 'prev'))), D, SET(true));
-    expect(okAt(r, 'A').dropV).toBeCloseTo(ZPH * 0.1 * 73, 9);
-    expect(okAt(r, 'B').dropV).toBeCloseTo(ZPH * 0.1 * (73 + 63), 9);
-    expect(at(r, 'C').every((x) => x.status === 'na' && x.reason === 'network')).toBe(true);
+    const r = computeVoltageView(withProps(LINE(split('B', 'prev'))), D, SET(true));
+    expect(okAt(r, 'A').dropV).toBeCloseTo(chain(10, 63)[0], 6);
+    expect(okAt(r, 'B').dropV).toBeCloseTo(chain(10, 63)[1], 6);
+    expect(at(r, 'C').every((x) => x.status === 'na' && x.reason === 'circuit-not-computed')).toBe(true);
     expect(at(r, 'C').every((x) => x.dropV === undefined && x.phaseV === undefined)).toBe(true);
   });
 
   it('split at B, consumers kept towards C: the upstream spans carry only A; B and C are not supplied', () => {
-    const r = computeVoltageDrop(withProps(LINE(split('B', 'next'))), D, SET(true));
-    expect(okAt(r, 'A').dropV).toBeCloseTo(ZPH * 0.1 * 10, 9);
+    const r = computeVoltageView(withProps(LINE(split('B', 'next'))), D, SET(true));
+    expect(okAt(r, 'A').dropV).toBeCloseTo(chain(10, 0)[0], 6);
     // the open end at B (fed side, no load): the drop of A + 0
-    expect(okAt(r, 'B').dropV).toBeCloseTo(ZPH * 0.1 * 10, 9);
+    expect(okAt(r, 'B').dropV).toBeCloseTo(chain(10, 0)[1], 6);
+    expect(chain(10, 0)[1]).toBeCloseTo(chain(10, 0)[0], 9);
     expect(at(r, 'C').every((x) => x.status === 'na')).toBe(true);
     expect(at(r, 'B').filter((x) => x.status === 'na').length).toBe(1); // B on the unsupplied side
   });
 
   it('a second transformer beyond the split feeds its section; the side choice moves B\'s 63 A between them', () => {
     const els = (side: 'prev' | 'next') => withProps([tr('T'), pole('A'), pole('B'), pole('C'), tr('T2'), cable('main', ['T', 'A', 'B', 'C', 'T2'], split('B', side)), sub3('A', 10), sub3('B', 63), sub3('C', 32)]);
-    const p = computeVoltageDrop(els('prev'), D, SET(true));
-    expect(okAt(p, 'C').dropV).toBeCloseTo(ZPH * 0.1 * 32, 9);                       // from T2: T2–C 32 A
+    const p = computeVoltageView(els('prev'), D, SET(true));
+    expect(okAt(p, 'C').dropV).toBeCloseTo(chain(32)[0], 6);                          // from T2: T2–C 32 A
     // B: one result fed from T (its consumers kept on T's side: A–B carries 63 A) and the open end fed from T2 (C–B 0 A)
     const bp = at(p, 'B').filter((x) => x.status !== 'na').map((x) => x.dropV!).sort((a, b) => a - b);
     expect(bp).toHaveLength(2);
-    expect(bp[0]).toBeCloseTo(ZPH * 0.1 * 32, 9);
-    expect(bp[1]).toBeCloseTo(ZPH * 0.1 * (73 + 63), 9);
-    const n = computeVoltageDrop(els('next'), D, SET(true));
-    expect(okAt(n, 'A').dropV).toBeCloseTo(ZPH * 0.1 * 10, 9);                       // from T: A only
-    expect(okAt(n, 'C').dropV).toBeCloseTo(ZPH * 0.1 * 95, 9);                       // from T2: T2–C 95 A
-    const bFromT2 = at(n, 'B').find((x) => x.status !== 'na' && Math.abs(x.dropV! - ZPH * 0.1 * (95 + 63)) < 1e-9);
+    expect(bp[0]).toBeCloseTo(chain(32, 0)[1], 6);
+    expect(bp[1]).toBeCloseTo(chain(10, 63)[1], 6);
+    const n = computeVoltageView(els('next'), D, SET(true));
+    expect(okAt(n, 'A').dropV).toBeCloseTo(chain(10)[0], 6);                          // from T: A only
+    expect(okAt(n, 'C').dropV).toBeCloseTo(chain(32, 63)[0], 6);                      // from T2: T2–C 95 A
+    const bFromT2 = at(n, 'B').find((x) => x.status !== 'na' && Math.abs(x.dropV! - chain(32, 63)[1]) < 1e-6);
     expect(bFromT2).toBeDefined();                                                   // C–B 63 A
   });
 
   it('study off: results identical to a drawing without suggestions', () => {
-    const a = computeVoltageDrop(withProps(LINE(split('B', 'prev'))), D, SET(false));
-    const b = computeVoltageDrop(withProps(LINE()), D, SET(false));
+    const a = computeVoltageView(withProps(LINE(split('B', 'prev'))), D, SET(false));
+    const b = computeVoltageView(withProps(LINE()), D, SET(false));
     expect(strip(a.byPole)).toBe(strip(b.byPole));
   });
 
   it('no side chosen with consumers at B: nothing is computed and the reason is reported', () => {
-    const r = computeVoltageDrop(withProps(LINE(split('B'))), D, SET(true));
+    const r = computeVoltageView(withProps(LINE(split('B'))), D, SET(true));
     expect([...r.byPole.values()].flat().every((x) => x.status === 'na')).toBe(true);
     expect(r.issues.some((i) => i.kind === 'split-side-unassigned')).toBe(true);
   });

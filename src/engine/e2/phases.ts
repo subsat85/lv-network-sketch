@@ -4,8 +4,10 @@
 
 export type Phase = 'a' | 'b' | 'c';
 export const PHASES: readonly Phase[] = ['a', 'b', 'c'];
-export type AllocationSource = 'site-survey' | 'design' | 'utility-record';
-const SOURCES: ReadonlySet<string> = new Set<AllocationSource>(['site-survey', 'design', 'utility-record']);
+export type AllocationSource = 'site-survey' | 'design' | 'utility-record'
+  /** made by the project's Single-Phase Load Allocation Method (allocation.ts), not from the site */
+  | 'method-worst-case' | 'method-equal-current';
+const SOURCES: ReadonlySet<string> = new Set<AllocationSource>(['site-survey', 'design', 'utility-record', 'method-worst-case', 'method-equal-current']);
 
 /**
  * Who checked the allocation against the network, as given by the user. A source is not a

@@ -4,7 +4,7 @@ import { useDrawingStore, historyGestureEnd } from '../../store/drawingStore';
 import { splitSpanInCables, withSpanProps } from '../spanModel';
 import { parseProjectFile, serializeProject } from '../projectSerialization';
 import { buildDraft, validateDraft } from '../autosave';
-import { computeVoltageDrop } from '../voltageDrop';
+import { computeVoltageView } from './vdTestView';
 import { DEFAULT_ELECTRICAL } from '../electricalSettings';
 import type { CableElement, ConsumerElement, SpanProps, SymbolElement } from '../../types/drawing';
 
@@ -85,19 +85,21 @@ describe('placing a pole on a span', () => {
     expect(S().distanceFlags.A_M?.estimated && S().distanceFlags.B_M?.estimated).toBe(true);
     // with complete electrical data on cable r, the drop is computed but provisional
     const r = cableOf('r');
-    const p: Omit<SpanProps, 'poles'> = { system: '3ph4w', cableKind: 'abc', material: 'al', crossSectionMm2: 95, xOhmPerKm: 0.08, dataSource: 'test' };
+    const p: Omit<SpanProps, 'poles'> = { system: '3ph4w', cableKind: 'abc', material: 'al', crossSectionMm2: 95, rOhmPerKm: 0.32, xOhmPerKm: 0.08, dataSource: 'test' };
     step(() => S().updateElement('r', [0, 1].reduce((c, i) => withSpanProps(c, c.spanIds![i], { ...p, poles: [c.poleIds[i], c.poleIds[i + 1]] }), r)));
     const sub: ConsumerElement = { id: 'u', type: 'consumer', x: 0, y: 0, poleId: 'B', color: '#ff0000', count: 1, variant: 'square', label: '63', strokeColor: '#f00', fillColor: '#f00', strokeWidth: 2 };
     step(() => { S().addElement(pole('T', -200, 'transformer')); S().addElement(cable('f', ['T', 'A'])); S().updateConnectionDistance('A_T', '10'); S().addElement(sub); });
     const f = cableOf('f');
     step(() => S().updateElement('f', withSpanProps(f, f.spanIds![0], { ...p, poles: ['T', 'A'] })));
-    const vd = () => computeVoltageDrop(S().elements, S().connectionDistances, { ...DEFAULT_ELECTRICAL, powerFactor: 0.9, conductorTempC: 70 }, S().distanceFlags);
+    const vd = () => computeVoltageView(S().elements, S().connectionDistances, { ...DEFAULT_ELECTRICAL, powerFactor: 0.9, conductorTempC: 70 }, S().distanceFlags);
     const atB = () => vd().byPole.get('B')!.find((x) => x.color === '#ff0000')!;
-    expect(atB().provisional).toContain('length-estimated');
+    expect(atB().provisional).toBe(true);
+    expect(atB().warnings).toContain('length-estimated');
     // the user measures both parts: no longer provisional
     step(() => { S().updateConnectionDistance('A_M', '10'); S().updateConnectionDistance('B_M', '30'); });
     expect(S().distanceFlags).toEqual({});
-    expect(atB().provisional).toEqual([]);
+    // (the span's parallel is not set: E2 keeps 'phase-parallel-default'; the estimated length is gone)
+    expect(atB().warnings).not.toContain('length-estimated');
   });
 });
 

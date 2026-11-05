@@ -9,7 +9,7 @@ import { ProposalSvg } from './ProposalSvg';
 import { layoutProposalBoxes, proposalGeometry } from '../utils/proposalDrawing';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
 import { VoltageDropOverlay } from './VoltageDropOverlay';
-import type { VoltageDropResult } from '../utils/voltageDrop';
+import type { VoltageView } from '../utils/e2Presentation';
 import { autoConsumerOffset, squareLabelY } from '../utils/consumerPlacement';
 import type { DistanceFlag } from '../types/drawing';
 import { useT } from '../store/localeStore';
@@ -28,7 +28,7 @@ interface PreviewCanvasProps {
   consumerVariant: 'circle' | 'square';
   showDistanceLabels?: boolean;
   /** voltage-drop results to draw (when shown on the drawing) */
-  voltageDrop?: VoltageDropResult | null;
+  voltageDrop?: VoltageView | null;
   /** estimated distances are written "≈…" */
   distanceFlags?: Record<string, DistanceFlag>;
 }

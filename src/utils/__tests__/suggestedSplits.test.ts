@@ -4,7 +4,7 @@ import { arrowIntoPole, cableEndArrow, getCircleSegmentIntersection, pruneSugges
 import { calculateCablePath } from '../cableLayout';
 import { parseProjectFile, serializeProject } from '../projectSerialization';
 import { buildDraft, validateDraft } from '../autosave';
-import { computeVoltageDrop } from '../voltageDrop';
+import { computeVoltageView } from './vdTestView';
 import { effectiveSettings } from '../electricalSettings';
 import { buildNetwork } from '../network';
 import type { CableElement, ConsumerElement, DrawingElement, Point, SymbolElement } from '../../types/drawing';
@@ -187,7 +187,7 @@ describe('nothing electrical changes', () => {
   it('connections, lengths and voltage-drop results are identical with and without marks', () => {
     load(NET(), DIST);
     S().updateElectricalSettings({ conductorTempC: 70 });
-    const vd = () => computeVoltageDrop(S().elements, S().connectionDistances, effectiveSettings(S().electrical), S().distanceFlags);
+    const vd = () => computeVoltageView(S().elements, S().connectionDistances, effectiveSettings(S().electrical), S().distanceFlags);
     // the whole network model (Maps included) of the drawing
     const net = () => JSON.stringify(buildNetwork(S().elements), (_k, v) => (v instanceof Map ? [...v.entries()] : v instanceof Set ? [...v] : v));
     const v0 = JSON.stringify(vd()); const n0 = net(); const d0 = JSON.stringify(S().connectionDistances); const poles0 = JSON.stringify(S().elements.filter((e) => e.type === 'cable').map((c) => (c as CableElement).poleIds));

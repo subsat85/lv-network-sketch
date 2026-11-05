@@ -1,28 +1,33 @@
-// Calculation core (Stage E1): drawing → electrical network.
-// The topology is the existing buildNetwork's, built ONCE with the options the
-// settings ask for (networkOptions) and returned with the result, so the solver
-// calculates on exactly the same network object. Nothing in the document is written.
+// Calculation core: drawing → electrical network (what E2 reads the drawing with).
+// The topology is buildNetwork's, built ONCE with the options the settings ask for
+// (networkOptions) and returned with the result, so E2 calculates on exactly the same
+// network object. Nothing in the document is written.
 
 import type { CableElement, ConsumerElement, DrawingElement, ElectricalSettings } from '../types/drawing';
 import { buildNetwork, type Network, type NetSpan } from '../utils/network';
-import { networkOptions, spanKey, spanLength } from '../utils/voltageDrop';
-import { consumerLoad } from '../utils/loads';
+import { networkOptions, spanKey, spanLength } from '../utils/spanLength';
+import { consumerLoad, SINGLE_PHASE_AMPS } from '../utils/loads';
 import { pairKey } from '../utils/cableSegments';
 import type { ElectricalNetwork, NetBranch, NetBus, NetCircuit, NetLoad, ProjectDocument, Sourced } from './model';
 
-const loadOf = (c: ConsumerElement): NetLoad => {
-  const l = consumerLoad(c);
-  const ampsEach: Sourced<number> = { value: l.ampsEach, provenance: l.source === 'label' ? 'project' : 'default', note: l.source };
+// a single-phase subscriber's load is the project's default single-phase nominal load (a project
+// setting, 4 A unless changed: provenance 'project'); a three-phase one is its label, or the
+// 32 A rule when it has none ('default') — unchanged
+const loadOf = (c: ConsumerElement, singleAmps: number): NetLoad => {
+  const l = consumerLoad(c, singleAmps);
+  const fromSetting = l.source === 'single-phase-rule';
+  const ampsEach: Sourced<number> = { value: l.ampsEach, provenance: l.source === 'label' || fromSetting ? 'project' : 'default', note: fromSetting ? 'setting:singlePhaseNominalA' : l.source };
   const amps: Sourced<number> = l.invalid
     ? { provenance: ampsEach.provenance, status: 'invalid', note: `invalid ${l.invalid}` }
     : { value: l.amps, provenance: ampsEach.provenance, status: 'complete' };
   return { consumerId: c.id, kind: l.kind, count: l.count, ampsEach, amps, proposed: !!c.proposal };
 };
 
-/** The drawing as an electrical network, and the existing engine's network it was read from. */
+/** The drawing as an electrical network, and the topology (buildNetwork) it was read from. */
 export const toNetwork = (doc: ProjectDocument, settings: ElectricalSettings): { network: ElectricalNetwork; legacy: Network } => {
   const elements = doc.elements as DrawingElement[];
   const legacy = buildNetwork(elements, networkOptions(settings));
+  const singleAmps = settings.singlePhaseNominalA ?? SINGLE_PHASE_AMPS;
   const cables = new Map<string, CableElement>();
   for (const e of elements) if (e.type === 'cable') cables.set(e.id, e);
 
@@ -33,7 +38,7 @@ export const toNetwork = (doc: ProjectDocument, settings: ElectricalSettings): {
     const bus = legacy.consumerBus.get(e.id);
     if (!bus) continue;
     const list = loadsAt.get(bus) ?? [];
-    list.push(loadOf(e));
+    list.push(loadOf(e, singleAmps));
     loadsAt.set(bus, list);
   }
 

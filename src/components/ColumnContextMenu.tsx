@@ -29,6 +29,7 @@ interface ColumnContextMenuProps {
 
 export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId, position, onClose, onStartArc, onOpenCableEnds, onProposeConsumer, onSheetTop }) => {
   const { elements, updateSymbolModifiers, updateElement, addElement, saveHistory } = useDrawingStore();
+  const singlePhaseNominalA = useDrawingStore((s) => s.electrical.singlePhaseNominalA);
   const t = useT();
   const element = elements.find(el => el.id === elementId) as SymbolElement;
   const menuRef = useRef<HTMLDivElement>(null);
@@ -376,7 +377,7 @@ export const ColumnContextMenu: React.FC<ColumnContextMenuProps> = ({ elementId,
       {onProposeConsumer && elements.filter((e): e is ConsumerElement => e.type === 'consumer' && e.poleId === elementId && !!e.proposal).map((pc) => (
         <button key={pc.id} className="ui-menu-item" role="menuitem" data-propose-consumer={pc.id} onClick={() => { onProposeConsumer(elementId, pc.id); onClose(); }}>
           <span>{t('columnMenu.proposeEdit')}</span>
-          <span className="text-[13px] text-ios-secondary">{proposalLoadText(pc)}{pc.proposal!.status === 'confirmed' ? t('columnMenu.confirmedSuffix') : ''}</span>
+          <span className="text-[13px] text-ios-secondary">{proposalLoadText(pc, singlePhaseNominalA)}{pc.proposal!.status === 'confirmed' ? t('columnMenu.confirmedSuffix') : ''}</span>
         </button>
       ))}
 

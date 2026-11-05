@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { addPoleTagObstacles, badgeCandidates, distanceLabelFontSizes, drawingObstacles, layoutBadges, layoutViewScale, LAYOUT_ZOOM_STEP, ObstacleSet, overlapWith, addRect, poleTagRect, POLE_TAG_FONT_FACTOR, TOUCH_TOLERANCE, type Rect } from '../overlayLayout';
 import { vdOverlayLayout } from '../vdOverlayLayout';
 import { layoutProposalBoxes, proposalBoxCenter, proposalGeometry, PROPOSAL_BOX } from '../proposalDrawing';
-import { computeVoltageDrop } from '../voltageDrop';
+import { computeVoltageView } from './vdTestView';
 import { normalizeElements, withSpanProps } from '../spanModel';
 import { DEFAULT_ELECTRICAL } from '../electricalSettings';
 import type { CableElement, ConsumerElement, DrawingElement, SpanProps, SymbolElement } from '../../types/drawing';
@@ -29,7 +29,7 @@ const NET = (d: number, extra: DrawingElement[] = []) => withProps([
   cable('main', ['T', 'P1', 'P2', 'P3']), cable('ne', ['P2', 'N1']), cable('blue', ['T2', 'P2', 'P5'], { strokeColor: '#0000ff' }),
   sub('P1', 10), sub('P3', 20), sub('N1', 15), sub('P5', 25, '#0000ff'), ...extra]);
 const layoutOf = (els: DrawingElement[], boxes: Rect[] = []) => {
-  const r = computeVoltageDrop(els, dists(els), S);
+  const r = computeVoltageView(els, dists(els), S);
   return vdOverlayLayout(els, r, { ctx: ctxOf(els), fs, boxes });
 };
 /** what each placed badge stack still overlaps (fixed drawing + other stacks) */
@@ -53,7 +53,7 @@ describe('layout primitives', () => {
   it('a free original position is kept exactly (no change for drawings that had no overlap)', () => {
     // (no subscriber at A: its label would sit exactly there)
     const els = withProps([tr('T', 0, 0), pole('A', 200, 0), cable('c', ['T', 'A'])]);
-    const r = computeVoltageDrop(els, dists(els), S);
+    const r = computeVoltageView(els, dists(els), S);
     const L = vdOverlayLayout(els, r, { ctx: { ...ctxOf(els), connectionDistances: undefined }, fs });
     const b = L.badges.find((x) => x.poleId === 'A')!;
     expect(b.x).toBe(200 + R * 0.75);
@@ -104,7 +104,7 @@ describe('voltage-drop badges on close and normal networks', () => {
 
   it('the texts, colours and statuses are unchanged by the layout (only positions)', () => {
     const els = NET(60);
-    const r = computeVoltageDrop(els, dists(els), S);
+    const r = computeVoltageView(els, dists(els), S);
     const L = vdOverlayLayout(els, r, { ctx: ctxOf(els), fs });
     const fromResult = [...r.byPole.entries()].flatMap(([p, l]) => l.map((x) => `${p}|${x.bus}|${x.status}|${x.color}|${x.percent?.toFixed(1)}`)).sort();
     expect(L.badges.map((b) => `${b.poleId}|${b.bus}|${b.status}|${b.color}|${b.text.match(/[\d.]+/)?.[0] ?? ''}`).sort().map((s) => s.replace(/\|$/, '|undefined'))).toEqual(fromResult);
@@ -194,7 +194,7 @@ const pipeline = (els: DrawingElement[], scale: number) => {
   });
   const distanceFontSizes = distanceLabelFontSizes(els, { ...ctx, arrowSize: 8 / viewScale }, 10 * dts, distanceFontSize, boxes);
   const vdCtx = { ...ctx, showDistances: true, distanceFontSizes, arrowSize: 8 / viewScale };
-  const r = computeVoltageDrop(els, dists(els), SP);
+  const r = computeVoltageView(els, dists(els), SP);
   const L = vdOverlayLayout(els, r, { ctx: vdCtx, fs: 11 * dts, boxes, minFont: MIN_PX / viewScale });
   return { viewScale, minWorldFont, boxDrawScale, boxes, distanceFontSizes, vdCtx, L };
 };

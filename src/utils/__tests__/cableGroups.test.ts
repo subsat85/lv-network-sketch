@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_SCOPE, cableLabel, colourGroups, groupCables, UNASSIGNED_SCOPE } from '../cableGroups';
 import { normalizeElements, withSpanProps } from '../spanModel';
-import { computeVoltageDrop } from '../voltageDrop';
+import { computeVoltageView } from './vdTestView';
 import { DEFAULT_ELECTRICAL } from '../electricalSettings';
 import { deserializeProject, serializeProject, DEFAULT_STYLE } from '../projectSerialization';
 import type { CableElement, ConsumerElement, DrawingElement, SpanProps, SymbolElement } from '../../types/drawing';
@@ -108,12 +108,12 @@ describe('the grouping is a view only', () => {
   it('grouping changes no element, id, span id or colour, and the voltage-drop results are the same', () => {
     const els = NET();
     const before = JSON.stringify(els);
-    const vd0 = computeVoltageDrop(els, dists(els), S);
+    const vd0 = computeVoltageView(els, dists(els), S);
     const G = groupCables(els);
     for (const s of G.scopes) colourGroups(els, s.cableIds);
     colourGroups(els);
     expect(JSON.stringify(els)).toBe(before);
-    const vd1 = computeVoltageDrop(els, dists(els), S);
+    const vd1 = computeVoltageView(els, dists(els), S);
     const flat = (v: typeof vd0) => JSON.stringify([...v.byPole.entries()].map(([p, l]) => [p, l.map((x) => [x.bus, x.status, x.percent])]));
     expect(flat(vd1)).toBe(flat(vd0));
     expect(G.scopes.map((s) => [s.key, s.cableIds])).toEqual([['T1', ['main', 'br']], ['T2', ['far']], [UNASSIGNED_SCOPE, ['b2']]]);

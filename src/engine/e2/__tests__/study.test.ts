@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CableElement, DrawingElement, ElectricalSettings } from '../../../types/drawing';
 import { goldenCases, goldenTreeCases } from '../../../utils/__tests__/vdGoldenNetworks';
-import { computeVoltageDrop } from '../../../utils/voltageDrop';
 import { runStudyE2, type E2Options } from '../index';
 import type { CircuitResult } from '../model';
 import type { PhaseAllocation } from '../phases';
@@ -72,18 +71,19 @@ describe('C1–C6 np compatibility', () => {
     const b = run({ Lm: 100, props: BASE, consumers: [CIRCLES(5)] }, { inputOrigin: 'legacy-project', allocation: ON_A(5) });
     expect(A(b.c).dropV.a.reason).toBe('neutral-parallel-unknown');
     expect(b.c.spans[0].pLossW.value).toBeUndefined();
-    // (c) parallel = 1 written, documented neutral: nN = 1, 200 m as in the design (provisional only for the 4 A rule)
+    // (c) parallel = 1 written, documented neutral: nN = 1, 200 m as in the design (the 4 A is the
+    // project's default single-phase nominal load, a setting: the result is computed)
     const c = run({ Lm: 200, props: { ...BASE, parallel: 1 }, consumers: [CIRCLES(5)] }, { inputOrigin: 'legacy-project', allocation: ON_A(5) });
     for (const p of ['a', 'b', 'c'] as const) {
       near(A(c.c).dropV[p], REF.C4c.dV[p], TOL.V);
-      expect(A(c.c).dropV[p].status).toBe('provisional');
-      expect(A(c.c).dropV[p].warnings).toEqual(['load-default']);
+      expect(A(c.c).dropV[p].status).toBe('computed');
+      expect(A(c.c).dropV[p].warnings).toEqual([]);
     }
     expect(Math.abs(c.c.spans[0].current.n.value!.magnitude - REF.C4c.IN)).toBeLessThan(TOL.A);
     near(c.c.spans[0].pLossW, REF.C4c.P, TOL.W);
     near(c.c.spans[0].qAbsorbedVar, REF.C4c.Q, TOL.W);
-    expect(c.c.spans[0].pLossW.status).toBe('provisional');
-    expect(c.c.loads[0].currentA.a.inputs).toContainEqual(expect.objectContaining({ name: 'I', provenance: 'default', value: 4 }));
+    expect(c.c.spans[0].pLossW.status).toBe('computed');
+    expect(c.c.loads[0].currentA.a.inputs).toContainEqual(expect.objectContaining({ name: 'I', provenance: 'project', value: 4, ref: 'setting:singlePhaseNominalA' }));
   });
   it('C5 the default changes nothing in the project (deep-frozen; no parallel written)', () => {
     const { doc } = drawing({ Lm: 200, props: BASE, consumers: [SQ('30')] });
@@ -179,7 +179,7 @@ describe('N7 nN not known (constant power)', () => {
   });
 });
 
-// ---------- purity, on the golden networks of the existing engine ----------
+// ---------- purity, on the golden networks ----------
 const CASES = [...goldenCases(), ...goldenTreeCases()];
 const deepFreeze = <T>(v: T): T => {
   if (v && typeof v === 'object' && !Object.isFrozen(v)) { Object.freeze(v); for (const k of Object.keys(v)) deepFreeze((v as Record<string, unknown>)[k]); }
@@ -223,21 +223,6 @@ describe('purity and consistency on the golden networks', () => {
   it('runStudyE2 refuses a call without inputOrigin', () => {
     expect(() => runStudyE2(docOf(CASES[0]), {} as E2Options)).toThrow(/inputOrigin/);
   });
-  it('comparison with the existing engine (information only, not a pass condition)', () => {
-    let compared = 0, maxDiff = 0;
-    for (const g of CASES) {
-      const legacy = computeVoltageDrop(g.elements as DrawingElement[], g.distances, { ...g.settings, powerFactor: g.settings.powerFactor ?? 0.9 });
-      const e2 = runStudyE2(docOf(g), { inputOrigin: 'legacy-project' });
-      for (const c of e2.circuits) for (const n of c.nodes) {
-        const d = n.dropV.a.value;
-        const l = legacy.byPole.get(n.poleId)?.find((p) => p.bus === n.bus)?.dropV;
-        if (d === undefined || l === undefined) continue;
-        compared++; maxDiff = Math.max(maxDiff, Math.abs(d - l));
-      }
-    }
-    console.info(`E2 vs legacy (phase a, both computed): ${compared} nodes, max |difference| ${maxDiff.toFixed(4)} V`);
-    expect(compared).toBeGreaterThanOrEqual(0);
-  });
 });
 
 describe('E2 Phase 1 corrections (study)', () => {
@@ -261,7 +246,8 @@ describe('E2 Phase 1 corrections (study)', () => {
   it('P5-1 an allocation without verification counts as unverified: allocation-unverified, provisional', () => {
     const { c } = run({ Lm: 200, props: DOC, consumers: [CIRCLES(5)] }, { inputOrigin: 'legacy-project', allocation: { consumers: { u0: { a: 5, source: 'design' } }, singlePhaseSpans: {} } });
     expect(A(c).dropV.a.status).toBe('provisional');
-    expect(A(c).dropV.a.warnings).toEqual(['load-default', 'allocation-unverified']);
+    // (the single-phase load is the project's default single-phase nominal load: no 'load-default')
+    expect(A(c).dropV.a.warnings).toEqual(['allocation-unverified']);
     expect(c.loads[0].currentA.a.warnings).toContain('allocation-unverified');
     // the values are those of the same allocation verified: only the status changes
     near(A(c).dropV.a, REF.C4c.dV.a, TOL.V);
@@ -274,7 +260,7 @@ describe('E2 Phase 1 corrections (study)', () => {
   it('P5-3 "checked" and "approved" give no allocation-unverified; an unknown status is refused', () => {
     for (const status of ['checked', 'approved'] as const) {
       const { c } = run({ Lm: 200, props: DOC, consumers: [CIRCLES(5)] }, { inputOrigin: 'legacy-project', allocation: { consumers: { u0: { a: 5, source: 'design', verification: { status, by: 'synthetic', on: '2026-10-31' } } }, singlePhaseSpans: {} } });
-      expect(A(c).dropV.a.warnings).toEqual(['load-default']);
+      expect(A(c).dropV.a.warnings).toEqual([]);
       expect(JSON.stringify(c)).not.toContain('allocation-unverified');
     }
     const bad = run({ Lm: 200, props: DOC, consumers: [CIRCLES(5)] }, { inputOrigin: 'legacy-project', allocation: { consumers: { u0: { a: 5, source: 'design', verification: { status: 'ok' as never } } }, singlePhaseSpans: {} } }).c;
@@ -285,7 +271,7 @@ describe('E2 Phase 1 corrections (study)', () => {
     const without = run({ Lm: 200, props: DOC, consumers: [SQ('30')] }, { inputOrigin: 'e2-input' });
     const withOrphan = run({ Lm: 200, props: DOC, consumers: [SQ('30'), orphan] }, { inputOrigin: 'e2-input' });
     expect(A(without.c).dropV.a.status).toBe('computed');
-    expect(withOrphan.r.issues).toContainEqual({ code: 'network:orphan-consumer', severity: 'provisional', target: { kind: 'consumer', id: 'u1' }, params: { consumerId: 'u1', poleId: 'A', color: '#00ff00', source: 'e1-network' } });
+    expect(withOrphan.r.issues).toContainEqual({ code: 'network:orphan-consumer', severity: 'provisional', target: { kind: 'consumer', id: 'u1' }, params: { consumerId: 'u1', poleId: 'A', color: '#00ff00', source: 'drawing-network' } });
     // not in the calculation: no load, same numbers as without it (F8: computed without the symmetry shortcut, IN of the connected loads ≈ 0)
     expect(withOrphan.c.loads.map((l) => l.consumerId)).toEqual(['u0']);
     near(A(withOrphan.c).dropV.a, num(A(without.c).dropV.a), 1e-12);

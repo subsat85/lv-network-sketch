@@ -32,7 +32,7 @@ import {
 import { applyImport, planImport } from '../projectImport';
 import { parseProjectFile, serializeProject } from '../projectSerialization';
 import { loadProject, saveProject } from '../projectStorage';
-import { computeVoltageDrop } from '../voltageDrop';
+import { computeVoltageView } from './vdTestView';
 import { DEFAULT_ELECTRICAL } from '../electricalSettings';
 import { normalizeElements, spanAt, withSpanProps } from '../spanModel';
 
@@ -169,7 +169,7 @@ describe('applying the default', () => {
     const plan = planDefaultFill(drawing, D(), 9);
     expect(plan.spans).toBe(2);
     const after = { ...alreadyLinked, ...plan.updates[0].changes } as CableElement;
-    expect(spanAt(after, 0).props).toMatchObject({ rOhmPerKm: 0.2415, cableType: { typeId: rev1.id, revision: 1 } }); // its own (E1) fields stay
+    expect(spanAt(after, 0).props).toMatchObject({ rOhmPerKm: 0.2415, cableType: { typeId: rev1.id, revision: 1 } }); // its own fields stay
     expect(spanAt(after, 1).props).toMatchObject({ system: '1ph2w', parallel: 2, cableType: { typeId: rev1.id } }); // its system / parallel stay
     expect(spanAt(after, 2).props).toEqual(spanAt(alreadyLinked, 2).props); // the linked span: unchanged
     // through the store: one undo step
@@ -246,10 +246,10 @@ describe('importing a drawing file (planImport only)', () => {
     const p = await plan(fileOf(drawingWith(OLD_RECORDS)), undefined);
     expect(p.cables).toEqual({ kind: 'old', cleared: 2, linked: 0, needDefault: true });
     expect(spanRecords(p.data.elements)).toEqual([{ poles: ['T', 'A'], system: '3ph4w', parallel: 1 }, { poles: ['A', 'B'], system: '1ph2w', parallel: 2 }, undefined]);
-    // E1 has nothing to compute them with (no table): R missing, nothing derived
-    const r = computeVoltageDrop(p.data.elements, p.data.connectionDistances, { ...DEFAULT_ELECTRICAL, powerFactor: 0.9 });
-    for (const s of r.bySpan.values()) expect(s.computable).toBe(false);
-    expect([...r.bySpan.values()][0].missing).toContain('resistance');
+    // E2 has nothing to compute them with (no table, no cable): no value, R reported missing, nothing derived
+    const r = computeVoltageView(p.data.elements, p.data.connectionDistances, { ...DEFAULT_ELECTRICAL, powerFactor: 0.9 });
+    for (const s of r.bySpan.values()) { expect(s.computable).toBe(false); expect(s.dropV).toBeUndefined(); expect(s.reasons.length).toBeGreaterThan(0); }
+    expect(r.study.issues.map((i) => i.code)).toContain('phase:resistance-missing');
   });
   it('a version-2 (feature/vd) file is an old drawing too', async () => {
     const els = drawingWith([]);

@@ -58,19 +58,18 @@ describe('C4 3, 13: the linked cable in the span sheet', () => {
       expect(h).toContain('data-span-cable-action="unlink"');
     }
   });
-  it('13. the E1 / E2 data-source notice is shown for a linked span, in both languages', () => {
+  it('13. the data-source notice is shown for a linked span, in both languages', () => {
     for (const locale of ['ar', 'en'] as const) {
       const h = section(locale);
       expect(h).toContain('data-span-cable-note="engines"');
       const t = translate(locale, 'spanCable.engines');
       expect(text(h)).toContain(t);
-      // it names both engines and both sources, and never says one engine reads the other's data
-      expect(t).toMatch(/E1/);
-      expect(t).toMatch(/E2/);
+      // it names the source used (the snapshot) and says the span's own fields are not used
       expect(t).toMatch(/Snapshot|snapshot/);
+      expect(t).not.toMatch(/E1/);
     }
-    expect(translate('en', 'spanCable.engines')).toMatch(/does not read the other's data/);
-    expect(translate('ar', 'spanCable.engines')).toMatch(/لا يقرأ بيانات الآخر/);
+    expect(translate('en', 'spanCable.engines')).toMatch(/not from the span's own fields/);
+    expect(translate('ar', 'spanCable.engines')).toMatch(/وليس من حقول المقطع الخاصة/);
     // no link: no such notice
     expect(section('ar', { link: undefined })).not.toContain('data-span-cable-note="engines"');
   });

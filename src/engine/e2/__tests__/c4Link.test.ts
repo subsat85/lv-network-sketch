@@ -4,15 +4,13 @@ import type { CableElement, SpanProps } from '../../../types/drawing';
 import { createCableType, editCableType, latestRevision } from '../../../utils/cableTypeModel';
 import { linkSpanCable, unlinkSpanCable } from '../../../utils/spanCableLink';
 import { withSpanProps } from '../../../utils/spanModel';
-import { computeVoltageDrop } from '../../../utils/voltageDrop';
 import { effectiveSettings } from '../../../utils/electricalSettings';
 import { runStudyE2 } from '../index';
 import type { CircuitResult } from '../model';
 import { drawing } from './references';
 
-// Stage C4: what a span linked to a library cable means for the two engines. E2 calculates from the
-// snapshot kept in the span (never from the library); E1 keeps calculating from the span's own fields,
-// unchanged by the link. ALL VALUES ARE SYNTHETIC.
+// Stage C4: what a span linked to a library cable means for E2: it calculates from the snapshot kept
+// in the span (never from the library). ALL VALUES ARE SYNTHETIC.
 
 const v = (value: number | undefined, basis: 'ac' | 'dc' | 'unspecified' | 'ac-50hz') =>
   ({ ...(value !== undefined ? { value } : {}), unit: 'ohm/km' as const, basis, verification: { status: 'checked' } }) as never;
@@ -41,25 +39,9 @@ const e2 = (props: Omit<SpanProps, 'poles'>) => {
   const r = runStudyE2(doc(props), { inputOrigin: 'legacy-project' });
   return { r, c: r.circuits.find((x) => x.spans.length)! as CircuitResult };
 };
-const e1 = (props: Omit<SpanProps, 'poles'>) => {
-  const d = doc(props);
-  return JSON.parse(JSON.stringify(computeVoltageDrop(d.elements, d.connectionDistances, effectiveSettings(d.electrical), d.distanceFlags), (_k, x) => (x instanceof Map ? [...x.entries()] : x)));
-};
 const nodeA = (c: CircuitResult) => c.nodes.find((n) => n.poleId === 'A')!.dropV;
 const spanCodes = (r: ReturnType<typeof e2>['r']) => r.issues.filter((i) => i.target.kind === 'span').map((i) => i.code).sort();
 
-describe('C4 12: E1 is not changed by a link', () => {
-  it('E1 gives exactly the same result with and without the link (it reads the span\'s own fields only)', () => {
-    const before = e1(OWN);
-    expect(e1(linkedProps(REV1))).toEqual(before);
-    expect(e1(linkedProps(REV2))).toEqual(before);
-    // and after the link is removed
-    const back = unlinkSpanCable({ poles: ['T', 'A'], ...linkedProps(REV1) })!;
-    const { poles: _p, ...rest } = back;
-    expect(rest).toEqual(OWN);
-    expect(e1(rest)).toEqual(before);
-  });
-});
 
 describe('C4: E2 calculates from the snapshot', () => {
   it('the snapshot\'s values, not the span\'s own fields; the difference is reported (legacy values ignored)', () => {

@@ -15,8 +15,10 @@ import type { CatalogueSelection, InputOrigin } from './catalogue/resolve';
 import { validateCatalogue, type CableEntry, type Catalogue, type CatalogueError } from './catalogue/schema';
 import type { CircuitResult, LoadModel, SolveSettings } from './model';
 import { EMPTY_ALLOCATION, type PhaseAllocation } from './phases';
+import { allocateSinglePhase, type AllocationMethod } from './allocation';
 import type { AssumptionId } from './quantity';
 import { solveCircuit } from './sweep';
+import { worstCaseAllocation, type WorstCaseCheck } from './worstCase';
 import { E2_ENGINE_VERSION } from './version';
 
 export interface E2Options {
@@ -26,6 +28,13 @@ export interface E2Options {
   /** span key (`cableId#index`) or cable id → catalogue entry */
   catalogueSelection?: Readonly<Record<string, CatalogueSelection>>;
   allocation?: PhaseAllocation;
+  /**
+   * Build the phase allocation of the single-phase subscribers with the project's Single-Phase Load
+   * Allocation Method (allocation.ts; settings.singlePhaseMode). Ignored when `allocation` is given.
+   */
+  allocationMethod?: AllocationMethod;
+  /** Worst Case search bounds (tests; default WORST_CASE_EXHAUSTIVE_LIMIT / WORST_CASE_SEARCH_LIMIT) */
+  worstCaseLimits?: { exhaustive: number; search: number };
 }
 
 export interface E2StudyResult {
@@ -38,6 +47,10 @@ export interface E2StudyResult {
   catalogueErrors: CatalogueError[];
   issues: DataIssue[];
   circuits: CircuitResult[];
+  /** the method the phase allocation was built with, when one was used */
+  allocationMethod?: AllocationMethod;
+  /** Worst Case only: per circuit id, how the worst distribution was found (worstCase.ts) */
+  worstCase?: Record<string, WorstCaseCheck>;
 }
 
 const ORIGINS: ReadonlySet<string> = new Set<InputOrigin>(['legacy-project', 'e2-input']);
@@ -54,10 +67,7 @@ export const runStudyE2 = (doc: ProjectDocument, options: E2Options): E2StudyRes
   for (const e of catalogueErrors) refused.set(e.entryId, [refused.get(e.entryId), `${e.field}:${e.problem}`].filter(Boolean).join(', '));
   const entries = new Map<string, CableEntry>(catalogue.entries.filter((e) => !refused.has(e.id)).map((e) => [e.id, e]));
 
-  const { circuits, issues } = buildNetwork({
-    doc, settings, powerFactorDefaulted, origin: options.inputOrigin, entries, refused,
-    selection: options.catalogueSelection ?? {}, allocation: options.allocation ?? EMPTY_ALLOCATION,
-  });
+  const method = options.allocation ? undefined : options.allocationMethod;
   const solve: SolveSettings = {
     Vph: settings.phaseVoltage, pf: settings.powerFactor!, loadModel: (settings.loadModel ?? 'constant-current') as LoadModel,
     limitPercent: settings.limitPercent, nearLimitFraction: settings.nearLimitFraction,
@@ -67,6 +77,15 @@ export const runStudyE2 = (doc: ProjectDocument, options: E2Options): E2StudyRes
       { name: 'pf', element: 'settings', provenance: powerFactorDefaulted ? 'default' : 'project', value: settings.powerFactor! },
     ],
   };
+  const build = (allocation: PhaseAllocation) => buildNetwork({
+    doc, settings, powerFactorDefaulted, origin: options.inputOrigin, entries, refused,
+    selection: options.catalogueSelection ?? {}, allocation,
+  });
+  // Worst Case: the distribution with the highest drop, found with E2 itself (worstCase.ts)
+  const worst = method === 'worst' && settings.powerFactor !== undefined
+    ? worstCaseAllocation(doc, settings, (a) => build(a).circuits, solve, options.worstCaseLimits) : undefined;
+  const allocation = options.allocation ?? worst?.allocation ?? (method ? allocateSinglePhase(doc, settings, method) : EMPTY_ALLOCATION);
+  const { circuits, issues } = build(allocation);
   return {
     engineVersion: E2_ENGINE_VERSION,
     inputOrigin: options.inputOrigin,
@@ -76,6 +95,8 @@ export const runStudyE2 = (doc: ProjectDocument, options: E2Options): E2StudyRes
     catalogueErrors,
     issues,
     circuits: circuits.map((c) => solveCircuit(c, solve)),
+    ...(method ? { allocationMethod: method } : {}),
+    ...(worst ? { worstCase: worst.checks } : {}),
   };
 };
 
@@ -85,3 +106,5 @@ export type * from './quantity';
 export type { Catalogue, CableEntry, CatalogueDocument, Measured } from './catalogue/schema';
 export type { CatalogueSelection, InputOrigin } from './catalogue/resolve';
 export type { PhaseAllocation } from './phases';
+export { allocateSinglePhase, METHOD_SOURCE, type AllocationMethod } from './allocation';
+export { worstCaseAllocation, WORST_CASE_EXHAUSTIVE_LIMIT, WORST_CASE_SEARCH_LIMIT, type WorstCaseCheck, type WorstCaseGuarantee } from './worstCase';

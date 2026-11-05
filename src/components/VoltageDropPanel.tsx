@@ -2,20 +2,22 @@ import React, { useMemo, useState } from 'react';
 import { X } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import type { CableElement, ElectricalSettings, SpanProps, SymbolElement } from '../types/drawing';
-import { useVoltageDrop } from '../utils/useVoltageDrop';
-import type { CircuitResult, VoltageDropResult } from '../utils/voltageDrop';
-import { AR_TR, circuitStatusLabel, fmt, issueText, loadModelLabel, missingLabel, POLE_STATUS_MARK, poleStatusLabel, provisionalLabel, reviewLabel, settingMissingLabel, type Tr } from '../utils/vdLabels';
+import { useVoltageView } from '../utils/useE2Study';
+import { reasonLabel, warningLabel, type VdCircuit, type VdPole, type VdSpan, type VoltageView } from '../utils/e2Presentation';
+import { AR_TR, circuitStatusLabel, fmt, issueText, loadModelLabel, methodLabel, POLE_STATUS_MARK, poleStatusLabel, reviewLabel, WORST_CASE_MARK, type Tr } from '../utils/vdLabels';
 import { useLocale, useT } from '../store/localeStore';
 import { directionOf } from '../i18n';
-import type { MissingItem, PoleResult } from '../utils/voltageDrop';
 import { spanCableTypeProblem } from '../utils/cableTypeModel';
+import { SINGLE_PHASE_AMPS } from '../utils/loads';
 
-/** status text of a pole result; a provisional value is never shown as a plain "within the limit" */
-export const poleStatusText = (p: PoleResult, tr: Tr = AR_TR) => {
-  if (p.status === 'na') return `${tr('vd.naMark')} ${poleStatusLabel('na', tr)}${p.reason ? tr(`vd.naReason.${p.reason}`) : ''}`;
-  if (p.provisional.length) return tr('vd.provisionalValue', { mark: '⚑', status: tr('vd.provisionalStatus'), value: poleStatusLabel(p.status, tr), reasons: p.provisional.map((r) => provisionalLabel(r, tr)).join(tr('common.reasonSep')) });
+/** status text of a pole result (E2); a provisional value is never shown as a plain "within the limit" */
+export const poleStatusText = (p: VdPole, tr: Tr = AR_TR) => {
+  if (p.status === 'na') return `${tr('vd.naMark')} ${poleStatusLabel('na', tr)}${p.reason ? ` (${reasonLabel(p.reason, tr)})` : ''}`;
+  if (p.provisional) return tr('vd.provisionalValue', { mark: '⚑', status: tr('vd.provisionalStatus'), value: poleStatusLabel(p.status, tr), reasons: p.warnings.map((w) => warningLabel(w, tr)).join(tr('common.reasonSep')) });
   return `${POLE_STATUS_MARK[p.status]} ${poleStatusLabel(p.status, tr)}`;
 };
+/** the E2 currents of a span, a / b / c (A), and its neutral current */
+const spanCurrents = (sp: VdSpan) => ({ abc: (['a', 'b', 'c'] as const).map((p) => fmt(sp.currentA[p], 1)).join(' / '), n: fmt(sp.currentA.n, 1) });
 import { poleNamer } from '../utils/poleNames';
 import { spanAt } from '../utils/spanModel';
 import { SpanPropertiesSheet, spanSummary } from './SpanPropertiesSheet';
@@ -30,11 +32,12 @@ import { allStudySplitPoints, endSplitPoints, setSplitConsumerSide, type SplitSi
 
 // Voltage-drop settings, results and report (Stages 7.6 / 7.7).
 
-type SettingsForm = Record<'pf' | 'temp' | 'limit' | 'near' | 'minPh' | 'minLL' | 'vph' | 'vll', string> & { mode: ElectricalSettings['singlePhaseMode']; loadModel: NonNullable<ElectricalSettings['loadModel']> };
+type SettingsForm = Record<'pf' | 'temp' | 'limit' | 'near' | 'minPh' | 'minLL' | 'vph' | 'vll' | 'nominal', string> & { mode: ElectricalSettings['singlePhaseMode']; loadModel: NonNullable<ElectricalSettings['loadModel']> };
 const toForm = (s: ElectricalSettings): SettingsForm => ({
   pf: s.powerFactor?.toString() ?? '', temp: s.conductorTempC?.toString() ?? '', limit: String(s.limitPercent),
   near: String(Math.round(s.nearLimitFraction * 100)), minPh: String(s.minPhaseVoltage), minLL: String(s.minLineVoltage),
   vph: String(s.phaseVoltage), vll: String(s.lineVoltage), mode: s.singlePhaseMode, loadModel: s.loadModel ?? 'constant-current',
+  nominal: String(s.singlePhaseNominalA ?? SINGLE_PHASE_AMPS),
 });
 const n = (s: string) => (s.trim() === '' ? undefined : Number(s.trim().replace(',', '.')));
 
@@ -52,6 +55,7 @@ const fromForm = (f: SettingsForm, tr: Tr): { changes: Partial<ElectricalSetting
     phaseVoltage: req(tr('vd.field.vph'), f.vph, (v) => v > 0),
     lineVoltage: req(tr('vd.field.vll'), f.vll, (v) => v > 0),
     singlePhaseMode: f.mode,
+    singlePhaseNominalA: req(tr('vd.field.nominalA'), f.nominal, (v) => v > 0),
     loadModel: f.loadModel,
   };
   return { changes, errors };
@@ -64,32 +68,39 @@ const NumField: React.FC<{ field: string; label: string; value: string; onChange
   </label>
 );
 
-/** Plain-text report (for copying into a message / document), in the language of `tr` (Arabic by default). */
-export const voltageDropReportText = (r: VoltageDropResult, name: (id: string) => string, cables: Map<string, CableElement>, powerFactorDefault = false, tr: Tr = AR_TR): string => {
+/** Plain-text report (for copying into a message / document), in the language of `tr` (Arabic by default). Every value is E2's. */
+export const voltageDropReportText = (r: VoltageView, name: (id: string) => string, cables: Map<string, CableElement>, powerFactorDefault = false, tr: Tr = AR_TR): string => {
   const s = r.settings;
   const lines: string[] = [];
   const model = s.loadModel ?? 'constant-current';
   lines.push(tr('vd.report.title'));
   lines.push(tr('vd.report.nominal', { vph: s.phaseVoltage, vll: s.lineVoltage, limit: s.limitPercent, minPh: s.minPhaseVoltage, minLL: s.minLineVoltage }));
-  lines.push(tr('vd.report.pfLine', { pf: s.powerFactor ?? tr('vd.report.pfNotEntered'), pfDefault: powerFactorDefault ? tr('vd.report.pfDefault') : '', mode: s.singlePhaseMode === 'worst' ? tr('vd.report.modeWorst') : tr('vd.report.modeBalanced') }));
+  lines.push(tr('vd.report.pfLine', { pf: s.powerFactor ?? tr('vd.report.pfNotEntered'), pfDefault: powerFactorDefault ? tr('vd.report.pfDefault') : '', mode: r.method === 'worst' ? tr('vd.report.modeWorst') : tr('vd.report.modeBalanced') }));
+  if (r.method === 'worst' && r.worstCase) lines.push(tr('vd.report.worstCaseLine', { guarantee: tr(`vd.worstCase.${r.worstCase}`), help: tr(`vd.worstCaseHelp.${r.worstCase}`) }));
+  lines.push(tr('vd.report.nominalLine', { a: s.singlePhaseNominalA ?? SINGLE_PHASE_AMPS }));
   lines.push(tr('vd.report.loadModel', { model: loadModelLabel(model, tr), note: model === 'constant-power' ? tr('vd.report.constantPowerNote') : '' }));
   if (s.studyProposedConsumers) lines.push(tr('vd.report.studyProposed'));
   if (s.studySuggestedSplits) lines.push(tr('vd.report.studySplits'));
-  for (const m of r.settingsMissing) lines.push(tr('vd.report.missing', { item: settingMissingLabel(m, tr) }));
   r.circuits.forEach((c, i) => {
     lines.push('');
     if (c.converged === false) lines.push(tr('vd.report.notConverged', { n: i + 1, iterations: c.iterations ?? '' }));
-    lines.push(tr('vd.report.circuit', { n: i + 1, status: circuitStatusLabel(c.status, tr), source: c.circuit.sourcePoleId ? tr('vd.report.source', { pole: name(c.circuit.sourcePoleId), kind: c.circuit.sourceKind === 'manual' ? tr('vd.report.sourceManual') : tr('vd.report.sourceTransformer') }) : '' }));
-    if (c.maxPercent !== undefined) lines.push(tr('vd.report.worst', { mark: c.worstProvisional ? '≈' : '', percent: c.maxPercent.toFixed(2), pole: name(c.worstPoleId!), provisional: c.worstProvisional ? tr('vd.report.worstProvisional') : '' }));
+    // the network's status: its topology, then whether E2 could calculate it
+    const status = c.status !== 'ok' ? circuitStatusLabel(c.status, tr)
+      : c.completeness.status === 'unavailable' || c.completeness.status === 'not-run' ? `${poleStatusLabel('na', tr)}${c.completeness.reason ? ` (${reasonLabel(c.completeness.reason, tr)})` : ''}` : circuitStatusLabel('ok', tr);
+    lines.push(tr('vd.report.circuit', { n: i + 1, status, source: c.circuit.sourcePoleId ? tr('vd.report.source', { pole: name(c.circuit.sourcePoleId), kind: c.circuit.sourceKind === 'manual' ? tr('vd.report.sourceManual') : tr('vd.report.sourceTransformer') }) : '' }));
+    // Worst Case: how this circuit's worst distribution was found
+    if (r.method === 'worst' && c.worstCase && c.worstCase !== 'not-needed') lines.push(tr('vd.report.circuitWorstCase', { guarantee: tr(`vd.worstCase.${c.worstCase}`) }));
+    if (c.maxPercent !== undefined) lines.push(tr('vd.report.worst', { mark: c.worstProvisional ? '≈' : '', percent: c.maxPercent.toFixed(2), pole: name(c.worstPoleId!), phase: c.worstPhase ?? '—', provisional: c.worstProvisional ? tr('vd.report.worstProvisional') : '' }));
     for (const p of c.poles) {
       lines.push(p.status === 'na'
-        ? tr('vd.report.poleNa', { pole: name(p.poleId) })
-        : tr('vd.report.pole', { pole: name(p.poleId), mark: p.provisional.length ? '≈' : '', drop: fmt(p.dropV), percent: fmt(p.percent), phaseV: fmt(p.phaseV, 1), lineV: p.lineV !== undefined ? ` / ${fmt(p.lineV, 1)} V` : '', status: poleStatusText(p, tr) }));
+        ? `${tr('vd.report.poleNa', { pole: name(p.poleId) })}${p.reason ? ` (${reasonLabel(p.reason, tr)})` : ''}`
+        : tr('vd.report.pole', { pole: name(p.poleId), phase: p.phase ?? '—', mark: p.provisional ? '≈' : '', drop: fmt(p.dropV), percent: fmt(p.percent), phaseV: fmt(p.phaseV, 1), lineV: p.lineV !== undefined ? ` / ${fmt(p.lineV, 1)} V` : '', status: poleStatusText(p, tr) }));
     }
     for (const sp of c.spans) {
       const cab = cables.get(sp.cableId);
       const props = cab ? spanAt(cab, sp.index).props : undefined;
-      lines.push(tr('vd.report.span', { from: name(sp.fromPole), to: name(sp.toPole), length: sp.lengthM ?? '?', summary: spanSummary(props, tr), current: fmt(sp.phaseCurrentA, 1), drop: sp.computable ? `${fmt(sp.dropV)} V` : tr('vd.report.spanNotComputed', { list: sp.missing.map((m) => missingLabel(m, tr)).join(tr('common.reasonSep')) }) }));
+      const cur = spanCurrents(sp);
+      lines.push(tr('vd.report.span', { from: name(sp.fromPole), to: name(sp.toPole), length: sp.lengthM ?? '?', summary: spanSummary(props, tr), current: cur.abc, neutral: cur.n, drop: sp.computable ? `${fmt(sp.dropV)} V${sp.dropPhase ? ` (${sp.dropPhase})` : ''}` : tr('vd.report.spanNotComputed', { list: sp.reasons.map((m) => reasonLabel(m, tr)).join(tr('common.reasonSep')) }) }));
     }
     if (c.circuit.inferredJunctions.length) lines.push(tr('vd.report.inferred', { list: [...new Set(c.circuit.inferredJunctions.map((j) => name(j.poleId)))].join(tr('common.listSep')) }));
   });
@@ -99,18 +110,17 @@ export const voltageDropReportText = (r: VoltageDropResult, name: (id: string) =
     for (const i of r.issues) lines.push(`- ${issueText(i, name, tr)}`);
   }
   lines.push('');
+  lines.push(tr('vd.methodNote'));
   lines.push(tr('vd.report.resistance'));
   lines.push(tr('vd.report.loads'));
   lines.push(tr('vd.report.thermal'));
   return lines.join('\n');
 };
 
-// a span linked to a library cable is calculated by E2 from its snapshot: E1's «R / X / Rn not
-// entered» are not shown for it (E1 itself is unchanged and still reads only the span's own fields)
-const E2_VALUES: ReadonlySet<MissingItem> = new Set(['resistance', 'reactance', 'neutral']);
-export const linkedSpanView = (props: SpanProps | undefined, missing: readonly MissingItem[]) => {
+/** a span linked to a library cable (a readable snapshot), and whether it has no supply system */
+export const linkedSpanView = (props: SpanProps | undefined) => {
   const linked = !!props?.cableType && spanCableTypeProblem(props.cableType) === null;
-  return { linked, missing: linked ? missing.filter((m) => !E2_VALUES.has(m)) : [...missing], systemMissing: linked && !props!.system };
+  return { linked, systemMissing: linked && !props!.system };
 };
 /** spans linked to a library cable without a supply system: E2 cannot calculate them (nothing is assumed) */
 export const linkedSpansWithoutSystem = (elements: readonly { type: string }[]): number => {
@@ -118,7 +128,7 @@ export const linkedSpansWithoutSystem = (elements: readonly { type: string }[]):
   for (const e of elements) {
     if (e.type !== 'cable') continue;
     const c = e as CableElement;
-    for (let i = 0; i < c.poleIds.length - 1; i++) if (linkedSpanView(spanAt(c, i).props, []).systemMissing) n++;
+    for (let i = 0; i < c.poleIds.length - 1; i++) if (linkedSpanView(spanAt(c, i).props).systemMissing) n++;
   }
   return n;
 };
@@ -142,7 +152,7 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
     saveHistory();
     setConfirmDefaults(false);
   };
-  const result = useVoltageDrop(true)!;
+  const result = useVoltageView(true)!;
   const name = useMemo(() => poleNamer(elements, t), [elements, t]);
   const cables = useMemo(() => new Map(elements.filter((e): e is CableElement => e.type === 'cable').map((c) => [c.id, c])), [elements]);
   const [form, setForm] = useState<SettingsForm>(() => toForm(electrical));
@@ -182,8 +192,8 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { window.prompt(t('vd.copyPrompt'), text); }
   };
 
-  const transformersIn = (c: CircuitResult) => [...c.circuit.poleIds].filter((id) => (elements.find((e) => e.id === id) as SymbolElement | undefined)?.symbolId === 'transformer');
-  const manualIn = (c: CircuitResult) => [...c.circuit.poleIds].filter((id) => (elements.find((e) => e.id === id) as SymbolElement | undefined)?.modifiers?.vdSource);
+  const transformersIn = (c: VdCircuit) => [...c.circuit.poleIds].filter((id) => (elements.find((e) => e.id === id) as SymbolElement | undefined)?.symbolId === 'transformer');
+  const manualIn = (c: VdCircuit) => [...c.circuit.poleIds].filter((id) => (elements.find((e) => e.id === id) as SymbolElement | undefined)?.modifiers?.vdSource);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 sm:items-center sm:p-4" onClick={onClose}>
@@ -217,12 +227,23 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
               <NumField field="vph" label={t('vd.settings.vph')} value={form.vph} onChange={(v) => setF('vph', v)} />
               <NumField field="vll" label={t('vd.settings.vll')} value={form.vll} onChange={(v) => setF('vll', v)} />
             </div>
+            <div className="mt-3 flex flex-col gap-1" data-vd-nominal>
+              <label className="flex flex-col gap-1">
+                <span className="text-[13px] font-medium text-ios-secondary">{t('vd.settings.nominalA')}</span>
+                <span className="flex items-center gap-2">
+                  <input className="ui-field h-10 w-28" type="text" inputMode="decimal" value={form.nominal} onChange={(e) => setF('nominal', e.target.value)} aria-label={t('vd.settings.nominalA')} data-vd-field="nominal" />
+                  <span className="text-[14px] font-medium text-ios-label">A</span>
+                </span>
+              </label>
+              <span className="text-[12px] text-ios-tertiary">{t('vd.settings.nominalAHelp')}</span>
+            </div>
             <div className="mt-3 flex flex-col gap-1">
               <span className="text-[13px] font-medium text-ios-secondary">{t('vd.settings.singlePhase')}</span>
               <div className="ui-segment self-start" role="radiogroup" aria-label={t('vd.settings.singlePhaseGroup')}>
                 <button type="button" role="radio" aria-checked={form.mode === 'worst'} className={`ui-segment-item ${form.mode === 'worst' ? 'is-active' : ''}`} data-vd-mode="worst" onClick={() => setForm((f) => ({ ...f, mode: 'worst' }))}>{t('vd.settings.worst')}</button>
                 <button type="button" role="radio" aria-checked={form.mode === 'balanced'} className={`ui-segment-item ${form.mode === 'balanced' ? 'is-active' : ''}`} data-vd-mode="balanced" onClick={() => setForm((f) => ({ ...f, mode: 'balanced' }))}>{t('vd.settings.balanced')}</button>
               </div>
+              <span className="text-[12px] text-ios-tertiary" data-vd-mode-help={form.mode}>{form.mode === 'worst' ? t('vd.settings.worstHelp') : t('vd.settings.balancedHelp')}</span>
             </div>
             <div className="mt-3 flex flex-col gap-1">
               <span className="text-[13px] font-medium text-ios-secondary">{t('vd.settings.loadModel')}</span>
@@ -242,6 +263,9 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
           </section>
 
           <p className="mb-2 text-[13px] text-ios-label" data-vd-load-model={electrical.loadModel ?? 'constant-current'}>{t('vd.usedLoadModel')}<b>{loadModelLabel(electrical.loadModel ?? 'constant-current', t)}</b></p>
+          <p className="mb-2 text-[13px] text-ios-label" data-vd-method={result.method}>{t('vd.usedMethod')}<b>{result.method === 'worst' ? `${WORST_CASE_MARK} ` : ''}{methodLabel(result, t)}</b> · {t('vd.usedNominal')}<b data-vd-nominal-used={electrical.singlePhaseNominalA ?? SINGLE_PHASE_AMPS}>{electrical.singlePhaseNominalA ?? SINGLE_PHASE_AMPS} A</b></p>
+          {result.method === 'worst' && result.worstCase && <p className="mb-2 text-[12px] text-ios-secondary" data-vd-worst-case={result.worstCase}>{t(`vd.worstCaseHelp.${result.worstCase}`)}</p>}
+          <p className="mb-2 text-[12px] text-ios-secondary">{t('vd.methodNote')}</p>
           <p className="mb-2 text-[13px] text-ios-label" data-vd-power-factor={pfDefault ? 'default' : 'saved'}>{t('vd.usedPf')}<b>{pfDefault ? DEFAULT_POWER_FACTOR : electrical.powerFactor}</b>{pfDefault && <span className="text-ios-secondary">{t('vd.usedPfDefault')}</span>}</p>
 
           {/* proposed subscribers: confirmed ones are always calculated; the others only in this study */}
@@ -333,7 +357,6 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
               )}
             </section>
           )}
-          {result.settingsMissing.map((m) => <p key={m} className="mb-2 rounded-ctl bg-amber-50 px-3 py-2 text-[13px] text-amber-900">{t('vd.missingSetting', { item: settingMissingLabel(m, t) })}</p>)}
 
           {result.circuits.length === 0 && <p className="py-6 text-center text-ios-secondary">{t('vd.noCircuits')}</p>}
 
@@ -344,7 +367,8 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
                 <span className="flex gap-1">{[...new Set(c.spans.map((s) => s.color))].map((col) => <span key={col} className="h-3 w-3 rounded-full ring-1 ring-inset ring-black/10" style={{ backgroundColor: col }} />)}</span>
                 {c.converged === false && <span className="text-[13px] font-semibold text-amber-900" data-vd-not-converged>{t('vd.notConverged', { n: c.iterations ?? '' })}</span>}
                 <span className={`text-[13px] ${c.status === 'ok' ? 'text-ios-secondary' : 'text-amber-900'}`}>{c.status === 'ok' ? t('vd.source', { pole: name(c.circuit.sourcePoleId!), kind: c.circuit.sourceKind === 'manual' ? t('vd.sourceManual') : t('vd.sourceTransformer') }) : `⚠ ${circuitStatusLabel(c.status, t)}`}</span>
-                {c.maxPercent !== undefined && <span className="ms-auto text-[13px] font-semibold text-ios-label">{t('vd.worst', { mark: c.worstProvisional ? '≈' : '', percent: c.maxPercent.toFixed(2), pole: name(c.worstPoleId!), provisional: c.worstProvisional ? t('vd.worstProvisional') : '' })}</span>}
+                {c.status === 'ok' && (c.completeness.status === 'unavailable' || c.completeness.status === 'not-run') && <span className="text-[13px] font-semibold text-amber-900" data-vd-circuit-na={c.completeness.reason}>⚠ {poleStatusLabel('na', t)}{c.completeness.reason ? ` (${reasonLabel(c.completeness.reason, t)})` : ''}</span>}
+                {c.maxPercent !== undefined && <span className="ms-auto text-[13px] font-semibold text-ios-label">{t('vd.worst', { mark: c.worstProvisional ? '≈' : '', percent: c.maxPercent.toFixed(2), pole: name(c.worstPoleId!), phase: c.worstPhase ?? '—', provisional: c.worstProvisional ? t('vd.worstProvisional') : '' })}</span>}
               </div>
               {/* choose / clear the source */}
               {(c.status === 'multiple-transformers' || c.status === 'no-source' || c.status === 'multiple-sources' || manualIn(c).length > 0) && (
@@ -363,17 +387,18 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[420px] text-[13px]">
                     <thead className="text-ios-secondary"><tr className="text-start">
-                      <th className="px-3 py-1 font-medium">{t('vd.table.pole')}</th><th className="px-2 py-1 font-medium">{t('vd.table.drop')}</th><th className="px-2 py-1 font-medium">{t('vd.table.percent')}</th><th className="px-2 py-1 font-medium">{t('vd.table.phaseV')}</th><th className="px-2 py-1 font-medium">{t('vd.table.lineV')}</th><th className="px-2 py-1 font-medium">{t('vd.table.status')}</th>
+                      <th className="px-3 py-1 font-medium">{t('vd.table.pole')}</th><th className="px-2 py-1 font-medium">{t('vd.table.phase')}</th><th className="px-2 py-1 font-medium">{t('vd.table.drop')}</th><th className="px-2 py-1 font-medium">{t('vd.table.percent')}</th><th className="px-2 py-1 font-medium">{t('vd.table.phaseV')}</th><th className="px-2 py-1 font-medium">{t('vd.table.lineV')}</th><th className="px-2 py-1 font-medium">{t('vd.table.status')}</th>
                     </tr></thead>
                     <tbody>
                       {c.poles.map((p) => (
-                        <tr key={p.bus} className="border-t border-ios-separator" data-vd-pole={p.poleId} data-vd-status={p.status} data-vd-provisional={p.provisional.length ? '1' : undefined}>
+                        <tr key={p.bus} className="border-t border-ios-separator" data-vd-pole={p.poleId} data-vd-status={p.status} data-vd-provisional={p.provisional ? '1' : undefined}>
                           <td className="px-3 py-1"><span className="me-1 inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: p.color }} />{name(p.poleId)}{p.consumerIds.length ? t('vd.poleConsumers', { n: p.consumerIds.length }) : ''}</td>
+                          <td className="px-2 py-1">{p.phase ?? '—'}</td>
                           <td className="px-2 py-1 tabular-nums">{fmt(p.dropV)}</td>
                           <td className="px-2 py-1 tabular-nums">{fmt(p.percent)}</td>
                           <td className="px-2 py-1 tabular-nums">{fmt(p.phaseV, 1)}</td>
                           <td className="px-2 py-1 tabular-nums">{p.lineV === undefined ? '—' : fmt(p.lineV, 1)}</td>
-                          <td className={`px-2 py-1 ${p.provisional.length && p.status !== 'na' ? 'text-amber-900' : ''}`}>{poleStatusText(p, t)}</td>
+                          <td className={`px-2 py-1 ${p.provisional && p.status !== 'na' ? 'text-amber-900' : ''}`}>{poleStatusText(p, t)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -382,9 +407,9 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
               )}
 
               {c.spans.length > 0 && (() => {
-                  // what each span shows: E1's missing items, without R / X / Rn for a span linked to the library
-                  const viewOf = (sp: (typeof c.spans)[number]) => { const cab = cables.get(sp.cableId); return linkedSpanView(cab ? spanAt(cab, sp.index).props : undefined, sp.missing); };
-                  const flagged = c.spans.filter((s) => { const v = viewOf(s); return v.missing.length > 0 || v.systemMissing; }).length;
+                  // spans E2 could not calculate (with E2's reasons), and linked spans without a supply system
+                  const viewOf = (sp: VdSpan) => { const cab = cables.get(sp.cableId); return linkedSpanView(cab ? spanAt(cab, sp.index).props : undefined); };
+                  const flagged = c.status === 'ok' ? c.spans.filter((s) => s.reasons.length > 0 || viewOf(s).systemMissing).length : 0;
                   return (
                 <details className="border-t border-ios-separator" open={flagged > 0}>
                   <summary className="cursor-pointer px-3 py-2 text-[13px] font-medium text-ios-label">{t('vd.spans', { n: c.spans.length, m: flagged })}</summary>
@@ -392,16 +417,17 @@ export const VoltageDropPanel: React.FC<{ onClose: () => void }> = ({ onClose })
                     {c.spans.map((sp) => {
                       const cab = cables.get(sp.cableId);
                       const props = cab ? spanAt(cab, sp.index).props : undefined;
-                      const view = linkedSpanView(props, sp.missing);
+                      const view = linkedSpanView(props);
+                      const cur = spanCurrents(sp);
                       return (
                         <li key={sp.key} className="flex items-start gap-2 border-t border-ios-separator px-3 py-2 text-[13px]" data-vd-span={sp.key}>
                           <span className="mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full" style={{ backgroundColor: sp.color }} />
                           <div className="min-w-0 flex-1">
                             <div className="text-ios-label">{name(sp.fromPole)} ← {name(sp.toPole)}: {sp.lengthM !== undefined ? t('vd.spanLength', { n: sp.lengthM }) : t('vd.spanLengthUnknown')} · {spanSummary(props, t)}</div>
-                            <div className="text-ios-secondary">{t('vd.spanCurrent', { i: fmt(sp.phaseCurrentA, 1), i3: fmt(sp.threePhaseA, 1), i1: fmt(sp.singlePhaseA, 1), drop: sp.computable ? `${fmt(sp.dropV)} V` : '—' })}{sp.cumulativeDropV !== undefined ? t('vd.spanCumulative', { v: fmt(sp.cumulativeDropV) }) : ''}</div>
-                            {view.missing.length > 0 && <div className="text-amber-900" data-vd-span-missing>{t('vd.missing', { list: view.missing.map((m) => missingLabel(m, t)).join(t('common.reasonSep')) })}</div>}
-                            {sp.review.map((r) => <div key={r} className="text-amber-900">⚠ {reviewLabel(r, t)}</div>)}
-                            {sp.inherited && <div className="text-ios-secondary">{t('vd.inherited')}</div>}
+                            <div className="text-ios-secondary">{t('vd.spanCurrent', { a: fmt(sp.currentA.a, 1), b: fmt(sp.currentA.b, 1), c: fmt(sp.currentA.c, 1), n: cur.n, drop: sp.computable ? `${fmt(sp.dropV)} V${sp.dropPhase ? ` (${sp.dropPhase})` : ''}` : '—' })}{sp.cumulativeDropV !== undefined ? t('vd.spanCumulative', { v: fmt(sp.cumulativeDropV) }) : ''}</div>
+                            {c.status === 'ok' && sp.reasons.length > 0 && <div className="text-amber-900" data-vd-span-missing>{t('vd.missing', { list: sp.reasons.map((m) => reasonLabel(m, t)).join(t('common.reasonSep')) })}</div>}
+                            {(props?.review ?? []).map((r) => <div key={r} className="text-amber-900">⚠ {reviewLabel(r, t)}</div>)}
+                            {props?.inherited && <div className="text-ios-secondary">{t('vd.inherited')}</div>}
                             {view.linked && <div className="text-ios-blue" data-vd-span-e2>{t('defaultCable.spanE2')}</div>}
                             {view.systemMissing && <div className="font-medium text-amber-900" data-vd-span-no-system>⚠ {t('defaultCable.noSystem')}</div>}
                           </div>

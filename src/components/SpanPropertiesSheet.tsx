@@ -4,10 +4,10 @@ import { useDrawingStore } from '../store/drawingStore';
 import type { CableElement, CableKind, ConductorMaterial, DrawingElement, SpanProps, SupplySystem } from '../types/drawing';
 import { hasElectrical, spanAt, withSpanProps } from '../utils/spanModel';
 import { pairKey } from '../utils/cableSegments';
-import { computeVoltageDrop, spanKey } from '../utils/voltageDrop';
+import { spanKey } from '../utils/spanLength';
+import { reasonLabel, voltageView, warningLabel } from '../utils/e2Presentation';
 import { linkDefaultCable, usableDefault } from '../utils/defaultCable';
-import { effectiveSettings } from '../utils/electricalSettings';
-import { AR_TR, CABLE_KIND_LABEL, cableKindLabel, fmt, missingLabel, provisionalLabel, reviewLabel, settingMissingLabel, type Tr } from '../utils/vdLabels';
+import { AR_TR, CABLE_KIND_LABEL, cableKindLabel, fmt, reviewLabel, type Tr } from '../utils/vdLabels';
 import { useLocale, useT } from '../store/localeStore';
 import { directionOf } from '../i18n';
 import { isPlainDistance } from '../utils/distances';
@@ -159,7 +159,8 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
   }, [onClose, picking]);
 
   const draft = useMemo(() => (a && b ? fromForm(form, [a, b], stored, t) : null), [form, a, b, stored, t]);
-  // live check of this span with the values in the form (nothing saved)
+  // live check of this span with the values in the form (nothing saved): the E2 result of the
+  // drawing as it would be with them
   const preview = useMemo(() => {
     if (!cable || !draft || !spanId) return null;
     const els = elements.map((e) => (e.id === cable.id ? withSpanProps(cable, spanId, draft.props) : e));
@@ -167,9 +168,9 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
     if (form.length.trim()) d[distKey] = form.length.trim(); else delete d[distKey];
     const flags = { ...distanceFlags };
     if (form.length.trim() !== (connectionDistances[distKey] ?? '') || confirmMeasured) delete flags[distKey];
-    const r = computeVoltageDrop(els, d, effectiveSettings(electrical), flags);
+    const r = voltageView({ elements: els, connectionDistances: d, distanceFlags: flags, electrical });
     const circuit = r.circuits.find((c) => c.spans.some((s) => s.cableId === cable.id && s.index === index));
-    return { span: r.bySpan.get(spanKey(cable.id, index)), circuit, settingsMissing: r.settingsMissing };
+    return { span: r.bySpan.get(spanKey(cable.id, index)), circuit };
   }, [elements, connectionDistances, electrical, distanceFlags, confirmMeasured, cable, spanId, index, form, distKey, draft]);
 
   if (!cable || !a || !b || !spanId || !draft) return null;
@@ -315,20 +316,17 @@ export const SpanPropertiesSheet: React.FC<Props> = ({ cableId, index, onClose }
             {draft.errors.length > 0 && <p className="text-ios-red">{t('span.invalid', { list: draft.errors.join(t('common.listSep')) })}</p>}
             {lengthBad && <p className="text-ios-red">{t('span.lengthInvalid')}</p>}
             {preview?.circuit && preview.circuit.status !== 'ok' && <p className="text-amber-900">{t('span.networkNotComputable')}</p>}
-            {s && s.missing.length === 0 && preview?.settingsMissing.length === 0 && s.computable && (
-              <p className="text-ios-label">{t('span.complete', { drop: fmt(s.dropV, 2), current: fmt(s.phaseCurrentA, 1), cumulative: s.cumulativeDropV !== undefined ? t('span.cumulative', { v: fmt(s.cumulativeDropV, 2) }) : '' })}</p>
+            {s && s.reasons.length === 0 && s.computable && (
+              <p className="text-ios-label">{t('span.complete', { drop: fmt(s.dropV, 2), phase: s.dropPhase ?? '—', current: (['a', 'b', 'c'] as const).map((p) => fmt(s.currentA[p], 1)).join(' / '), cumulative: s.cumulativeDropV !== undefined ? t('span.cumulative', { v: fmt(s.cumulativeDropV, 2) }) : '' })}</p>
             )}
-            {s && s.computable && s.provisional.length > 0 && (
-              <ul className="list-disc ps-5 text-amber-900" data-span-provisional>{s.provisional.map((r) => <li key={r}>{t('span.provisional', { reason: provisionalLabel(r, t) })}</li>)}</ul>
+            {s && s.computable && s.provisional && s.warnings.length > 0 && (
+              <ul className="list-disc ps-5 text-amber-900" data-span-provisional>{s.warnings.map((w) => <li key={w}>{t('span.provisional', { reason: warningLabel(w, t) })}</li>)}</ul>
             )}
-            {s && s.missing.length > 0 && (
+            {s && s.reasons.length > 0 && preview?.circuit?.status === 'ok' && (
               <div>
                 <p className="font-medium text-ios-label">{t('span.missingTitle')}</p>
-                <ul className="list-disc ps-5 text-ios-secondary">{s.missing.map((m) => <li key={m}>{missingLabel(m, t)}</li>)}</ul>
+                <ul className="list-disc ps-5 text-ios-secondary" data-span-reasons>{s.reasons.map((m) => <li key={m}>{reasonLabel(m, t)}</li>)}</ul>
               </div>
-            )}
-            {preview && preview.settingsMissing.length > 0 && (
-              <ul className="list-disc ps-5 text-ios-secondary">{preview.settingsMissing.map((m) => <li key={m}>{settingMissingLabel(m, t)}</li>)}</ul>
             )}
             {!s && <p className="text-ios-secondary">{t('span.notInNetwork')}</p>}
           </div>

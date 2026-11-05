@@ -111,8 +111,9 @@ export const proposalBoxCenter = (elements: DrawingElement[], c: ConsumerElement
   return layout?.get(c.id) ?? originalBoxCenter(elements, c, poleRadius, scale);
 };
 
-/** `layout`: automatic box centres (layoutProposalBoxes); `drawScale`: the drawn size factor of the box (≥ scale, for small zoom) */
-export const proposalGeometry = (elements: DrawingElement[], c: ConsumerElement, poleRadius: number, scale = 1, layout?: Map<string, Point>, drawScale = scale): ProposalGeometry | null => {
+/** `layout`: automatic box centres (layoutProposalBoxes); `drawScale`: the drawn size factor of the box (≥ scale, for small zoom);
+ *  `singleAmps`: the project's default single-phase nominal load (the load written in the box) */
+export const proposalGeometry = (elements: DrawingElement[], c: ConsumerElement, poleRadius: number, scale = 1, layout?: Map<string, Point>, drawScale = scale, singleAmps?: number): ProposalGeometry | null => {
   const pole = elements.find((e) => e.id === c.poleId);
   const B = proposalBoxCenter(elements, c, poleRadius, scale, layout);
   scale = drawScale;
@@ -126,7 +127,7 @@ export const proposalGeometry = (elements: DrawingElement[], c: ConsumerElement,
   const tEdge = Math.min(Math.abs(u.x) > 1e-9 ? w / 2 / Math.abs(u.x) : Infinity, Math.abs(u.y) > 1e-9 ? h / 2 / Math.abs(u.y) : Infinity);
   const edge = { x: B.x - u.x * tEdge, y: B.y - u.y * tEdge };
   const Q = { x: P.x + u.x * rr, y: P.y + u.y * rr };
-  const l = consumerLoad(c);
+  const l = consumerLoad(c, singleAmps);
   const geo: ProposalGeometry = { box: { cx: B.x, cy: B.y, w, h }, line: [edge, Q], amps: l.invalid ? undefined : l.amps, connected: false };
   const conn = c.proposal?.connection;
   const cable = conn ? (elements.find((e) => e.id === conn.cableId) as CableElement | undefined) : undefined;

@@ -176,7 +176,7 @@ describe('E2 and an unresolved merge of different cable types', () => {
     expect(r.issues.some((i) => i.code === 'cable-type:merge-conflict')).toBe(false);
     expect(c.nodes.find((x) => x.poleId === 'A')!.dropV.a).toMatchObject({ status: 'provisional', warnings: expect.arrayContaining(['span-review']) });
   });
-  it('the difference with E1 is stated: a span with a cable type and its own R / X / Rn', () => {
+  it('it is stated that a span\'s own R / X / Rn are not used when it has a cable type', () => {
     const { r } = e2({ ...noPoles(linked(R1)), rOhmPerKm: 0.4, xOhmPerKm: 0.07 });
     expect(r.issues).toContainEqual({ code: 'cable-type:legacy-values-ignored', severity: 'reported', target: { kind: 'span', id: 'k1#0' }, params: { fields: 'R,X' } });
     expect(e2(noPoles(linked(R1))).r.issues.some((i) => i.code === 'cable-type:legacy-values-ignored')).toBe(false);

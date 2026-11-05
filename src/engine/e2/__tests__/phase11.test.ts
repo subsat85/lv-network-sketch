@@ -4,7 +4,7 @@ import { normalizeElements } from '../../../utils/spanModel';
 import { effectiveSettings } from '../../../utils/electricalSettings';
 import { goldenCases, goldenTreeCases } from '../../../utils/__tests__/vdGoldenNetworks';
 import type { NetworkIssue } from '../../../utils/network';
-import { runStudy } from '../../index';
+import { networkIssueTarget } from '../../issues';
 import { toNetwork } from '../../adapter';
 import type { DataIssue } from '../../issues';
 import type { ProjectDocument } from '../../model';
@@ -38,7 +38,7 @@ const allQ = (c: CircuitResult): Quantity<unknown>[] => [
   ...c.loads.flatMap((l) => Object.values(l.currentA)),
 ];
 
-// one drawing per representative E1 issue kind
+// one drawing per representative network issue kind
 const FIXTURES: { name: string; kind: NetworkIssue['kind']; doc: ProjectDocument }[] = [
   { name: 'loop', kind: 'loop', doc: docOf([tr('T'), pole('A'), pole('B'), cable('c', ['T', 'A', 'B', 'T'])]) },
   { name: 'missing pole', kind: 'missing-pole', doc: docOf([tr('T'), pole('A'), cable('c', ['T', 'A', 'Z'])]) },
@@ -50,48 +50,57 @@ const FIXTURES: { name: string; kind: NetworkIssue['kind']; doc: ProjectDocument
   { name: 'orphan', kind: 'orphan-consumer', doc: docOf([tr('T'), pole('A'), cable('c', ['T', 'A']), sub('o', 'A', BLUE)]) },
 ];
 const GOLDEN = [...goldenCases(), ...goldenTreeCases()].map((g) => ({ name: g.name, doc: { elements: g.elements, connectionDistances: g.distances, distanceFlags: {}, electrical: g.settings } as ProjectDocument }));
-const e1Issues = (doc: ProjectDocument): { issue: NetworkIssue; circuitId?: string }[] => {
+const netIssues = (doc: ProjectDocument): { issue: NetworkIssue; circuitId?: string }[] => {
   const { legacy } = toNetwork(doc, effectiveSettings(doc.electrical as ElectricalSettings));
   return [...legacy.issues.map((issue) => ({ issue })), ...legacy.circuits.flatMap((c) => c.issues.map((issue) => ({ issue, circuitId: c.id })))];
 };
 
-describe('F1 every E1 network issue is in the E2 result', () => {
-  it('the same network issues as E1 (code and target), over the fixtures and every golden network; none twice', () => {
+// the network issues of the drawing's topology (buildNetwork) as DataIssue (code and target), and
+// the auto-junction review list, as the drawing reports them
+const topologyIssues = (doc: ProjectDocument): DataIssue[] => {
+  const { legacy } = toNetwork(doc, effectiveSettings(doc.electrical as ElectricalSettings));
+  const all = [...legacy.issues, ...legacy.circuits.flatMap((c) => c.issues)].map((i) => ({ code: `network:${i.kind}`, severity: 'reported' as const, target: networkIssueTarget(i) }));
+  const junctions = legacy.circuits.flatMap((c) => c.inferredJunctions.map((j) => ({ code: 'network:inferred-junction', severity: 'reported' as const, target: { kind: 'pole' as const, id: j.poleId }, params: { circuitId: c.id, cableId: j.cableId, end: j.end, withCableIds: j.withCableIds.join(',') } })));
+  return [...all, ...junctions];
+};
+
+describe('F1 every network issue of the drawing is in the E2 result', () => {
+  it('the same network issues as the drawing\'s network (code and target), over the fixtures and every golden network; none twice', () => {
     for (const { name, doc } of [...FIXTURES, ...GOLDEN]) {
-      const e1 = new Set(runStudy(doc).issues.filter((i) => i.code.startsWith('network:')).map(key));
+      const e1 = new Set(topologyIssues(doc).map(key));
       const e2 = E2(doc).issues.filter((i) => i.code.startsWith('network:'));
       expect(new Set(e2.map(key)), name).toEqual(e1);
       expect(new Set(e2.map((i) => JSON.stringify(i))).size, name).toBe(e2.length);
     }
   });
-  it('each representative kind keeps its kind, source and every field of E1', () => {
+  it('each representative kind keeps its kind, source and every field of the network issue', () => {
     for (const { name, kind, doc } of FIXTURES) {
-      const found = e1Issues(doc).filter((x) => x.issue.kind === kind);
+      const found = netIssues(doc).filter((x) => x.issue.kind === kind);
       expect(found.length, name).toBeGreaterThan(0);
       const e2 = E2(doc).issues;
       for (const { issue, circuitId } of found) {
         const fields = Object.fromEntries(Object.entries(issue).filter(([k]) => k !== 'kind').map(([k, v]) => [k, Array.isArray(v) ? v.join(',') : v]));
         const got = e2.filter((i) => i.code === `network:${kind}` && Object.entries(fields).every(([k, v]) => i.params?.[k] === v));
         expect(got, `${name}: ${JSON.stringify(issue)}`).toHaveLength(1);
-        expect(got[0].params?.source).toBe('e1-network');
+        expect(got[0].params?.source).toBe('drawing-network');
         if (circuitId) expect(String(got[0].params?.circuitIds).split(',')).toContain(circuitId);
       }
     }
   });
   it('an issue found in several circuits is one issue that names all of them', () => {
     const doc = FIXTURES.find((f) => f.kind === 'ambiguous-junction')!.doc;
-    const inE1 = e1Issues(doc).filter((x) => x.issue.kind === 'ambiguous-junction');
-    const distinct = new Set(inE1.map((x) => JSON.stringify(x.issue)));
+    const inNet = netIssues(doc).filter((x) => x.issue.kind === 'ambiguous-junction');
+    const distinct = new Set(inNet.map((x) => JSON.stringify(x.issue)));
     const e2 = E2(doc).issues.filter((i) => i.code === 'network:ambiguous-junction');
-    expect(inE1.length).toBeGreaterThan(distinct.size);
+    expect(inNet.length).toBeGreaterThan(distinct.size);
     expect(e2).toHaveLength(distinct.size);
     const named = e2.flatMap((i) => String(i.params!.circuitIds).split(','));
-    expect(new Set(named)).toEqual(new Set(inE1.map((x) => x.circuitId)));
+    expect(new Set(named)).toEqual(new Set(inNet.map((x) => x.circuitId)));
   });
-  it('the auto-junction review list of E1 is kept (network:inferred-junction)', () => {
+  it('the auto-junction review list of the network is kept (network:inferred-junction)', () => {
     let n = 0;
     for (const { doc } of GOLDEN) {
-      const e1 = runStudy(doc).issues.filter((i) => i.code === 'network:inferred-junction');
+      const e1 = topologyIssues(doc).filter((i) => i.code === 'network:inferred-junction');
       const e2 = E2(doc).issues.filter((i) => i.code === 'network:inferred-junction');
       expect(e2.map(({ params, ...rest }) => ({ ...rest, params: { ...params, source: undefined } })).map((i) => JSON.stringify({ ...i, params: Object.fromEntries(Object.entries(i.params).filter(([, v]) => v !== undefined)) })))
         .toEqual(e1.map((i) => JSON.stringify(i)));
@@ -111,7 +120,7 @@ describe('F2 a proposal that cannot be connected', () => {
   it('study on: issue kept, not in the loads, the circuit it names is provisional (proposed-consumer-excluded)', () => {
     const r = study(true, atZ);
     const c = main(r);
-    expect(r.issues).toContainEqual({ code: 'network:proposed-consumer-unconnected', severity: 'provisional', target: { kind: 'consumer', id: 'p' }, params: { consumerId: 'p', poleId: 'Z', source: 'e1-network' } });
+    expect(r.issues).toContainEqual({ code: 'network:proposed-consumer-unconnected', severity: 'provisional', target: { kind: 'consumer', id: 'p' }, params: { consumerId: 'p', poleId: 'Z', source: 'drawing-network' } });
     expect(c.loads.map((l) => l.consumerId)).toEqual(['u0']);
     expect(A(c).dropV.a).toMatchObject({ status: 'provisional', warnings: ['proposed-consumer-excluded'] });
     expect(c.spans[0].arithmeticSumA.a.warnings).toContain('proposed-consumer-excluded');
@@ -149,9 +158,10 @@ describe('F3 the arithmetic bound carries what it rests on', () => {
     const allocation = (spanVerified: boolean): PhaseAllocation => ({ consumers: { u0: { b: 5, source: 'design', ...checked } }, singlePhaseSpans: { 'k1#0': { phase: 'b', source: 'design', ...(spanVerified ? checked : {}) } } });
     const ok = main(E2(single, { inputOrigin: 'legacy-project', allocation: allocation(true) })).spans[0].arithmeticSumA.b;
     const unverified = main(E2(single, { inputOrigin: 'legacy-project', allocation: allocation(false) })).spans[0].arithmeticSumA.b;
-    expect(ok.warnings).toEqual(['load-default']);
+    // (the single-phase load is the project's default single-phase nominal load, a project setting: no 'load-default')
+    expect(ok.warnings).toEqual([]);
     expect(unverified.status).toBe('provisional');
-    expect(unverified.warnings.slice().sort()).toEqual(['allocation-unverified', 'load-default']);
+    expect(unverified.warnings.slice().sort()).toEqual(['allocation-unverified']);
     expect(unverified.value).toBe(20);
   });
   it('the power factor (not a current input) does not mark the bound', () => {
@@ -182,7 +192,7 @@ describe('F4 an invalid 1ph2w span allocation is an invalid input (not-run)', ()
   it('a missing span allocation stays different: unavailable (|Irule| known, no voltage)', () => {
     const c = run({});
     expect(A(c).dropV.b).toMatchObject({ status: 'unavailable', reason: 'phase-allocation-missing' });
-    expect(c.loads[0].currentA.b).toMatchObject({ status: 'provisional', value: 20 });
+    expect(c.loads[0].currentA.b).toMatchObject({ status: 'computed', value: 20 });
     expect(c.completeness).toMatchObject({ status: 'unavailable', reason: 'phase-allocation-missing' });
   });
   it('an invalid allocation on a span without current: the nodes behind it are not-run', () => {
@@ -223,7 +233,8 @@ describe('F6 solve status and result completeness', () => {
   it('computed / provisional / unavailable / not-run', () => {
     const computed = study([{ variant: 'square', label: '30' }]);
     expect([computed.solve.status, computed.completeness.status]).toEqual(['computed', 'computed']);
-    const provisional = study([{ variant: 'circle', count: 5 }], { inputOrigin: 'legacy-project', allocation: { consumers: { u0: { a: 5, source: 'design', ...checked } }, singlePhaseSpans: {} } });
+    // an unverified allocation makes the result provisional ('allocation-unverified')
+    const provisional = study([{ variant: 'circle', count: 5 }], { inputOrigin: 'legacy-project', allocation: { consumers: { u0: { a: 5, source: 'design' } }, singlePhaseSpans: {} } });
     expect([provisional.solve.status, provisional.completeness.status]).toEqual(['provisional', 'provisional']);
     // the sweep did not start (a phase is missing); the circuit's result is unavailable, not invalid
     const missing = study([{ variant: 'circle', count: 5 }]);
@@ -254,7 +265,7 @@ describe('F6 solve status and result completeness', () => {
     const { doc } = drawing({ Lm: 100, props: { system: '1ph2w', cableKind: 'underground', parallel: 1 }, consumers: [{ variant: 'circle', count: 5 }] });
     const c = main(E2(doc, { inputOrigin: 'legacy-project', allocation: { consumers: { u0: { b: 5, source: 'design', ...checked } }, singlePhaseSpans: { 'k1#0': { phase: 'b', source: 'design', ...checked } } } }));
     expect(A(c).voltage.a.reason).toBe('phase-not-present');
-    expect(c.completeness.status).toBe('provisional');
+    expect(c.completeness.status).toBe('computed');
   });
 });
 
@@ -316,7 +327,7 @@ describe('F8 an orphan makes the phase distribution unknown', () => {
     const c = main(E2(doc, { inputOrigin: 'legacy-project', allocation: { consumers: { u0: { b: 5, source: 'design', ...checked } }, singlePhaseSpans: { 'k1#0': { phase: 'b', source: 'design', ...checked } } } }));
     expect(c.loads.map((l) => l.consumerId)).toEqual(['u0']);
     expect(A(c).dropV.b.status).toBe('provisional');
-    expect(A(c).dropV.b.warnings.slice().sort()).toEqual(['load-default', 'orphan-consumer-excluded']);
+    expect(A(c).dropV.b.warnings.slice().sort()).toEqual(['orphan-consumer-excluded']);
     expect(c.spans[0].current.b.value!.magnitude).toBeCloseTo(20, 9);
   });
 });
@@ -329,7 +340,7 @@ describe('F9 verification metadata', () => {
   };
   it('approved with by and on: verified', () => {
     const { r, c } = run({ status: 'approved', by: 'synthetic reviewer', on: '2026-10-31' });
-    expect(A(c).dropV.a.warnings).toEqual(['load-default']);
+    expect(A(c).dropV.a.warnings).toEqual([]);
     expect(r.issues.some((i) => i.code === 'allocation:approval-incomplete')).toBe(false);
   });
   it('approved without by or on (or with empty text): not approved — provisional, with its issue', () => {
@@ -347,7 +358,7 @@ describe('F9 verification metadata', () => {
     }
   });
   it('checked needs no by / on; unverified needs nothing; a source alone is never an approval', () => {
-    expect(A(run({ status: 'checked' }).c).dropV.a.warnings).toEqual(['load-default']);
+    expect(A(run({ status: 'checked' }).c).dropV.a.warnings).toEqual([]);
     expect(A(run({ status: 'unverified' }).c).dropV.a.warnings).toContain('allocation-unverified');
     expect(A(run(undefined).c).dropV.a.warnings).toContain('allocation-unverified');
   });

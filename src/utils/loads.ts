@@ -3,7 +3,8 @@ import type { ConsumerElement, DrawingElement } from '../types/drawing';
 // ---------------------------------------------------------------------------
 // Subscriber load rules — the ones the load report has always used, in one place
 // so the report and the voltage-drop calculation cannot drift apart:
-//   - circle  (واحد فاز, single-phase): 4 A per subscriber;
+//   - circle  (واحد فاز, single-phase): the project's default single-phase nominal load per
+//     subscriber (ElectricalSettings.singlePhaseNominalA, 4 A unless changed);
 //   - square  (ثلاث فاز, three-phase):  the number written on it, in A, or 32 A
 //     when it has no (numeric) label. Anything that is not a circle counts as
 //     three-phase, as before (older subscribers may have no variant).
@@ -33,11 +34,12 @@ export interface ConsumerLoad {
   invalid?: 'label' | 'count';
 }
 
-export const consumerLoad = (c: Pick<ConsumerElement, 'variant' | 'label' | 'count'>): ConsumerLoad => {
+/** `singleAmps`: the nominal load of one single-phase subscriber (the project setting; 4 A by default) */
+export const consumerLoad = (c: Pick<ConsumerElement, 'variant' | 'label' | 'count'>, singleAmps: number = SINGLE_PHASE_AMPS): ConsumerLoad => {
   const count = c.count || 1;
   const badCount = !(Number.isInteger(count) && count >= 1);
   if (c.variant === 'circle') {
-    const l: ConsumerLoad = { kind: 'single', count, ampsEach: SINGLE_PHASE_AMPS, amps: count * SINGLE_PHASE_AMPS, source: 'single-phase-rule' };
+    const l: ConsumerLoad = { kind: 'single', count, ampsEach: singleAmps, amps: count * singleAmps, source: 'single-phase-rule' };
     if (badCount) l.invalid = 'count';
     return l;
   }
@@ -51,7 +53,7 @@ export const consumerLoad = (c: Pick<ConsumerElement, 'variant' | 'label' | 'cou
 };
 
 /** Subscribers whose load value cannot be used (for warnings). */
-export const invalidLoads = (consumers: ConsumerElement[]) => consumers.filter((c) => !!consumerLoad(c).invalid);
+export const invalidLoads = (consumers: ConsumerElement[], singleAmps: number = SINGLE_PHASE_AMPS) => consumers.filter((c) => !!consumerLoad(c, singleAmps).invalid);
 
 export interface ColorLoad {
   color: string;
@@ -63,13 +65,13 @@ export interface ColorLoad {
 }
 
 /** Load report rows: totals per cable colour, largest first (unchanged behaviour). */
-export const loadsByColor = (consumers: ConsumerElement[]): ColorLoad[] => {
+export const loadsByColor = (consumers: ConsumerElement[], singleAmps: number = SINGLE_PHASE_AMPS): ColorLoad[] => {
   const map = new Map<string, ColorLoad>();
   for (const c of consumers) {
     const color = c.color || '#000000';
     let row = map.get(color);
     if (!row) { row = { color, singlePhaseCount: 0, singlePhaseLoad: 0, threePhaseCount: 0, threePhaseLoad: 0, totalLoad: 0 }; map.set(color, row); }
-    const l = consumerLoad(c);
+    const l = consumerLoad(c, singleAmps);
     if (l.kind === 'single') { row.singlePhaseCount += l.count; row.singlePhaseLoad += l.amps; }
     else { row.threePhaseCount += l.count; row.threePhaseLoad += l.amps; }
     row.totalLoad = row.singlePhaseLoad + row.threePhaseLoad;

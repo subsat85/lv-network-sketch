@@ -122,7 +122,7 @@ export const resolveSpan = (
     if (!parallelValid) issues.push({ code: 'parallel-invalid', severity: 'blocks', target: { kind: 'span', id: key }, params: { value: String(parallel) } });
   }
   else if (origin === 'legacy-project') {
-    np = ok('np', key, 1, 'legacy-default', ['phase-parallel-default'], 'legacy project without parallel: 1, as the existing engine');
+    np = ok('np', key, 1, 'legacy-default', ['phase-parallel-default'], 'existing project without parallel: 1 (one conductor set)');
     issues.push({ code: 'setting-default:phase-parallel', severity: 'reported', target: { kind: 'span', id: key }, params: { value: 1 } });
   } else np = no('phase-parallel-unknown');
 

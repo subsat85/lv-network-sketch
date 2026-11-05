@@ -4,14 +4,13 @@ import type { CableElement, SpanProps } from '../../../types/drawing';
 import { createCableType, latestRevision } from '../../../utils/cableTypeModel';
 import { prepareImportedCables, type DefaultCable } from '../../../utils/defaultCable';
 import { withSpanProps } from '../../../utils/spanModel';
-import { computeVoltageDrop } from '../../../utils/voltageDrop';
 import { effectiveSettings } from '../../../utils/electricalSettings';
 import { runStudyE2 } from '../index';
 import type { CircuitResult } from '../model';
 import { drawing } from './references';
 
-// An old drawing imported with the default cable: E2 calculates it from the default's snapshot; E1
-// (no conductor table any more) has no values for it. ALL VALUES ARE SYNTHETIC.
+// An old drawing imported with the default cable: E2 calculates it from the default's snapshot.
+// ALL VALUES ARE SYNTHETIC.
 
 const v = (value: number | undefined, basis: 'ac' | 'dc' | 'unspecified' | 'ac-50hz') =>
   ({ ...(value !== undefined ? { value } : {}), unit: 'ohm/km' as const, basis, verification: { status: 'checked' } }) as never;
@@ -42,13 +41,6 @@ describe('an imported old drawing and E2', () => {
     const k = doc.elements.find((e) => e.type === 'cable') as CableElement;
     const other = { ...doc, elements: doc.elements.map((e) => (e.type === 'cable' ? withSpanProps(k, k.spanIds![0], { ...k.spanProps![k.spanIds![0]], rOhmPerKm: 9 }) : e)) };
     expect(nodeA(e2(other).c)).toEqual(nodeA(c));
-  });
-  it('E1 has nothing for it (no conductor table): the span is not computed, R missing', () => {
-    const { doc } = imported(def());
-    const r = computeVoltageDrop(doc.elements, doc.connectionDistances, effectiveSettings(doc.electrical), doc.distanceFlags);
-    const s = [...r.bySpan.values()][0];
-    expect(s.computable).toBe(false);
-    expect(s.missing).toContain('resistance');
   });
   it('a missing value of the default cable stays missing in E2 (blocks), a DC value is used as entered (provisional)', () => {
     const missing = e2(imported(def({ r: v(undefined, 'unspecified') })).doc);

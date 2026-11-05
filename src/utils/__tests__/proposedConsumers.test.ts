@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { buildNetwork, consumerIncluded, Network } from '../network';
-import { computeVoltageDrop } from '../voltageDrop';
+import { chainDrops, computeVoltageView } from './vdTestView';
 import { normalizeElements, withSpanProps } from '../spanModel';
 import { DEFAULT_ELECTRICAL, readElectricalSettings } from '../electricalSettings';
 import { parseProjectFile, serializeProject } from '../projectSerialization';
@@ -60,19 +60,20 @@ describe('1–4. proposing, confirming, and the official results', () => {
   });
 
   it('3b. voltage drop with hand values: a confirmed 50 A at B (Al 95, 100 m spans)', () => {
-    const ZPH = 0.38448 * 0.9 + 0.08 * Math.sqrt(1 - 0.81);
-    const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', rOhmPerKm: 0.38448, xOhmPerKm: 0.08, rNeutralOhmPerKm: 0.38448, system: '3ph4w', dataSource: 'test' }; // R / Rn entered (synthetic): no conductor table
+    // reference: an independent phasor solution of the chain (chainDrops), balanced three-phase loads
+    const chain = (...A: number[]) => chainDrops(A.map((a) => ({ Lm: 100, A: a })), 0.38448, 0.08);
+    const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', rOhmPerKm: 0.38448, xOhmPerKm: 0.08, rNeutralOhmPerKm: 0.38448, system: '3ph4w', parallel: 1, dataSource: 'test' }; // R / Rn entered (synthetic): no conductor table
     const withProps = (els: DrawingElement[]) => normalizeElements(els).map((e) => {
       if (e.type !== 'cable') return e;
       let c = e; c.poleIds.slice(0, -1).forEach((p, i) => { c = withSpanProps(c, c.spanIds![i], { ...AL95, poles: [p, c.poleIds[i + 1]] }); }); return c;
     });
     const S: ElectricalSettings = { ...DEFAULT_ELECTRICAL, powerFactor: 0.9, conductorTempC: 70 };
     const D = { A_T: '100', A_B: '100' };
-    const dropB = (els: DrawingElement[], s = S) => computeVoltageDrop(withProps(els), D, s).byPole.get('B')!.find((x) => x.status !== 'na')!.dropV!;
-    expect(dropB(LINE())).toBeCloseTo(ZPH * 0.1 * (30 + 20), 9);
-    expect(dropB(LINE(prop('p', 'B', 50, at('main'))))).toBeCloseTo(ZPH * 0.1 * (30 + 20), 9);                          // proposed: official unchanged
-    expect(dropB(LINE(prop('p', 'B', 50, at('main'))), { ...S, studyProposedConsumers: true })).toBeCloseTo(ZPH * 0.1 * (80 + 70), 9); // study
-    expect(dropB(LINE(prop('p', 'B', 50, { status: 'confirmed', ...at('main') })))).toBeCloseTo(ZPH * 0.1 * (80 + 70), 9); // confirmed
+    const dropB = (els: DrawingElement[], s = S) => computeVoltageView(withProps(els), D, s).byPole.get('B')!.find((x) => x.status !== 'na')!.dropV!;
+    expect(dropB(LINE())).toBeCloseTo(chain(10, 20)[1], 6);
+    expect(dropB(LINE(prop('p', 'B', 50, at('main'))))).toBeCloseTo(chain(10, 20)[1], 6);                          // proposed: official unchanged
+    expect(dropB(LINE(prop('p', 'B', 50, at('main'))), { ...S, studyProposedConsumers: true })).toBeCloseTo(chain(10, 70)[1], 6); // study
+    expect(dropB(LINE(prop('p', 'B', 50, { status: 'confirmed', ...at('main') })))).toBeCloseTo(chain(10, 70)[1], 6); // confirmed
   });
 });
 
@@ -138,8 +139,9 @@ describe('6. with the confirmed electrical split study', () => {
 });
 
 describe('comparison and the recommended cable (rule approved by the user)', () => {
-  const ZPH = 0.38448 * 0.9 + 0.08 * Math.sqrt(1 - 0.81);
-  const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', rOhmPerKm: 0.38448, xOhmPerKm: 0.08, rNeutralOhmPerKm: 0.38448, system: '3ph4w', dataSource: 'test' }; // R / Rn entered (synthetic): no conductor table
+  // reference: an independent phasor solution of a chain of 100 m spans (chainDrops)
+  const chain = (...A: number[]) => chainDrops(A.map((a) => ({ Lm: 100, A: a })), 0.38448, 0.08);
+  const AL95: Omit<SpanProps, 'poles'> = { cableKind: 'abc', material: 'al', crossSectionMm2: 95, neutralCrossSectionMm2: 95, neutralMaterial: 'al', rOhmPerKm: 0.38448, xOhmPerKm: 0.08, rNeutralOhmPerKm: 0.38448, system: '3ph4w', parallel: 1, dataSource: 'test' }; // R / Rn entered (synthetic): no conductor table
   const withProps = (els: DrawingElement[]) => normalizeElements(els).map((e) => {
     if (e.type !== 'cable') return e;
     let c = e; c.poleIds.slice(0, -1).forEach((p, i) => { c = withSpanProps(c, c.spanIds![i], { ...AL95, poles: [p, c.poleIds[i + 1]] }); }); return c;
@@ -156,10 +158,10 @@ describe('comparison and the recommended cable (rule approved by the user)', () 
     const [r1, r2] = cmp.results;
     expect(r1.candidate.cableId).toBe('c1');
     // c1: T–A carries 60 + 40, A–B 60 → worst at B
-    expect(r1.maxPercent! * 230 / 100).toBeCloseTo(ZPH * 0.1 * (100 + 60), 9);
-    expect(r1.maxPercentBefore! * 230 / 100).toBeCloseTo(ZPH * 0.1 * (60 + 60), 9);
-    // c2: T2–A carries 5 + 40, A–C 5 → worst at A (45 A × 0.1 km) vs C (45 + 5)
-    expect(r2.maxPercent! * 230 / 100).toBeCloseTo(ZPH * 0.1 * (45 + 5), 9);
+    expect(r1.maxPercent! * 230 / 100).toBeCloseTo(chain(40, 60)[1], 6);
+    expect(r1.maxPercentBefore! * 230 / 100).toBeCloseTo(chain(0, 60)[1], 6);
+    // c2: T2–A carries 5 + 40, A–C 5 → worst at C
+    expect(r2.maxPercent! * 230 / 100).toBeCloseTo(chain(40, 5)[1], 6);
     expect(cmp.recommended?.candidate.cableId).toBe('c2');
     expect(r2.recommended).toBe(true);
     expect(r1.violations).toEqual([]);
@@ -226,8 +228,10 @@ describe('comparison and the recommended cable (rule approved by the user)', () 
     const r = compareConnections(e, { A_T: '100', A_B: '100', B_X: '100' }, S, {}, prop('new', 'B', 10), connectionCandidates(e, 'B', S).filter((c) => c.cableId === 'c1'));
     const x = r.results[0];
     expect(x.computable).toBe(false);
-    expect(x.incompletePoleIds).toEqual(['X']);
-    expect(x.reason).toBe('جزء من الشبكة غير قابل للحساب (بيانات ناقصة) — لا يمكن التحقق من جميع المشتركين');
+    // E2 solves the network as a whole: with a span of missing data carrying current, no pole of
+    // that network has a value, so the subscriber's own pole has none either
+    expect(x.atPole?.status).toBe('na');
+    expect(x.reason).toBe('بيانات ناقصة على المسار');
     expect(x.maxPercent).toBeUndefined();      // no "maximum drop" shown as if it were final
     expect(x.recommended).toBeUndefined();
     expect(r.recommended).toBeUndefined();
@@ -249,7 +253,7 @@ describe('comparison and the recommended cable (rule approved by the user)', () 
     const e = els();
     const r = compareConnections(e, D, S, {}, prop('new', 'A', 40), connectionCandidates(e, 'A', S));
     expect(r.results.every((x) => x.computable && x.incompletePoleIds === undefined && x.maxPercent !== undefined)).toBe(true);
-    expect(r.results[1].maxPercent! * 230 / 100).toBeCloseTo(ZPH * 0.1 * (45 + 5), 9);
+    expect(r.results[1].maxPercent! * 230 / 100).toBeCloseTo(chain(40, 5)[1], 6);
     expect(r.recommended?.candidate.cableId).toBe('c2');
   });
 

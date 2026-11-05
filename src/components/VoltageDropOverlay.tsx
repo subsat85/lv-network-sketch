@@ -1,10 +1,10 @@
 import React, { useMemo } from 'react';
 import type { DrawingElement } from '../types/drawing';
-import type { VoltageDropResult } from '../utils/voltageDrop';
+import type { VoltageView } from '../utils/e2Presentation';
 import type { LayoutContext, Rect } from '../utils/overlayLayout';
 import { vdOverlayLayout } from '../utils/vdOverlayLayout';
 
-// Voltage-drop results drawn on the sketch (Stage 7.6): the cumulative drop at
+// Voltage-drop results drawn on the sketch (E2): the drop of the worst phase at
 // each pole of a computed network, in the colour of the cable that feeds it.
 // The status is a symbol (✓ ⚠ ‼ ؟) and the badge outline, never a colour, so the
 // red of proposed cables keeps its meaning. A provisional value (estimated length,
@@ -18,7 +18,7 @@ export const MIN_SCREEN_FONT_PX = 9;
 
 interface Props {
   elements: DrawingElement[];
-  result: VoltageDropResult;
+  result: VoltageView;
   poleRadius: number;
   /** text size factor (follows the distance-label size setting) */
   textScale?: number;

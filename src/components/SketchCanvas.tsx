@@ -18,7 +18,7 @@ import { TransformerTableSvg, transformerTableRows, transformerTableSize } from 
 import { ProposedConsumerSheet } from './ProposedConsumerSheet';
 import { layoutProposalBoxes, proposalBoxCenter, proposalGeometry } from '../utils/proposalDrawing';
 import { useSmallScreen } from '../utils/smallScreen';
-import { useVoltageDrop } from '../utils/useVoltageDrop';
+import { useVoltageView } from '../utils/useE2Study';
 import { splitSpanInCables } from '../utils/spanModel';
 import { midPoleId } from '../utils/splitPoleId';
 import { usableDefault, withDefaultCableSpan } from '../utils/defaultCable';
@@ -146,7 +146,8 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
   } = useDrawingStore();
 
   const showVoltageDrop = useDrawingStore((s) => s.showVoltageDrop);
-  const vdResult = useVoltageDrop(showVoltageDrop);
+  const vdResult = useVoltageView(showVoltageDrop);
+  const singlePhaseNominalA = useDrawingStore((s) => s.electrical.singlePhaseNominalA);
 
   // Label layout (overlayLayout.ts): the zoom stepped DOWN in 2 % steps (layoutViewScale; the layout is
   // not redone on every pinch frame); texts are kept at least MIN_SCREEN_FONT_PX high on screen, never smaller than set.
@@ -1772,7 +1773,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
 
   // «مشترك مقترح»: box («مشترك» + load in A), line to the pole, jumper to the chosen cable
   const renderProposal = (el: ConsumerElement) => {
-    const g = proposalGeometry(elements, el, POLE_RADIUS * poleSizeScale, consumerSizeScale, boxLayout, boxDrawScale);
+    const g = proposalGeometry(elements, el, POLE_RADIUS * poleSizeScale, consumerSizeScale, boxLayout, boxDrawScale, singlePhaseNominalA);
     if (!g) return null;
     const isSelected = el.id === selectedId;
     const confirmed = el.proposal?.status === 'confirmed';

@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Zap, Circle } from 'lucide-react';
 import { ConsumerElement } from '../types/drawing';
 import { invalidLoads, loadsByColor, SINGLE_PHASE_AMPS, THREE_PHASE_DEFAULT_AMPS } from '../utils/loads';
+import { useDrawingStore } from '../store/drawingStore';
 import { useLocale, useT } from '../store/localeStore';
 import { directionOf } from '../i18n';
 
@@ -17,10 +18,12 @@ export const LoadReportModal: React.FC<LoadReportModalProps> = ({ isOpen, onClos
   if (!isOpen) return null;
 
   // Load grouped by cable colour — rules in utils/loads.ts (shared with the voltage-drop calculation)
-  const cableLoads = loadsByColor(consumers);
+  // a single-phase subscriber's load is the project's default single-phase nominal load (4 A unless changed)
+  const single = useDrawingStore((s) => s.electrical.singlePhaseNominalA) ?? SINGLE_PHASE_AMPS;
+  const cableLoads = loadsByColor(consumers, single);
   const totalLoad = cableLoads.reduce((sum, cable) => sum + cable.totalLoad, 0);
   // totals are kept exactly as before; values that cannot be a current are pointed out
-  const invalid = invalidLoads(consumers);
+  const invalid = invalidLoads(consumers, single);
 
   return (
     // z-[60]: above FloatingHistoryControls (z-50, rendered later), like the other dialogs (VoltageDropPanel, SpanPropertiesSheet)
@@ -113,7 +116,7 @@ export const LoadReportModal: React.FC<LoadReportModalProps> = ({ isOpen, onClos
         {/* Note */}
         <div className="px-6 py-2 bg-gray-50 border-t border-gray-100 flex-shrink-0">
           <div className="text-xs text-gray-500 text-center">
-            {t('loads.note', { single: SINGLE_PHASE_AMPS, three: THREE_PHASE_DEFAULT_AMPS })}
+            {t('loads.note', { single, three: THREE_PHASE_DEFAULT_AMPS })}
           </div>
         </div>
       </div>

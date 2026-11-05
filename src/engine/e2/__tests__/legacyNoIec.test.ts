@@ -25,7 +25,6 @@ import { useDrawingStore } from '../../../store/drawingStore';
 // the values the removed IEC 60228 table had for Al 70 mm² (20 °C) — written here only to show that
 // they appear nowhere (the table itself was removed with the default-cable change)
 const IEC_AL70_R20 = 0.443;
-import { runStudy } from '../../index';
 import { runStudyE2 } from '../index';
 import type { CircuitResult } from '../model';
 import type { PhaseAllocation } from '../phases';
@@ -124,14 +123,6 @@ describe('old projects stay intact and editable', () => {
     expect(JSON.stringify(reopened.data)).toBe(before);
     expect(JSON.stringify(db.data.get('project_old-1'))).toBe(stored);
     expect(spanOf(reopened.data.elements).props.rOhmPerKm).toBeUndefined();
-  });
-  it('9. E1 has no conductor table either (removed with the default-cable change): the same old span has no R', () => {
-    const { doc } = e2({ ...OLD, xOhmPerKm: 0.08 }, { balanced: true, tempC: 70 });
-    const span = (runStudy(doc).legacy as { circuits: { spans: { r?: number; rSource?: string; computable: boolean; missing: string[] }[] }[] }).circuits[0].spans[0];
-    expect(span.computable).toBe(false);
-    expect(span.rSource).toBeUndefined();
-    expect(span.r).toBeUndefined();
-    expect(span.missing).toContain('resistance');
   });
 });
 
