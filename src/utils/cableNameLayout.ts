@@ -15,8 +15,8 @@ import { poleTag } from './poleNames';
 // linked to), at display time (cableSizeOf): the name, the snapshot and the library are not changed,
 // nothing is looked up in the library, nothing is invented. A span without a valid link, or whose cable
 // name has no size that can be read with confidence, has no label.
-// One label per cable and size, on the longest span of that cable with that size: a name is not
-// repeated along its cable. The label is plain text along the span (turned so it reads left to
+// A size is written on the first and the last span of each run of a cable with that size
+// (cableNameSpans): not repeated on the spans in between. The label is plain text along the span (turned so it reads left to
 // right), next to its cable — no leader line, no frame. The labels of the cables that run along the
 // same span (parallel cables) form one aligned stack on one side: the same place along the span,
 // one font, equal spacing, in the cables' own order across the span. Where a stack goes is chosen like
@@ -97,6 +97,75 @@ export interface CableNameOptions {
   markFont?: number;
 }
 
+/**
+ * The spans that carry a cable's size: the FIRST and the LAST span of every run — a stretch of one
+ * cable (one colour) along which the same size is linked, followed through the poles as the cable runs
+ * (its drawn order of poles), not by where the spans are on the screen. A run with one span gets one
+ * label; a size that changes along the cable starts a new run (3×120 on spans 1–3 and 3×70 on 4–5:
+ * 3×120 on spans 1 and 3, 3×70 on spans 4 and 5); the spans in between carry none.
+ *
+ * A drawn cable is one run along its consecutive spans with the same size, also where it passes a
+ * branching pole (a side branch is another drawn cable: a run of its own; nothing is repeated on the
+ * two sides of the branch point). Two DIFFERENT drawn cables are one run only where one is the other's
+ * continuation, all of: the first ends at the pole where the second starts (drawn order), the same
+ * colour and size, no other span of that colour at that pole, and the pole is not a transformer. So two
+ * feeders out of one transformer, two cables starting (or ending) at one pole, a branch and parallel
+ * cables (other colours) are never joined: each has its own first and last span, whether they end at
+ * the same pole or not. Spans without a readable size (cableNameOf) end a run and carry nothing. A
+ * closed loop with no end gets one label. Deterministic; in element order, then span order.
+ */
+export const cableNameSpans = (elements: DrawingElement[]): { cable: CableElement; index: number; text: string }[] => {
+  type Node = { id: string; cable: CableElement; index: number; order: number; text?: string; color: string; a: string; b: string };
+  const nodes: Node[] = [];
+  for (const e of elements) {
+    if (e.type !== 'cable') continue;
+    const c = e as CableElement;
+    if (cableOffsetLines(c, elements).length !== c.poleIds.length - 1) continue; // a pole is missing: the spans cannot be matched
+    for (let i = 0; i < c.poleIds.length - 1; i++) {
+      nodes.push({ id: `${c.id}#${i}`, cable: c, index: i, order: nodes.length, text: cableNameOf(spanAt(c, i).props), color: c.strokeColor, a: c.poleIds[i], b: c.poleIds[i + 1] });
+    }
+  }
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const links = new Map<string, Set<string>>(nodes.map((n) => [n.id, new Set<string>()]));
+  const join = (x: Node, y: Node) => { links.get(x.id)!.add(y.id); links.get(y.id)!.add(x.id); };
+  const at = new Map<string, Node[]>(); // colour|pole → the spans of that colour at that pole
+  for (const n of nodes) for (const p of [n.a, n.b]) { const k = `${n.color}|${p}`; at.set(k, [...(at.get(k) ?? []), n]); }
+  // along a drawn cable: consecutive spans with the same size (also through a branching pole)
+  for (const n of nodes) {
+    const next = byId.get(`${n.cable.id}#${n.index + 1}`);
+    if (next && n.text && n.text === next.text) join(n, next);
+  }
+  // from one drawn cable into another: only its continuation (the first ends where the second starts),
+  // the only two spans of the colour at that pole, the same size, not at a transformer
+  const transformers = new Set(elements.filter((e) => e.type === 'symbol' && e.symbolId === 'transformer').map((e) => e.id));
+  const endsAt = (n: Node, pole: string) => n.index === n.cable.poleIds.length - 2 && n.b === pole;
+  const startsAt = (n: Node, pole: string) => n.index === 0 && n.a === pole;
+  for (const [k, list] of at) {
+    if (list.length !== 2) continue;
+    const [x, y] = list;
+    const pole = k.slice(k.indexOf('|') + 1);
+    if (x.cable.id === y.cable.id || transformers.has(pole) || !x.text || x.text !== y.text) continue;
+    if ((endsAt(x, pole) && startsAt(y, pole)) || (endsAt(y, pole) && startsAt(x, pole))) join(x, y);
+  }
+  // each run (a chain of joined spans): its two ends
+  const out: Node[] = [];
+  const seen = new Set<string>();
+  for (const n of nodes) {
+    if (!n.text || seen.has(n.id)) continue;
+    const run: Node[] = [];
+    const stack = [n.id];
+    seen.add(n.id);
+    while (stack.length) {
+      const id = stack.pop()!;
+      run.push(byId.get(id)!);
+      for (const m of links.get(id)!) if (!seen.has(m)) { seen.add(m); stack.push(m); }
+    }
+    const ends = run.filter((r) => links.get(r.id)!.size <= 1);
+    out.push(...(ends.length ? ends : [run.reduce((p, q) => (q.order < p.order ? q : p))]));
+  }
+  return out.sort((p, q) => p.order - q.order).map((n) => ({ cable: n.cable, index: n.index, text: n.text! }));
+};
+
 /** where the cable names are drawn (in element order, then span order) */
 export const cableNameLayout = (elements: DrawingElement[], opts: CableNameOptions): CableNameLabel[] => cableNameLayoutWithTags(elements, opts).labels;
 
@@ -118,23 +187,12 @@ export const cableNameLayoutWithTags = (elements: DrawingElement[], opts: CableN
   const out: CableNameLabel[] = [];
   const tagShifts: PoleTagShifts = new Map();
   const byId = new Map(elements.map((e) => [e.id, e]));
-  // one label per cable and size: on the longest span of that cable with that size (ties: the first)
+  // the first and the last span of every run of a cable with one size (cableNameSpans)
   type Entry = { c: CableElement; i: number; text: string; p1: Point; p2: Point; L: number };
   const entries: Entry[] = [];
-  for (const e of elements) {
-    if (e.type !== 'cable') continue;
-    const c = e as CableElement;
-    const lines = cableOffsetLines(c, elements);
-    if (lines.length !== c.poleIds.length - 1) continue; // a pole is missing: the spans cannot be matched
-    const home = new Map<string, Entry>();
-    for (let i = 0; i < lines.length; i++) {
-      const text = cableNameOf(spanAt(c, i).props);
-      if (!text) continue;
-      const L = Math.hypot(lines[i].p2.x - lines[i].p1.x, lines[i].p2.y - lines[i].p1.y);
-      const h = home.get(text);
-      if (!h || L > h.L + 1e-9) home.set(text, { c, i, text, p1: lines[i].p1, p2: lines[i].p2, L });
-    }
-    entries.push(...home.values());
+  for (const { cable: c, index: i, text } of cableNameSpans(elements)) {
+    const line = cableOffsetLines(c, elements)[i];
+    entries.push({ c, i, text, p1: line.p1, p2: line.p2, L: Math.hypot(line.p2.x - line.p1.x, line.p2.y - line.p1.y) });
   }
   if (!entries.length) return { labels: out, tagShifts };
 

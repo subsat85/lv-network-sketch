@@ -3,7 +3,7 @@ import { createCableType, editCableType, latestRevision } from '../cableTypeMode
 import { linkSpanCable, unlinkSpanCable } from '../spanCableLink';
 import { normalizeElements, spanAt, withSpanProps } from '../spanModel';
 import { cableOffsetLines } from '../cableLayout';
-import { cableNameLayout, cableNameLayoutWithTags, cableNameOf, cableSizeOf } from '../cableNameLayout';
+import { cableNameLayout, cableNameLayoutWithTags, cableNameOf, cableNameSpans, cableSizeOf } from '../cableNameLayout';
 import { addPoleTagObstacles, drawingObstacles, distanceLabelPositions, segmentCost, ObstacleSet, addSegment, poleTagAnchor, poleTagRect, POLE_TAG_FONT_FACTOR, type LayoutContext } from '../overlayLayout';
 import { poleTag } from '../poleNames';
 import { vdOverlayLayout } from '../vdOverlayLayout';
@@ -117,9 +117,9 @@ describe('the text: the size in the name of the span\'s snapshot, only for a val
 describe('placement', () => {
   const L = lay(allLinked());
   const byKey = new Map(L.map((l) => [l.key, l]));
-  it('one label per cable and size (not repeated along the cable), on its longest span with that size', () => {
-    // k: T–A (320) and A–B (180) are 3x120, B–C is 3x70; q: A–D is 3x120
-    expect(L.map((l) => [l.key, l.text]).sort()).toEqual([['k#0', '3x120'], ['k#2', '3x70'], ['q#0', '3x120']]);
+  it('the first and the last span of each run of one size (cableNameSpans): k 3x120 on T–A and A–B, k 3x70 on B–C, q 3x120 on A–D', () => {
+    // k: T–A and A–B are 3x120 (a run of two: first and last), B–C is 3x70 (alone); q: A–D is 3x120 (alone)
+    expect(L.map((l) => [l.key, l.text]).sort()).toEqual([['k#0', '3x120'], ['k#1', '3x120'], ['k#2', '3x70'], ['q#0', '3x120']]);
   });
   it('plain text: no leader line or frame in the layout', () => {
     for (const l of L) expect(Object.keys(l).sort()).toEqual(['a', 'angle', 'b', 'cableId', 'color', 'cost', 'fontSize', 'half', 'index', 'key', 'text', 'x', 'y']);
@@ -241,14 +241,15 @@ describe('parallel cables: one aligned stack, in the cables\' order', () => {
   };
   const C2: LayoutContext = { ...ctx, connectionDistances: { P_Q: '40', Q_S: '40' } };
   for (const dir of ['v', 'h', 'd'] as const) {
-    it(`${dir === 'v' ? 'vertical' : dir === 'h' ? 'horizontal' : 'diagonal'} span: one label per cable, one side, same place along the span, equal spacing, same order as the cables, nothing covered`, () => {
+    it(`${dir === 'v' ? 'vertical' : dir === 'h' ? 'horizontal' : 'diagonal'} span: one label per cable on its first and its last span, one side, same place along the span, equal spacing, same order as the cables, nothing covered`, () => {
       const els = build(dir);
-      const L = cableNameLayout(els, { ctx: C2, fs: FS });
-      // one label per cable (each cable has the same size on both spans), all on the same span
-      expect(L.length).toBe(5);
-      expect(new Set(L.map((l) => l.cableId)).size).toBe(5);
-      expect(new Set(L.map((l) => l.index)).size).toBe(1);
-      expect(L.map((l) => [l.cableId, l.color, l.text]).sort()).toEqual(COLORS.map((col, j) => [`c${j}`, col, REVS[j] === OTHER ? '3x70' : '3x120']).sort());
+      const ALL = cableNameLayout(els, { ctx: C2, fs: FS });
+      // every cable runs P–Q–S with one size: a label on its first span (P–Q) and its last (Q–S), nothing else
+      expect(ALL.length).toBe(10);
+      expect(ALL.map((l) => l.key).sort()).toEqual(COLORS.flatMap((_, j) => [`c${j}#0`, `c${j}#1`]).sort());
+      for (const index of [0, 1]) expect(ALL.filter((l) => l.index === index).map((l) => [l.cableId, l.color, l.text]).sort()).toEqual(COLORS.map((col, j) => [`c${j}`, col, REVS[j] === OTHER ? '3x70' : '3x120']).sort());
+      // the stack on the first span (the one on the last span is checked the same way below)
+      const L = ALL.filter((l) => l.index === 0);
       // the span's axes
       const [P, Q] = ['P', 'Q'].map((id) => els.find((e) => e.id === id)!);
       const ux = (Q.x - P.x) / Math.hypot(Q.x - P.x, Q.y - P.y), uy = (Q.y - P.y) / Math.hypot(Q.x - P.x, Q.y - P.y), nx = -uy, ny = ux;
@@ -274,10 +275,21 @@ describe('parallel cables: one aligned stack, in the cables\' order', () => {
       const cableOrder = [...cableAcross].sort((p, q) => p[1] - q[1]).map((x) => x[0]);
       expect(labelOrder).toEqual(cableOrder);
       // nothing covered, no arrows (there is room)
-      for (const l of L) { expect(l.cost).toBe(0); expect(l.arrow).toBeUndefined(); }
+      for (const l of ALL) { expect(l.cost).toBe(0); expect(l.arrow).toBeUndefined(); }
       const set = drawingObstacles(els, C2);
       addPoleTagObstacles(els, C2, set);
-      for (const l of L) expect(segmentCost(set, l.a, l.b, l.half), l.cableId).toBe(0);
+      for (const l of ALL) expect(segmentCost(set, l.a, l.b, l.half), l.key).toBe(0);
+      // the stack on the last span: the same font, place along the span, one side, the cables' order
+      const [, Q2, S2] = ['P', 'Q', 'S'].map((id) => els.find((e) => e.id === id)!);
+      const vx = (S2.x - Q2.x) / Math.hypot(S2.x - Q2.x, S2.y - Q2.y), vy = (S2.y - Q2.y) / Math.hypot(S2.x - Q2.x, S2.y - Q2.y);
+      const M = ALL.filter((l) => l.index === 1);
+      const along2 = M.map((l) => l.x * vx + l.y * vy);
+      for (const a of along2) expect(a).toBeCloseTo(along2[0], 6);
+      expect(new Set(M.map((l) => l.fontSize))).toEqual(new Set(L.map((l) => l.fontSize)));
+      const across2 = M.map((l) => l.x * -vy + l.y * vx);
+      const mid2 = (Q2.x + S2.x) / 2 * -vy + (Q2.y + S2.y) / 2 * vx;
+      expect(new Set(across2.map((x) => Math.sign(x - mid2))).size).toBe(1);
+      expect(M.map((l, k) => [l.cableId, across2[k]] as const).sort((p, q) => p[1] - q[1]).map((x) => x[0])).toEqual(labelOrder);
     });
   }
   it('two cables with different sizes on different spans: each size once, on its own span', () => {
@@ -310,4 +322,186 @@ describe('visual only: the voltage-drop badges avoid the names; results, data an
     lay(els);
     expect(JSON.stringify(els)).toBe(snap);
   });
+});
+
+describe('cableNameSpans: the first and the last span of each run (by the network\'s topology)', () => {
+  // ALL VALUES SYNTHETIC. A network is poles + cables {id, poles, color, sizes}; a size of '' leaves the span unlinked.
+  const revs: Record<string, ReturnType<typeof latestRevision>> = {};
+  const R = (s: string) => (revs[s] ??= latestRevision(createCableType(`ct${s}`, data(`ABC 3x${s}+70 (synthetic)`), { now: 1 })));
+  type C = { id: string; poles: string[]; color?: string; sizes: string[] };
+  const net = (poles: [string, number, number, string?][], cables: C[]) => {
+    let els = normalizeElements([...poles.map(([id, x, y, sym]) => pole(id, x, y, sym)),
+      ...cables.map((c, j) => ({ id: c.id, type: 'cable', x: 0, y: 0, poleIds: c.poles, cableIndex: j, offset: 0, strokeColor: c.color ?? '#e11d48', fillColor: 'none', strokeWidth: 2 }) as CableElement)]);
+    for (const c of cables) c.sizes.forEach((s, i) => { if (s) els = link(els, c.id, i, R(s)); });
+    return els;
+  };
+  const spans = (els: DrawingElement[]) => cableNameSpans(els).map((s) => `${s.cable.id}#${s.index}=${s.text}`).sort();
+  const line = (n: number): [string, number, number][] => Array.from({ length: n + 1 }, (_, i) => [`P${i}`, 0, i * 150]);
+  const ids = (n: number) => Array.from({ length: n + 1 }, (_, i) => `P${i}`);
+
+  it('a straight run of six spans with one cable and one size: the first and the last span only', () => {
+    expect(spans(net(line(6), [{ id: 'k', poles: ids(6), sizes: Array(6).fill('120') }]))).toEqual(['k#0=3x120', 'k#5=3x120']);
+  });
+  it('the same run drawn in reverse order: the same two end spans', () => {
+    expect(spans(net(line(6), [{ id: 'k', poles: ids(6).reverse(), sizes: Array(6).fill('120') }]))).toEqual(['k#0=3x120', 'k#5=3x120']);
+  });
+  it('one size change: each size on the first and last span of its own run, never on the other run', () => {
+    expect(spans(net(line(6), [{ id: 'k', poles: ids(6), sizes: ['120', '120', '120', '70', '70', '70'] }])))
+      .toEqual(['k#0=3x120', 'k#2=3x120', 'k#3=3x70', 'k#5=3x70']);
+  });
+  it('several size changes (3x120 ×3, 3x70 ×2, 3x50 ×1): 3x120 twice, 3x70 twice, 3x50 once', () => {
+    expect(spans(net(line(6), [{ id: 'k', poles: ids(6), sizes: ['120', '120', '120', '70', '70', '50'] }])))
+      .toEqual(['k#0=3x120', 'k#2=3x120', 'k#3=3x70', 'k#4=3x70', 'k#5=3x50']);
+  });
+  it('a size returning after another size is a new run', () => {
+    expect(spans(net(line(5), [{ id: 'k', poles: ids(5), sizes: ['120', '120', '70', '120', '120'] }])))
+      .toEqual(['k#0=3x120', 'k#1=3x120', 'k#2=3x70', 'k#3=3x120', 'k#4=3x120']);
+  });
+  it('a single span: labelled once', () => {
+    expect(spans(net(line(1), [{ id: 'k', poles: ids(1), sizes: ['95'] }]))).toEqual(['k#0=3x95']);
+  });
+  it('no middle span is ever labelled (runs of 2 to 8 spans)', () => {
+    for (let n = 2; n <= 8; n++) {
+      const out = cableNameSpans(net(line(n), [{ id: 'k', poles: ids(n), sizes: Array(n).fill('120') }])).map((s) => s.index).sort((a, b) => a - b);
+      expect(out).toEqual([0, n - 1]);
+    }
+  });
+  it('five parallel cables: each one on its own first and last span, in its own colour', () => {
+    const COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#000000', '#38bdf8'];
+    const els = net(line(4), COLORS.map((color, j) => ({ id: `c${j}`, poles: ids(4), color, sizes: Array(4).fill(j === 3 ? '70' : '120') })));
+    expect(spans(els)).toEqual(COLORS.flatMap((_, j) => [`c${j}#0=3x${j === 3 ? 70 : 120}`, `c${j}#3=3x${j === 3 ? 70 : 120}`]).sort());
+  });
+  it('parallel cables ending at different poles: the start and the end of each one on its own', () => {
+    const els = net(line(4), [
+      { id: 'c0', poles: ids(4), color: '#f59e0b', sizes: ['120', '120', '120', '120'] },
+      { id: 'c1', poles: ids(3), color: '#3b82f6', sizes: ['120', '120', '120'] },
+      { id: 'c2', poles: ids(2), color: '#10b981', sizes: ['95', '95'] },
+      { id: 'c3', poles: ['P2', 'P3', 'P4'], color: '#000000', sizes: ['70', '70'] }, // starts in the middle
+    ]);
+    expect(spans(els)).toEqual(['c0#0=3x120', 'c0#3=3x120', 'c1#0=3x120', 'c1#2=3x120', 'c2#0=3x95', 'c2#1=3x95', 'c3#0=3x70', 'c3#1=3x70']);
+  });
+  it('one cable drawn in two pieces that meet at a pole (only those two there): one run, labelled at its two ends', () => {
+    const els = net(line(5), [{ id: 'a', poles: ['P0', 'P1', 'P2'], sizes: ['120', '120'] }, { id: 'b', poles: ['P2', 'P3', 'P4', 'P5'], sizes: ['120', '120', '120'] }]);
+    expect(spans(els)).toEqual(['a#0=3x120', 'b#2=3x120']);
+  });
+  it('a branched network: every branch is its own run (start and end), the trunk is not joined to any branch', () => {
+    const els = net([['T', 0, 0, 'transformer'], ['A', 0, 150], ['B', 0, 300], ['J', 0, 450], ['L1', -150, 600], ['L2', -150, 750], ['R1', 150, 600], ['R2', 150, 750], ['M1', 0, 600], ['M2', 0, 750]], [
+      { id: 'k1', poles: ['T', 'A', 'B'], sizes: ['120', '120'] },
+      { id: 'k2', poles: ['B', 'J'], sizes: ['120'] },
+      { id: 'bl', poles: ['J', 'L1', 'L2'], sizes: ['120', '120'] },
+      { id: 'br', poles: ['J', 'R1', 'R2'], sizes: ['70', '70'] },
+      { id: 'bm', poles: ['J', 'M1', 'M2'], sizes: ['120', '120'] },
+    ]);
+    expect(spans(els)).toEqual(['bl#0=3x120', 'bl#1=3x120', 'bm#0=3x120', 'bm#1=3x120', 'br#0=3x70', 'br#1=3x70', 'k1#0=3x120', 'k2#0=3x120']);
+  });
+  it('a cable drawn through the junction as one piece stays one run there; the branch is its own run', () => {
+    // k runs T–A–J–L–L2 as one drawn cable, a second cable leaves J for R in the same colour and size
+    const els = net([['T', 0, 0, 'transformer'], ['A', 0, 150], ['J', 0, 300], ['L', 0, 450], ['L2', 0, 600], ['R', 150, 450]], [
+      { id: 'k', poles: ['T', 'A', 'J', 'L', 'L2'], sizes: ['120', '120', '120', '120'] },
+      { id: 'r', poles: ['J', 'R'], sizes: ['120'] },
+    ]);
+    expect(spans(els)).toEqual(['k#0=3x120', 'k#3=3x120', 'r#0=3x120']);
+  });
+  it('a branch in another colour does not split a run (it is a different cable)', () => {
+    const els = net([['P0', 0, 0], ['P1', 0, 150], ['P2', 0, 300], ['P3', 0, 450], ['X', 150, 150]], [
+      { id: 'k', poles: ['P0', 'P1', 'P2', 'P3'], sizes: ['120', '120', '120'] },
+      { id: 'x', poles: ['P1', 'X'], color: '#2563eb', sizes: ['70'] },
+    ]);
+    expect(spans(els)).toEqual(['k#0=3x120', 'k#2=3x120', 'x#0=3x70']);
+  });
+  it('an unlinked span (no size) is not labelled and breaks the run', () => {
+    expect(spans(net(line(5), [{ id: 'k', poles: ids(5), sizes: ['120', '120', '', '120', '120'] }])))
+      .toEqual(['k#0=3x120', 'k#1=3x120', 'k#3=3x120', 'k#4=3x120']);
+  });
+  it('a ring drawn as one cable from A back to A: its first and its last span', () => {
+    const els = net([['A', 0, 0], ['B', 150, 0], ['C', 150, 150], ['D', 0, 150]], [{ id: 'k', poles: ['A', 'B', 'C', 'D', 'A'], sizes: ['120', '120', '120', '120'] }]);
+    expect(spans(els)).toEqual(['k#0=3x120', 'k#3=3x120']);
+  });
+  it('a closed ring made of two cables of one size (no end anywhere): one label, not none', () => {
+    const els = net([['A', 0, 0], ['B', 150, 0], ['C', 150, 150], ['D', 0, 150]], [
+      { id: 'k', poles: ['A', 'B', 'C'], sizes: ['120', '120'] }, { id: 'm', poles: ['C', 'D', 'A'], sizes: ['120', '120'] }]);
+    expect(spans(els)).toEqual(['k#0=3x120']);
+  });
+  it('does not change the elements (display only)', () => {
+    const els = net(line(6), [{ id: 'k', poles: ids(6), sizes: ['120', '120', '120', '70', '70', '50'] }]);
+    const before = JSON.stringify(els);
+    cableNameSpans(els);
+    cableNameLayout(els, { ctx: { ...ctx, connectionDistances: {} }, fs: FS });
+    expect(JSON.stringify(els)).toBe(before);
+  });
+  it('the layout draws exactly the spans cableNameSpans gives (horizontal, vertical, diagonal zigzag)', () => {
+    const els = net([['T', 40, 60, 'transformer'], ['A', 250, 60], ['B', 250, 240], ['C', 60, 420], ['D', 60, 620], ['E', 250, 620]],
+      [{ id: 'k', poles: ['T', 'A', 'B', 'C', 'D', 'E'], sizes: ['120', '120', '120', '70', '70'] }]);
+    const L = cableNameLayout(els, { ctx: { ...ctx, connectionDistances: {} }, fs: FS });
+    expect(L.map((l) => `${l.key}=${l.text}`).sort()).toEqual(spans(els));
+    expect(spans(els)).toEqual(['k#0=3x120', 'k#2=3x120', 'k#3=3x70', 'k#4=3x70']);
+    for (const l of L) expect(l.fontSize).toBe(FS);
+  });
+});
+
+describe('cableNameSpans: branches, cables of one colour and size that are not one run, rings (12 cases)', () => {
+  // ALL VALUES SYNTHETIC. Expected: a drawn cable is one run through a branch point; two drawn cables join
+  // only as a continuation (end -> start), same colour and size, alone at the pole, not at a transformer.
+  const revs: Record<string, ReturnType<typeof latestRevision>> = {};
+  const R = (s: string) => (revs[s] ??= latestRevision(createCableType(`ct${s}`, data(`ABC 3x${s}+70 (synthetic)`), { now: 1 })));
+  type C = { id: string; poles: string[]; color?: string; size: string };
+  const net = (poles: [string, number, number, string?][], cables: C[]) => {
+    let els = normalizeElements([...poles.map(([id, x, y, sym]) => pole(id, x, y, sym)),
+      ...cables.map((c, j) => ({ id: c.id, type: 'cable', x: 0, y: 0, poleIds: c.poles, cableIndex: j, offset: 0, strokeColor: c.color ?? '#e11d48', fillColor: 'none', strokeWidth: 2 }) as CableElement)]);
+    for (const c of cables) for (let i = 0; i < c.poles.length - 1; i++) els = link(els, c.id, i, R(c.size));
+    return els;
+  };
+  const C0: LayoutContext = { ...ctx, connectionDistances: {} };
+  const main: [string, number, number, string?][] = [['P0', 0, 0, 'transformer'], ...Array.from({ length: 8 }, (_, i) => [`P${i + 1}`, 0, (i + 1) * 150] as [string, number, number])];
+  const MAIN = main.map((p) => p[0]);
+  const side: [string, number, number][] = [['B1', 160, 600], ['B2', 320, 600], ['B3', 480, 600]];
+  const ring: [string, number, number, string?][] = [['T', -200, 0, 'transformer'], ['A', 0, 0], ['B', 300, 0], ['C', 300, 300], ['D', 0, 300], ['E', 500, 400], ['F', 700, 500]];
+  const pair = (u: string[], w: string[]): C[] => [{ id: 'u', poles: u, size: '120' }, { id: 'w', poles: w, size: '120' }];
+  const line5: [string, number, number][] = [['X', 300, 300], ['A1', 300, 150], ['A2', 300, 0], ['C1', 300, 450], ['C2', 300, 600]];
+  const CASES: [string, [string, number, number, string?][], C[], string[] | 'one'][] = [
+    ['1a long main line (one cable) with a side branch at P4, same colour and size: no label on the two sides of the branch point', [...main, ...side],
+      [{ id: 'k', poles: MAIN, size: '120' }, { id: 'b', poles: ['P4', 'B1', 'B2', 'B3'], size: '120' }], ['k#0', 'k#7', 'b#0', 'b#2']],
+    ['1b the same with a 3x70 branch', [...main, ...side],
+      [{ id: 'k', poles: MAIN, size: '120' }, { id: 'b', poles: ['P4', 'B1', 'B2', 'B3'], size: '70' }], ['k#0', 'k#7', 'b#0', 'b#2']],
+    ['1c the main line drawn as two cables meeting at the branch pole: three runs', [...main, ...side],
+      [{ id: 'k1', poles: MAIN.slice(0, 5), size: '120' }, { id: 'k2', poles: MAIN.slice(4), size: '120' }, { id: 'b', poles: ['P4', 'B1', 'B2', 'B3'], size: '120' }],
+      ['k1#0', 'k1#3', 'k2#0', 'k2#3', 'b#0', 'b#2']],
+    ['1d a branch in another colour', [...main, ...side],
+      [{ id: 'k', poles: MAIN, size: '120' }, { id: 'b', poles: ['P4', 'B1', 'B2', 'B3'], color: '#2563eb', size: '120' }], ['k#0', 'k#7', 'b#0', 'b#2']],
+    ['2a two feeders of one colour and size out of one transformer: not joined', [['T', 300, 0, 'transformer'], ['A1', 150, 150], ['A2', 0, 300], ['C1', 450, 150], ['C2', 600, 300]],
+      [{ id: 'f1', poles: ['T', 'A1', 'A2'], size: '120' }, { id: 'f2', poles: ['T', 'C1', 'C2'], size: '120' }], ['f1#0', 'f1#1', 'f2#0', 'f2#1']],
+    ['2b two cables starting at one pole (opposite ways): not joined', line5, pair(['X', 'A1', 'A2'], ['X', 'C1', 'C2']), ['u#0', 'u#1', 'w#0', 'w#1']],
+    ['2c two cables ending at one pole: not joined', line5, pair(['A2', 'A1', 'X'], ['C2', 'C1', 'X']), ['u#0', 'u#1', 'w#0', 'w#1']],
+    ['2d two cables on separate paths: not joined', [['A0', 0, 0], ['A1', 0, 150], ['A2', 0, 300], ['C0', 300, 0], ['C1', 300, 150], ['C2', 300, 300]],
+      pair(['A0', 'A1', 'A2'], ['C0', 'C1', 'C2']), ['u#0', 'u#1', 'w#0', 'w#1']],
+    ['2e a cable continued as a second drawn cable (end -> start): one run', [['P0', 0, 0], ['P1', 0, 150], ['P2', 0, 300], ['P3', 0, 450], ['P4', 0, 600]],
+      pair(['P0', 'P1', 'P2'], ['P2', 'P3', 'P4']), ['u#0', 'w#1']],
+    ['3a a ring drawn as one cable A..A, fed at A, a branch at C: the ring is one run', ring,
+      [{ id: 'f', poles: ['T', 'A'], size: '120' }, { id: 'k', poles: ['A', 'B', 'C', 'D', 'A'], size: '120' }, { id: 'b', poles: ['C', 'E', 'F'], size: '120' }],
+      ['f#0', 'k#0', 'k#3', 'b#0', 'b#1']],
+    ['3b a ring of two cables (A-B-C, C-D-A), a branch at C', ring.slice(1),
+      [{ id: 'k', poles: ['A', 'B', 'C'], size: '120' }, { id: 'm', poles: ['C', 'D', 'A'], size: '120' }, { id: 'b', poles: ['C', 'E', 'F'], size: '120' }], ['k#1', 'm#0', 'b#0', 'b#1']],
+    ['3c a closed ring of two cables with no end: one label', ring.slice(1, 5),
+      [{ id: 'k', poles: ['A', 'B', 'C'], size: '120' }, { id: 'm', poles: ['C', 'D', 'A'], size: '120' }], 'one'],
+  ];
+  for (const [name, poles, cables, expected] of CASES) {
+    it(name, () => {
+      const els = net(poles, cables);
+      const got = cableNameSpans(els).map((s) => `${s.cable.id}#${s.index}`);
+      if (expected === 'one') expect(got.length).toBe(1);
+      else expect([...got].sort()).toEqual([...expected].sort());
+      // drawn as given: every label on its span, the same font, covering nothing and no other label
+      const L = cableNameLayout(els, { ctx: C0, fs: FS });
+      expect(L.map((l) => l.key).sort()).toEqual([...got].sort());
+      for (const l of L) expect(l.fontSize).toBe(FS);
+      const set = drawingObstacles(els, C0);
+      addPoleTagObstacles(els, C0, set);
+      for (const l of L) expect(segmentCost(set, l.a, l.b, l.half), l.key).toBe(0);
+      for (const l of L) {
+        const others = new ObstacleSet();
+        for (const o of L) if (o !== l) addSegment(others, o.a, o.b, o.half);
+        expect(segmentCost(others, l.a, l.b, l.half), l.key).toBe(0);
+      }
+    });
+  }
 });
