@@ -30,16 +30,19 @@ interface Props {
   viewScale?: number;
   /** the cable names as drawn (cableNameLayout): the badges avoid them */
   texts?: { a: { x: number; y: number }; b: { x: number; y: number }; half: number }[];
+  /** pole numbers moved to make room for a cable name on a short span */
+  tagShifts?: Map<string, { dx: number; dy: number }>;
 }
 
-export const VoltageDropOverlay: React.FC<Props> = ({ elements, result, poleRadius, textScale = 1, layoutContext, boxes, viewScale, texts }) => {
+export const VoltageDropOverlay: React.FC<Props> = ({ elements, result, poleRadius, textScale = 1, layoutContext, boxes, viewScale, texts, tagShifts }) => {
   const L = useMemo(() => vdOverlayLayout(elements, result, {
     ctx: { ...layoutContext, poleRadius },
     fs: 11 * textScale,
     boxes,
     minFont: viewScale ? MIN_SCREEN_FONT_PX / viewScale : undefined,
     texts,
-  }), [elements, result, poleRadius, textScale, layoutContext, boxes, viewScale, texts]);
+    tagShifts,
+  }), [elements, result, poleRadius, textScale, layoutContext, boxes, viewScale, texts, tagShifts]);
   const { fs, lineH } = L;
   const out: React.ReactNode[] = [];
   for (const l of L.leaders) out.push(<line key={`leader:${l.poleId}`} x1={l.from.x} y1={l.from.y} x2={l.to.x} y2={l.to.y} stroke={l.color} strokeWidth={Math.max(0.8, fs * 0.08)} strokeOpacity={0.7} data-vd-leader={l.poleId} />);

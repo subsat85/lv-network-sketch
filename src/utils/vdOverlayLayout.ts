@@ -34,6 +34,8 @@ export interface VdLayoutOptions {
   minFont?: number;
   /** texts drawn along a line (the cable names: centre line and half height), also obstacles */
   texts?: { a: Point; b: Point; half: number }[];
+  /** pole numbers moved to make room for a cable name on a short span (cableNameLayoutWithTags) */
+  tagShifts?: Map<string, { dx: number; dy: number }>;
 }
 
 /** the badge of a pole; `worst`: calculated with the Worst Case method (marked ▲, Equal Phase Current unmarked) */
@@ -65,7 +67,8 @@ export const vdOverlayLayout = (elements: DrawingElement[], result: VoltageView,
     const p = poles.get(poleId);
     if (!p) continue;
     const text = tag(poleId), base = opts.fs * POLE_TAG_FONT_FACTOR, big = sz(base);
-    const { x, y: y0 } = poleTagAnchor(p, R, opts.fs), y1 = poleTagAnchor(p, R, fs).y;
+    const sh = opts.tagShifts?.get(poleId);
+    const { x: x00, y: y00 } = poleTagAnchor(p, R, opts.fs), x = x00 + (sh?.dx ?? 0), y0 = y00 + (sh?.dy ?? 0), y1 = poleTagAnchor(p, R, fs).y + (sh?.dy ?? 0);
     const ok = big <= base || set.cost(tagRect(x, y1, text, big)) <= set.cost(tagRect(x, y0, text, base)) + 1e-6;
     const t = ok ? { poleId, x, y: y1, text, fontSize: big } : { poleId, x, y: y0, text, fontSize: base };
     out.tags.push(t);

@@ -15,7 +15,7 @@ import type { DistanceFlag } from '../types/drawing';
 import { useT } from '../store/localeStore';
 import { TransformerTableSvg } from './TransformerTableSvg';
 import { CableNameLabels } from './CableNameLabels';
-import { cableNameLayout } from '../utils/cableNameLayout';
+import { cableNameLayoutWithTags } from '../utils/cableNameLayout';
 
 const POLE_RADIUS = 20;
 const CABLE_SPACING = 8;
@@ -130,7 +130,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
     return g ? [{ x: g.box.cx - g.box.w / 2, y: g.box.cy - g.box.h / 2, w: g.box.w, h: g.box.h }] : [];
   }), [elements, poleSizeScale, consumerSizeScale, boxLayout]);
   // names of the library cables linked to spans, as on the sketch (at the set size on paper)
-  const cableNames = useMemo(() => cableNameLayout(elements, { ctx: vdLayoutCtx, fs: 9 * distanceTextScale, minFs: 7 * distanceTextScale, boxes: vdBoxes }), [elements, vdLayoutCtx, distanceTextScale, vdBoxes]);
+  const cableNameResult = useMemo(() => cableNameLayoutWithTags(elements, { ctx: vdLayoutCtx, fs: 9 * distanceTextScale, minFs: 7 * distanceTextScale, boxes: vdBoxes }), [elements, vdLayoutCtx, distanceTextScale, vdBoxes]);
 
   const getTransformerIntersection = (pole: SymbolElement, externalPoint: Point): Point => {
     const radius = POLE_RADIUS * poleSizeScale;
@@ -664,8 +664,8 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
       {elements.filter(el => el.type === 'cable').map(el => renderElement(el))}
       {elements.filter(el => el.type !== 'cable').map(el => renderElement(el))}
       {showDistanceLabels && renderConnectionLabels()}
-      <CableNameLabels labels={cableNames} />
-      {voltageDrop && <VoltageDropOverlay elements={elements} result={voltageDrop} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} layoutContext={vdLayoutCtx} boxes={vdBoxes} texts={cableNames} />}
+      <CableNameLabels labels={cableNameResult.labels} />
+      {voltageDrop && <VoltageDropOverlay elements={elements} result={voltageDrop} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} layoutContext={vdLayoutCtx} boxes={vdBoxes} texts={cableNameResult.labels} tagShifts={cableNameResult.tagShifts} />}
     </>
   );
 };
