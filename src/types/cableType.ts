@@ -82,6 +82,13 @@ export interface CableTypeData {
   xn: ElectricalValue<ReactanceBasis>;
   /** the source of the type as a whole */
   source: ValueSource;
+  /**
+   * The maximum allowable current of ONE cable assembly, A, as the user enters it from the manufacturer's
+   * data or the specification. Never derived (not from the section, the material or anything else), never
+   * defaulted; left out = not stated (no check). Used only to warn when a span's current, as E2 computes
+   * it per cable assembly, is above it — never in a calculation.
+   */
+  maxCurrentA?: number;
 }
 
 /** one saved revision: never changed after it is written */

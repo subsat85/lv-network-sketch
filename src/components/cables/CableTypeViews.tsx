@@ -352,6 +352,7 @@ export const CableTypeDetailsView: React.FC<DetailsProps> = ({ t, current, ctx, 
             <Row label={tr('cableLibrary.field.phaseSection')} k="phase.sectionMm2">{sec(t.phase.sectionMm2)}</Row>
             {t.neutralConductors > 0 && <Row label={tr('cableLibrary.field.neutralMaterial')} k="neutral.material">{mat(t.neutral?.material)}</Row>}
             {t.neutralConductors > 0 && <Row label={tr('cableLibrary.field.neutralSection')} k="neutral.sectionMm2">{sec(t.neutral?.sectionMm2)}</Row>}
+            <Row label={tr('cableLibrary.field.maxCurrentA')} k="maxCurrentA">{t.maxCurrentA !== undefined ? iso(`${t.maxCurrentA} A`) : <span className="text-ios-tertiary">{tr('cableLibrary.view.notStated')}</span>}</Row>
             <Row label={tr('cableLibrary.field.source')} k="source">{sourceText(t.source, ctx) ? <SourceLine s={t.source} ctx={ctx} /> : <span className="text-ios-tertiary">{tr('cableLibrary.view.sourceNone')}</span>}</Row>
             <Row label={tr('cableLibrary.field.revision')} k="revision">{t.revision}</Row>
           </dl>
@@ -375,6 +376,7 @@ export const CableTypeDetailsView: React.FC<DetailsProps> = ({ t, current, ctx, 
 const FIELD_KEY = {
   name: 'name', description: 'description', construction: 'construction', phaseConductors: 'phaseConductors', neutralConductors: 'neutralConductors',
   'phase.material': 'phaseMaterial', 'phase.sectionMm2': 'phaseSection', 'neutral.material': 'neutralMaterial', 'neutral.sectionMm2': 'neutralSection', source: 'source',
+  maxCurrentA: 'maxCurrentA',
 } as const;
 const fieldLabel = (f: CompareField, tr: Tr): string => {
   if (f === 'r' || f === 'x' || f === 'rn' || f === 'xn') return SYMBOL[f];
@@ -459,6 +461,7 @@ const compareValueText = (row: CompareRow, side: unknown, ctx: ViewCtx): string 
   if (f === 'phase.material' || f === 'neutral.material') return materialLabel(String(side), tr);
   if (f === 'phase.sectionMm2' || f === 'neutral.sectionMm2') return iso(`${side} mm²`);
   if (f === 'source') return sourceText(side as ValueSource, ctx) ?? '—';
+  if (f === 'maxCurrentA') return iso(`${side} A`);
   if (f.endsWith('.verification')) return verificationText(side as Verification, ctx);
   if (f === 'r' || f === 'x' || f === 'rn' || f === 'xn') {
     const v = side as ElectricalValue;

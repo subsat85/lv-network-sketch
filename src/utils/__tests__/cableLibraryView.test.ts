@@ -90,7 +90,8 @@ describe('revision comparison', () => {
       r: 'changed', 'r.verification': 'changed', rn: 'added', xn: 'removed', 'xn.verification': 'changed', x: 'unchanged', 'x.verification': 'changed', source: 'unchanged',
     });
     expect(Object.keys(rows)).toEqual(['name', 'description', 'construction', 'phaseConductors', 'neutralConductors', 'phase.material', 'phase.sectionMm2', 'neutral.material', 'neutral.sectionMm2',
-      'r', 'r.verification', 'x', 'x.verification', 'rn', 'rn.verification', 'xn', 'xn.verification', 'source']);
+      'r', 'r.verification', 'x', 'x.verification', 'rn', 'rn.verification', 'xn', 'xn.verification', 'source', 'maxCurrentA']);
+    expect(rows.maxCurrentA).toBe('unchanged'); // neither revision states one
     const r = compareRevisions(r1, r3).find((x) => x.field === 'r')!;
     expect(r.before).toMatchObject({ value: 0.5, basis: 'ac' });
     expect(r.after).toMatchObject({ value: 0.55, basis: 'dc', referenceTempC: 20 });

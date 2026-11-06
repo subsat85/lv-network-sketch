@@ -108,7 +108,7 @@ export type DiffStatus = 'added' | 'changed' | 'removed' | 'unchanged';
 export type CompareField =
   | 'name' | 'description' | 'construction' | 'phaseConductors' | 'neutralConductors'
   | 'phase.material' | 'phase.sectionMm2' | 'neutral.material' | 'neutral.sectionMm2'
-  | ElectricalProperty | `${ElectricalProperty}.verification` | 'source';
+  | ElectricalProperty | `${ElectricalProperty}.verification` | 'source' | 'maxCurrentA';
 export interface CompareRow<T = unknown> { field: CompareField; status: DiffStatus; before?: T; after?: T }
 
 const canon = (v: unknown): unknown => {
@@ -141,6 +141,7 @@ export const compareRevisions = (a: CableTypeData, b: CableTypeData): CompareRow
     row('neutral.sectionMm2', a.neutral?.sectionMm2, b.neutral?.sectionMm2),
     ...ELECTRICAL_PROPERTIES.flatMap((p) => [row(p, valuePart(a[p]), valuePart(b[p])), row(`${p}.verification`, a[p].verification, b[p].verification)]),
     row('source', a.source, b.source),
+    row('maxCurrentA', a.maxCurrentA, b.maxCurrentA),
   ];
 };
 

@@ -230,6 +230,11 @@ export const CableTypeEditor: React.FC<EditorProps> = ({ prev, controller, ctx, 
             )}
           </div>
         </Section>
+        <Section title={tr('cableLibrary.field.maxCurrentA')} k="maxCurrentA">
+          <Field label={tr('cableLibrary.field.maxCurrentA')} k="maxCurrentA" hint={tr('cableLibrary.editor.maxCurrentHint')} error={errText(errors, 'maxCurrentA', tr)}>
+            <UnitInput value={form.maxCurrentA} onChange={(s) => set('maxCurrentA', s)} unit="A" k="maxCurrentA" label={tr('cableLibrary.field.maxCurrentA')} invalid={!!errText(errors, 'maxCurrentA', tr)} />
+          </Field>
+        </Section>
         <Section title={tr('cableLibrary.editor.typeSource')} k="source">
           <p className="text-[12px] text-ios-tertiary">{tr('cableLibrary.editor.typeSourceHint')}</p>
           {sourceFields('source', { name: form.sourceName, reference: form.sourceReference, page: form.sourcePage, table: form.sourceTable },
@@ -297,6 +302,6 @@ const fieldLabel = (field: string, tr: Tr): string => {
     const what = tail === 'referenceTempC' ? tr('cableLibrary.editor.referenceTemp') : tail === 'status' ? tr('cableLibrary.editor.status') : tr('cableLibrary.editor.value');
     return `${SYMBOL[head as ElectricalProperty]} — ${what}`;
   }
-  const map: Record<string, string> = { name: 'name', construction: 'construction', phaseConductors: 'phaseConductors', neutralConductors: 'neutralConductors', phaseSection: 'phaseSection', neutralSection: 'neutralSection' };
+  const map: Record<string, string> = { name: 'name', construction: 'construction', phaseConductors: 'phaseConductors', neutralConductors: 'neutralConductors', phaseSection: 'phaseSection', neutralSection: 'neutralSection', maxCurrentA: 'maxCurrentA' };
   return map[head] ? tr(`cableLibrary.field.${map[head]}` as never) : field;
 };

@@ -46,6 +46,8 @@ export interface CableForm {
   sourceReference: string;
   sourcePage: string;
   sourceTable: string;
+  /** maximum allowable current, A (empty = not stated; never proposed) */
+  maxCurrentA: string;
   /** the revision note (saved with the revision, not part of the data) */
   note: string;
   r: ValueForm; x: ValueForm; rn: ValueForm; xn: ValueForm;
@@ -63,7 +65,7 @@ const emptyValue = (p: ElectricalProperty): ValueForm => ({
 export const emptyCableForm = (): CableForm => ({
   name: '', description: '', construction: '', phaseConductors: '', neutralConductors: '',
   phaseMaterial: '', phaseSection: '', neutralMaterial: '', neutralSection: '',
-  sourceName: '', sourceReference: '', sourcePage: '', sourceTable: '', note: '',
+  sourceName: '', sourceReference: '', sourcePage: '', sourceTable: '', maxCurrentA: '', note: '',
   r: emptyValue('r'), x: emptyValue('x'), rn: emptyValue('rn'), xn: emptyValue('xn'),
 });
 
@@ -83,6 +85,7 @@ export const cableFormFrom = (t: CableTypeRevision): CableForm => ({
   phaseMaterial: t.phase.material ?? '', phaseSection: str(t.phase.sectionMm2),
   neutralMaterial: t.neutral?.material ?? '', neutralSection: str(t.neutral?.sectionMm2),
   sourceName: t.source.name ?? '', sourceReference: t.source.reference ?? '', sourcePage: t.source.page ?? '', sourceTable: t.source.table ?? '',
+  maxCurrentA: str(t.maxCurrentA),
   note: '',
   r: valueToForm(t.r), x: valueToForm(t.x), rn: valueToForm(t.rn), xn: valueToForm(t.xn),
 });
@@ -140,6 +143,8 @@ export const readCableForm = (f: CableForm): { errors: FormError[]; data?: Cable
     return n;
   };
   const phaseSection = section('phaseSection', f.phaseSection);
+  // the maximum allowable current: optional, a positive number of amperes (empty stays undefined, never 0)
+  const maxCurrentA = section('maxCurrentA', f.maxCurrentA);
   const hasNeutral = (neutralConductors ?? 0) > 0;
   const neutralSection = hasNeutral ? section('neutralSection', f.neutralSection) : undefined;
   const typeSource = sourceOf(f.sourceName, f.sourceReference, f.sourcePage, f.sourceTable);
@@ -196,6 +201,7 @@ export const readCableForm = (f: CableForm): { errors: FormError[]; data?: Cable
     ...(hasNeutral ? { neutral: { ...(f.neutralMaterial ? { material: f.neutralMaterial } : {}), ...(neutralSection !== undefined ? { sectionMm2: neutralSection } : {}) } } : {}),
     r: values.r as CableTypeData['r'], x: values.x as CableTypeData['x'], rn: values.rn as CableTypeData['rn'], xn: values.xn as CableTypeData['xn'],
     source: typeSource,
+    ...(maxCurrentA !== undefined ? { maxCurrentA } : {}),
   };
   return { errors: [], data };
 };
@@ -240,6 +246,7 @@ export const planEdit = (prev: CableTypeRevision, next: CableTypeData): EditPlan
   if (!same(next.phase, prev.phase)) edit.phase = next.phase;
   if (!same(next.neutral, prev.neutral)) edit.neutral = next.neutral ?? null;
   if (!same(next.source, prev.source)) edit.source = next.source;
+  if (next.maxCurrentA !== prev.maxCurrentA) edit.maxCurrentA = next.maxCurrentA ?? null;
   const reset: ElectricalProperty[] = [];
   const verify: EditPlan['verify'] = [];
   for (const p of ELECTRICAL_PROPERTIES) {

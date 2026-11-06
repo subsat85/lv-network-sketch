@@ -34,7 +34,7 @@ const canon = (v: unknown): unknown => {
 
 const DATA_KEYS: readonly (keyof CableTypeData)[] = [
   'name', 'description', 'construction', 'phaseConductors', 'neutralConductors', 'phase', 'neutral',
-  'r', 'x', 'rn', 'xn', 'source',
+  'r', 'x', 'rn', 'xn', 'source', 'maxCurrentA',
 ];
 const isElectrical = (k: string): k is ElectricalProperty => (ELECTRICAL_PROPERTIES as readonly string[]).includes(k);
 /** the part of a value that carries its meaning (verification excluded) */
@@ -120,8 +120,8 @@ export const createCableType = (id: string, data: CableTypeData, meta: RevisionM
 
 /** an edit of the data; the verification of a value is set with setCableTypeVerification */
 export type CableTypeEdit =
-  Partial<Omit<CableTypeData, ElectricalProperty | 'neutral'>>
-  & { neutral?: CableTypeData['neutral'] | null }
+  Partial<Omit<CableTypeData, ElectricalProperty | 'neutral' | 'maxCurrentA'>>
+  & { neutral?: CableTypeData['neutral'] | null; maxCurrentA?: number | null }
   & Partial<Record<ElectricalProperty, Omit<ElectricalValue, 'verification'> | null>>;
 
 const UNVERIFIED: Verification = { status: 'unverified' };
@@ -280,6 +280,8 @@ export const cableTypeRevisionProblem = (r: unknown): string | null => {
   if (r.neutral !== undefined && !conductor(r.neutral, ['al', 'cu', 'alloy'])) return 'neutral';
   for (const p of ELECTRICAL_PROPERTIES) { const b = valueProblem(r[p], p === 'r' || p === 'rn', p === 'x'); if (b) return `${p}.${b}`; }
   if (sourceProblem(r.source)) return 'source';
+  // optional (records written before it existed have none): a positive number of amperes
+  if (r.maxCurrentA !== undefined && !(typeof r.maxCurrentA === 'number' && Number.isFinite(r.maxCurrentA) && r.maxCurrentA > 0)) return 'maxCurrentA';
   if (typeof r.typeCreatedAt !== 'number' || typeof r.revisionCreatedAt !== 'number') return 'createdAt';
   if (!optStr(r.createdBy) || !optStr(r.changeNote)) return 'createdBy';
   return null;

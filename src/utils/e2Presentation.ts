@@ -361,6 +361,8 @@ export interface VdSpan {
   cumulativeDropV?: number;
   /** E2 currents, A (magnitudes): a, b, c and the neutral */
   currentA: Partial<Record<VdPhase | 'n', number>>;
+  /** E2's current per cable assembly, A (|I| / n, its perSetCurrentA): a, b, c and the neutral */
+  perSetCurrentA: Partial<Record<VdPhase | 'n', number>>;
   provisional: boolean;
   warnings: WarningCode[];
 }
@@ -463,7 +465,7 @@ export const voltageView = (d: E2DocumentInput, study: E2StudyResult = runE2Stud
       const key = spanKey(s.cableId, s.index);
       const x = e2spans.get(key);
       const len = spanLength(d.connectionDistances as Record<string, string>, s.fromPole, s.toPole);
-      const sp: VdSpan = { key, cableId: s.cableId, index: s.index, spanId: s.spanId, fromPole: s.fromPole, toPole: s.toPole, color: s.color, ...(len.m !== undefined ? { lengthM: len.m } : {}), computable: false, reasons: [], currentA: {}, provisional: false, warnings: [] };
+      const sp: VdSpan = { key, cableId: s.cableId, index: s.index, spanId: s.spanId, fromPole: s.fromPole, toPole: s.toPole, color: s.color, ...(len.m !== undefined ? { lengthM: len.m } : {}), computable: false, reasons: [], currentA: {}, perSetCurrentA: {}, provisional: false, warnings: [] };
       if (x) {
         const drops = VD_PHASES.map((p) => ({ p, q: x.dropV[p] }));
         const present = drops.filter(({ q }) => hasValue(q) || q.reason !== 'phase-not-present');
@@ -475,6 +477,7 @@ export const voltageView = (d: E2DocumentInput, study: E2StudyResult = runE2Stud
           if (v !== undefined && (sp.dropV === undefined || v > sp.dropV + 1e-9)) { sp.dropV = v; sp.dropPhase = p; }
         }
         for (const k of ['a', 'b', 'c', 'n'] as const) { const q = x.current[k]; if (hasValue(q)) sp.currentA[k] = q.value!.magnitude; }
+        for (const k of ['a', 'b', 'c', 'n'] as const) { const q = x.perSetCurrentA[k]; if (hasValue(q) && Number.isFinite(q.value)) sp.perSetCurrentA[k] = q.value!; }
         const ref = present.find(({ q }) => hasValue(q))?.q;
         sp.provisional = !!ref && ref.status === 'provisional';
         sp.warnings = ref ? [...ref.warnings] : [];
