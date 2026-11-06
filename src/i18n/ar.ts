@@ -500,7 +500,7 @@ export const ar = {
     cableNumberPrompt: 'أدخل رقم الكابل (ترتيب الكوابل من الأعلى):',
     editNotePrompt: 'تعديل الملاحظة:',
     enterTextPrompt: 'أدخل النص:',
-    labelNumberPrompt: 'أدخل رقم المشترك:',
+    labelNumberPrompt: 'أدخل حمل المشترك:',
     exportFailed: 'تعذّر التصدير: {error}. حاول مرة أخرى.',
     unknownError: 'خطأ غير معروف',
     backupFailed: 'تعذّر إنشاء النسخة الاحتياطية. جرّب أخذ لقطة شاشة بدلًا من ذلك.',

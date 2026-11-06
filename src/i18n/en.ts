@@ -483,7 +483,7 @@ export const en: Dict = {
     cableNumberPrompt: 'Enter the cable number (cable order from the top):',
     editNotePrompt: 'Edit Note:',
     enterTextPrompt: 'Enter text:',
-    labelNumberPrompt: 'Enter label number:',
+    labelNumberPrompt: 'Enter subscriber load:',
     exportFailed: 'Export failed: {error}. Please try again.',
     unknownError: 'Unknown error',
     backupFailed: 'Failed to create backup. Please try taking a screenshot instead.',

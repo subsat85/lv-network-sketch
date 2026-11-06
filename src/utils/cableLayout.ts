@@ -41,14 +41,15 @@ const isTransformer = (element: DrawingElement): boolean => {
   return element.type === 'symbol' && (element as SymbolElement).symbolId === 'transformer';
 };
 
-export const calculateCablePath = (cable: CableElement, elements: DrawingElement[]): Point[] => {
-  if (cable.poleIds.length < 2) return [];
-  
-  // Get pole objects
+/**
+ * Each pole-to-pole line of a cable as drawn: the two pole centres moved sideways by the
+ * cable's place among the cables of that span (parallel cables are centred around the poles).
+ * One line per consecutive pair of the cable's (existing) poles.
+ */
+export const cableOffsetLines = (cable: CableElement, elements: DrawingElement[]): { p1: Point, p2: Point, v: Point }[] => {
   const poles = cable.poleIds.map(id => elements.find(e => e.id === id)).filter(e => e) as DrawingElement[];
-  if (poles.length < 2) return [];
-
   const offsetLines: { p1: Point, p2: Point, v: Point }[] = [];
+  if (poles.length < 2) return offsetLines;
   
   // Pre-filter all cables once to avoid repeated filtering
   const allCables = elements.filter(e => e.type === 'cable') as CableElement[];
@@ -151,6 +152,17 @@ export const calculateCablePath = (cable: CableElement, elements: DrawingElement
       v: { x: dx, y: dy }
     });
   }
+  return offsetLines;
+};
+
+export const calculateCablePath = (cable: CableElement, elements: DrawingElement[]): Point[] => {
+  if (cable.poleIds.length < 2) return [];
+  
+  // Get pole objects
+  const poles = cable.poleIds.map(id => elements.find(e => e.id === id)).filter(e => e) as DrawingElement[];
+  if (poles.length < 2) return [];
+
+  const offsetLines = cableOffsetLines(cable, elements);
 
   const path: Point[] = [];
   

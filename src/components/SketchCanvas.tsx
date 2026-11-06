@@ -6,6 +6,8 @@ import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerE
 import { pathSegmentSpans, SpanRef } from '../utils/cableSegments';
 import { DrawnSpanHint, SpanPropertiesSheet } from './SpanPropertiesSheet';
 import { MIN_SCREEN_FONT_PX, VoltageDropOverlay } from './VoltageDropOverlay';
+import { CableNameLabels } from './CableNameLabels';
+import { cableNameLayout, CABLE_NAME_MIN_SCREEN_PX } from '../utils/cableNameLayout';
 import { distanceLabelExtraOffset, distanceLabelFontSizes, layoutViewScale } from '../utils/overlayLayout';
 import { CableEndsDialog } from './CableEndsDialog';
 import { CableColorBar } from './CableColorBar';
@@ -167,6 +169,8 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
   // each distance number: the minimum only where it adds no overlap (it cannot move)
   const distanceFontSizes = useMemo(() => distanceLabelFontSizes(elements, { ...layoutCtx, arrowSize: 8 / viewScale }, 10 * distanceTextScale, distanceFontSize, vdBoxes), [elements, layoutCtx, distanceTextScale, distanceFontSize, viewScale, vdBoxes]);
   const vdLayoutCtx = useMemo(() => ({ ...layoutCtx, showDistances: showDistanceLabels, distanceFontSizes, arrowSize: 8 / viewScale }), [layoutCtx, showDistanceLabels, distanceFontSizes, viewScale]);
+  // names of the library cables linked to spans (visual only; the results' badges avoid them)
+  const cableNames = useMemo(() => cableNameLayout(elements, { ctx: vdLayoutCtx, fs: Math.max(9 * distanceTextScale, minWorldFont), minFs: Math.max(7 * distanceTextScale, CABLE_NAME_MIN_SCREEN_PX / viewScale), boxes: vdBoxes, markFont: Math.max(11 * distanceTextScale, minWorldFont) }), [elements, vdLayoutCtx, distanceTextScale, minWorldFont, vdBoxes]);
 
   const [isDragging, setIsDragging] = useState(false);
   const [isRotating, setIsRotating] = useState(false);
@@ -2536,7 +2540,9 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
 
           {showDistanceLabels && renderConnectionLabels()}
 
-          {vdResult && <VoltageDropOverlay elements={elements} result={vdResult} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} layoutContext={vdLayoutCtx} boxes={vdBoxes} viewScale={viewScale} />}
+          <CableNameLabels labels={cableNames} />
+
+          {vdResult && <VoltageDropOverlay elements={elements} result={vdResult} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} layoutContext={vdLayoutCtx} boxes={vdBoxes} viewScale={viewScale} texts={cableNames} />}
 
           {renderArcPicker()}
 

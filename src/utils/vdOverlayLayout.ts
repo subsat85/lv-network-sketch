@@ -2,7 +2,7 @@ import type { DrawingElement, Point } from '../types/drawing';
 import type { VdPole, VoltageView } from './e2Presentation';
 import { POLE_STATUS_MARK, PROVISIONAL_MARK, WORST_CASE_MARK } from './vdLabels';
 import { poleTag } from './poleNames';
-import { addCircle, addRect, drawingObstacles, layoutBadges, poleTagAnchor, poleTagRect, POLE_TAG_FONT_FACTOR, type LayoutContext, type Rect } from './overlayLayout';
+import { addCircle, addRect, addSegment, drawingObstacles, layoutBadges, poleTagAnchor, poleTagRect, POLE_TAG_FONT_FACTOR, type LayoutContext, type Rect } from './overlayLayout';
 
 // Where the voltage-drop overlay draws its marks (world units). The texts, colours and
 // statuses are exactly those of the overlay; only the badge positions are chosen here:
@@ -32,6 +32,8 @@ export interface VdLayoutOptions {
   boxes?: Rect[];
   /** smallest font size of any mark, world units (from the on-screen minimum at the current zoom); none on paper */
   minFont?: number;
+  /** texts drawn along a line (the cable names: centre line and half height), also obstacles */
+  texts?: { a: Point; b: Point; half: number }[];
 }
 
 /** the badge of a pole; `worst`: calculated with the Worst Case method (marked ▲, Equal Phase Current unmarked) */
@@ -55,6 +57,7 @@ export const vdOverlayLayout = (elements: DrawingElement[], result: VoltageView,
 
   const set = drawingObstacles(elements, ctx);
   for (const b of opts.boxes ?? []) addRect(set, b);
+  for (const t of opts.texts ?? []) addSegment(set, t.a, t.b, t.half);
   // fixed marks (same places as before). A pole number takes the on-screen minimum only
   // where that larger text covers nothing more than at its set size (never a new overlap).
   const tagRect = poleTagRect;

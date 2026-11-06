@@ -417,6 +417,11 @@ export const layoutBadges = (groups: BadgeGroupInput[], set: ObstacleSet, R: num
   return out;
 };
 
+/** a text drawn along a line (rotated): obstacle for the labels placed after it */
+export const addSegment = (set: ObstacleSet, a: Point, b: Point, half: number, weight = W_TEXT) => set.add({ kind: 'seg', a, b, half, weight });
+/** how much a text drawn along a line (centre line a–b, half its height) would cover of the set */
+export const segmentCost = (set: ObstacleSet, a: Point, b: Point, half: number) => costOfObstacle(set, { kind: 'seg', a, b, half, weight: 0 }, true);
+
 /** obstacle for something placed by another step (a proposal box, a badge, a fixed mark) */
 export const addRect = (set: ObstacleSet, r: Rect, weight = W_BOX) => set.add({ kind: 'rect', ...r, weight });
 export const addCircle = (set: ObstacleSet, cx: number, cy: number, r: number, weight = W_TEXT) => set.add({ kind: 'circle', cx, cy, r, weight });
