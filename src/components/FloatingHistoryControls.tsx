@@ -1,18 +1,8 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
-import { Undo2, Redo2, History, GripHorizontal, Minimize2, Pencil, Square, Circle, Triangle, ArrowRight, Compass, Spline, Shapes } from 'lucide-react';
+import { Undo2, Redo2, History, GripHorizontal, Minimize2 } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
-import { ShapeType } from '../types/drawing';
 import { ICON_MD } from './ui/icons';
 import { useT } from '../store/localeStore';
-
-const SHAPES: { id: ShapeType; icon: React.ReactNode }[] = [
-  { id: 'rectangle', icon: <Square {...ICON_MD} /> },
-  { id: 'circle', icon: <Circle {...ICON_MD} /> },
-  { id: 'triangle', icon: <Triangle {...ICON_MD} /> },
-  { id: 'arrow', icon: <ArrowRight {...ICON_MD} /> },
-  { id: 'compass', icon: <Compass {...ICON_MD} /> },
-  { id: 'curved_arrow', icon: <Spline {...ICON_MD} /> },
-];
 
 interface FloatingHistoryControlsProps {
   /** Full Screen Drawing Mode is on (App) */
@@ -29,15 +19,12 @@ const overlaps = (x: number, y: number, w: number, h: number, a: DOMRect) =>
 
 export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = ({ fullScreen = false, avoidRef, avoidLayoutKey }) => {
   const t = useT();
-  const { undo, redo, history, redoStack, tool, setTool, activeShapeType, setActiveShapeType } = useDrawingStore();
+  const { undo, redo, history, redoStack } = useDrawingStore();
   const [position, setPosition] = useState({ x: window.innerWidth - 60, y: 100 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isExpanded, setIsExpanded] = useState(true);
-  const [showShapesMenu, setShowShapesMenu] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const shapesMenuRef = useRef<HTMLDivElement>(null);
-  const [shapesMenuPos, setShapesMenuPos] = useState<{ left: number; top: number } | null>(null);
 
   // read through a ref: the resize listeners below are registered once
   const fullScreenRef = useRef(fullScreen);
@@ -85,24 +72,6 @@ export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = (
     return () => ro.disconnect();
   }, [fullScreen]);
 
-  // The shapes menu opens on the left of the panel. In full screen it must cover neither the
-  // panel (near the left edge: opens on its right, or below it) nor the restore buttons (below them).
-  useLayoutEffect(() => {
-    const m = shapesMenuRef.current?.getBoundingClientRect(); const p = containerRef.current?.getBoundingClientRect();
-    let pos: { left: number; top: number } | null = null;
-    if (showShapesMenu && fullScreen && m && p) {
-      const vw = window.visualViewport?.width ?? window.innerWidth;
-      let left = Math.max(8, position.x - 180), top = position.y;
-      if (left < p.right + 4 && left + m.width > p.left - 4) {
-        if (p.right + AVOID_GAP + m.width <= vw - 8) left = p.right + AVOID_GAP; else top = p.bottom + AVOID_GAP;
-      }
-      const a = avoidRect();
-      if (a && overlaps(left, top, m.width, m.height, a)) top = a.bottom + AVOID_GAP;
-      pos = { left, top };
-    }
-    setShapesMenuPos(prev => (prev?.left === pos?.left && prev?.top === pos?.top ? prev : pos));
-  }, [showShapesMenu, position, fullScreen, isExpanded]);
-
   useEffect(() => {
     window.addEventListener('resize', clampToViewport);
     window.addEventListener('orientationchange', clampToViewport);
@@ -140,12 +109,6 @@ export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = (
     setIsDragging(false);
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
     if (fullScreen) clampToViewport(); // dropped on the restore button: move it clear
-  };
-
-  const handleShapeClick = (shapeId: ShapeType) => {
-    setActiveShapeType(shapeId);
-    setTool('shape');
-    setShowShapesMenu(false);
   };
 
   if (!isExpanded) {
@@ -187,30 +150,6 @@ export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = (
         </div>
 
         <button
-          onClick={() => setTool('draw')}
-          className={`ui-icon-btn ${tool === 'draw' ? 'is-active' : ''}`}
-          title={t('shapes.freeDraw')}
-          aria-label={t('shapes.freeDraw')}
-          data-history-action="draw"
-          aria-pressed={tool === 'draw'}
-        >
-          <Pencil {...ICON_MD} />
-        </button>
-
-        <button
-          onClick={() => setShowShapesMenu(!showShapesMenu)}
-          className={`ui-icon-btn ${tool === 'shape' || showShapesMenu ? 'is-active' : ''}`}
-          title={t('shapes.shapes')}
-          aria-label={t('shapes.shapes')}
-          data-history-action="shapes"
-          aria-expanded={showShapesMenu}
-        >
-          <Shapes {...ICON_MD} />
-        </button>
-
-        <div className="ui-sep-h" aria-hidden="true" />
-
-        <button
           onClick={undo}
           disabled={history.length === 0}
           className="ui-icon-btn"
@@ -245,31 +184,6 @@ export const FloatingHistoryControls: React.FC<FloatingHistoryControlsProps> = (
         </button>
       </div>
 
-      {/* Shapes Menu Popup */}
-      {showShapesMenu && (
-        <div
-          ref={shapesMenuRef}
-          style={{ 
-            position: 'fixed',
-            left: `${shapesMenuPos?.left ?? Math.max(8, position.x - 180)}px`,
-            top: `${shapesMenuPos?.top ?? position.y}px`
-          }}
-          className="z-50 ui-float p-1.5 grid grid-cols-3 gap-0.5"
-        >
-          {SHAPES.map((shape) => (
-            <button
-              key={shape.id}
-              onClick={() => handleShapeClick(shape.id)}
-              className={`ui-icon-btn ${tool === 'shape' && activeShapeType === shape.id ? 'is-active' : ''}`}
-              title={t(`shapes.${shape.id}`)}
-              aria-label={t(`shapes.${shape.id}`)}
-              data-shape={shape.id}
-            >
-              {shape.icon}
-            </button>
-          ))}
-        </div>
-      )}
     </>
   );
 };

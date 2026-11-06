@@ -25,7 +25,7 @@ import { splitSpanInCables } from '../utils/spanModel';
 import { midPoleId } from '../utils/splitPoleId';
 import { usableDefault, withDefaultCableSpan } from '../utils/defaultCable';
 import { getCableLibrary } from '../store/cableLibraryStore';
-import { arcGeometry, arcPick, ArcPickAction, ArcPickState, createArc, listConnectionPoints, sameEnd } from '../utils/cableArcs';
+import { arcGeometry, arcPick, ArcPickAction, ArcPickState, autoJointArcs, createArc, listConnectionPoints, sameEnd } from '../utils/cableArcs';
 import { calculateCablePath } from '../utils/cableLayout';
 import { cableEndArrow, suggestedSplitArrows, SUGGESTED_SPLIT_COLOR } from '../utils/cableArrows';
 import { CableArrowHead } from './CableArrowHead';
@@ -2028,6 +2028,19 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
     );
   };
 
+  const autoJoints = useMemo(() => autoJointArcs(elements), [elements]);
+  const renderAutoJoint = (el: CableArcElement) => {
+    const g = arcGeometry(elements, el, arcRadius);
+    if (!g) return null;
+    return (
+      <g key={el.id} data-auto-joint={el.id} style={{ pointerEvents: 'none' }}>
+        <path d={g.d} stroke={el.strokeColor} strokeWidth={el.strokeWidth} fill="none" strokeLinecap="round" />
+        <circle cx={g.start.x} cy={g.start.y} r={g.dotRadius} fill={el.strokeColor} />
+        <circle cx={g.end.x} cy={g.end.y} r={g.dotRadius} fill={el.strokeColor} />
+      </g>
+    );
+  };
+
   // Numbered connection points of the pole being linked (arc tool).
   const renderArcPicker = () => {
     if (!arcPickState) return null;
@@ -2537,6 +2550,10 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
           
           {/* Render other elements (top layer) */}
           {elements.filter(el => el.type !== 'cable').map(el => renderElement(el))}
+
+          {/* automatic joint marks: the Jumper drawing where two spans with different library cables meet
+              (display only, not elements: not selectable, not saved, not used by the calculations) */}
+          {autoJoints.map(el => renderAutoJoint(el))}
 
           {showDistanceLabels && renderConnectionLabels()}
 

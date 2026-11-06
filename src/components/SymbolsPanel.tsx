@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Square, Type, Spline } from 'lucide-react';
+import { Home, Square, Type } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import { ICON_LG } from './ui/icons';
 import { useT } from '../store/localeStore';
@@ -23,17 +23,6 @@ export const SymbolsPanel: React.FC = () => {
         data-symbol-tool="text"
       >
         <Type {...ICON_LG} />
-      </button>
-
-      {/* Arc Tool */}
-      <button 
-        onClick={() => setTool('arc')}
-        className={`ui-icon-btn ${tool === 'arc' ? 'is-active' : ''}`}
-        title={t('symbols.arc')}
-        aria-label={t('symbols.arc')}
-        data-symbol-tool="arc"
-      >
-        <Spline {...ICON_LG} />
       </button>
 
       <div className="ui-sep-h" aria-hidden="true" />

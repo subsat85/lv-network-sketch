@@ -21,7 +21,6 @@ export const ar = {
     cableStraight: 'كابل مستقيم',
     finishCable: 'إنهاء الكابل',
     transformerInfo: 'معلومات المحول',
-    loadReport: 'تقرير الأحمال',
     voltageDrop: 'هبوط الجهد',
     cableLibrary: 'مكتبة الكوابل',
     projectName: 'اسم المشروع',

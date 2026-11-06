@@ -19,7 +19,6 @@ export const en: Dict = {
     cableStraight: 'Straight Cable',
     finishCable: 'Finish Cable',
     transformerInfo: 'Transformer Information',
-    loadReport: 'Load Report',
     voltageDrop: 'Voltage Drop',
     cableLibrary: 'Cable Library',
     projectName: 'Project Name',

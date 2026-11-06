@@ -1,6 +1,7 @@
 import { CableArcElement, CableArcEnd, CableElement, DrawingElement, Point } from '../types/drawing';
 import { calculateCablePath } from './cableLayout';
 import { pairKey, pathSegmentSpans } from './cableSegments';
+import { spanCableTypeProblem } from './cableTypeModel';
 
 // Cable arcs: a link drawn at a pole between two cable connection points.
 //
@@ -143,6 +144,63 @@ export const createArc = (elements: DrawingElement[], poleId: string, from: Cabl
     ok: true,
     arc: { id, type: 'cable_arc', poleId, from: { ...from }, to: { ...to }, x: 0, y: 0, strokeColor: a.cable.strokeColor, fillColor: 'none', strokeWidth: a.cable.strokeWidth || 2 },
   };
+};
+
+/**
+ * Automatic joint marks (display only): the existing Jumper drawing, shown by itself where two spans
+ * meet at a pole and each is linked to a DIFFERENT cable of the library (another cable type; another
+ * revision of the same type is the same cable). Worked out from the drawing on every render: nothing
+ * is added to the project, saved or exported, and the network / E2 do not read them (they only join
+ * what is connected already). A mark is shown only where:
+ *   - the pole is not a transformer, and exactly two spans of that colour meet there (a branching
+ *     pole gets none; parallel cables of other colours do not count);
+ *   - the two are connected as drawn: one cable passing through the pole, or two cable ends (a cable
+ *     continued by another one / a ring closed on one pole), neither end marked «isolated»;
+ *   - both spans have a valid library link, with different cable types;
+ *   - no Jumper drawn by the user already links the same two points.
+ * Ids are fixed by the pole and the two points, so a mark never appears twice.
+ */
+export const autoJointArcs = (elements: DrawingElement[]): CableArcElement[] => {
+  const out: CableArcElement[] = [];
+  const cables = elements.filter(isCable);
+  const arcs = elements.filter(isArc);
+  const typeOf = (c: CableElement, span: number) => {
+    const id = c.spanIds?.[span];
+    const ct = id ? c.spanProps?.[id]?.cableType : undefined;
+    return ct && spanCableTypeProblem(ct) === null ? ct.typeId : undefined;
+  };
+  for (const pole of elements) {
+    if (pole.type !== 'symbol' || pole.symbolId === 'transformer') continue;
+    type P = { end: CableArcEnd; cable: CableElement; at: number; span: number; isEnd: boolean };
+    const byColour = new Map<string, P[]>();
+    for (const c of cables) {
+      let occurrence = 0;
+      c.poleIds.forEach((id, at) => {
+        if (id !== pole.id) return;
+        const last = c.poleIds.length - 1;
+        const pts: P[] = [];
+        if (at > 0) pts.push({ end: { cableId: c.id, side: 'prev', occurrence }, cable: c, at, span: at - 1, isEnd: at === last });
+        if (at < last) pts.push({ end: { cableId: c.id, side: 'next', occurrence }, cable: c, at, span: at, isEnd: at === 0 });
+        for (const q of pts) byColour.set(c.strokeColor, [...(byColour.get(c.strokeColor) ?? []), q]);
+        occurrence++;
+      });
+    }
+    for (const list of byColour.values()) {
+      if (list.length !== 2) continue;
+      const [x, y] = list;
+      const through = x.cable.id === y.cable.id && x.end.occurrence === y.end.occurrence;
+      const isolated = (q: P) => q.isEnd && q.cable.endLinks?.[q.at === 0 ? 'start' : 'end'] === 'isolated';
+      if (!through && (!x.isEnd || !y.isEnd || isolated(x) || isolated(y))) continue;
+      const tx = typeOf(x.cable, x.span), ty = typeOf(y.cable, y.span);
+      if (!tx || !ty || tx === ty) continue;
+      if (!resolveEnd(elements, pole.id, x.end) || !resolveEnd(elements, pole.id, y.end)) continue;
+      if (arcs.some((a) => a.poleId === pole.id && ((sameEnd(a.from, x.end) && sameEnd(a.to, y.end)) || (sameEnd(a.from, y.end) && sameEnd(a.to, x.end))))) continue;
+      const [from, to] = endKey(x.end) <= endKey(y.end) ? [x, y] : [y, x];
+      out.push({ id: `auto-joint:${pole.id}:${endKey(from.end)}:${endKey(to.end)}`, type: 'cable_arc', poleId: pole.id, from: { ...from.end }, to: { ...to.end },
+        x: 0, y: 0, strokeColor: from.cable.strokeColor, fillColor: 'none', strokeWidth: from.cable.strokeWidth || 2 });
+    }
+  }
+  return out;
 };
 
 /**

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MousePointer2, Trash2, Activity, Check, ArrowRight, Folder, Share, Minus, Zap, BarChart3, Gauge, Maximize, Library } from 'lucide-react';
+import { MousePointer2, Trash2, Activity, Check, ArrowRight, Folder, Share, Minus, Zap, Gauge, Maximize, Library } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import { ToolType, CableElement } from '../types/drawing';
 import { LoadReportModal } from './LoadReportModal';
@@ -102,14 +102,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       icon: <Zap {...ICON_LG} />, 
       label: t('toolbar.transformerInfo'),
       onClick: () => onOpenTransformerInfo?.(),
-      isActive: false
-    },
-    { 
-      id: 'loadReport', 
-      group: 'info',
-      icon: <BarChart3 {...ICON_LG} />, 
-      label: t('toolbar.loadReport'),
-      onClick: () => setShowLoadReport(true),
       isActive: false
     },
     { 

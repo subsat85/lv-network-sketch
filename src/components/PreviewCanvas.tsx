@@ -4,7 +4,7 @@ import { Point, PathElement, TextElement, SymbolElement, CableElement, ConsumerE
 import { calculateCablePath } from '../utils/cableLayout';
 import { cableEndArrow, suggestedSplitArrows, SUGGESTED_SPLIT_COLOR } from '../utils/cableArrows';
 import { CableArrowHead } from './CableArrowHead';
-import { arcGeometry } from '../utils/cableArcs';
+import { arcGeometry, autoJointArcs } from '../utils/cableArcs';
 import { ProposalSvg } from './ProposalSvg';
 import { layoutProposalBoxes, proposalGeometry } from '../utils/proposalDrawing';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
@@ -130,6 +130,7 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
     return g ? [{ x: g.box.cx - g.box.w / 2, y: g.box.cy - g.box.h / 2, w: g.box.w, h: g.box.h }] : [];
   }), [elements, poleSizeScale, consumerSizeScale, boxLayout]);
   // names of the library cables linked to spans, as on the sketch (at the set size on paper)
+  const autoJoints = useMemo(() => autoJointArcs(elements), [elements]);
   const cableNameResult = useMemo(() => cableNameLayoutWithTags(elements, { ctx: vdLayoutCtx, fs: 9 * distanceTextScale, minFs: 7 * distanceTextScale, boxes: vdBoxes }), [elements, vdLayoutCtx, distanceTextScale, vdBoxes]);
 
   const getTransformerIntersection = (pole: SymbolElement, externalPoint: Point): Point => {
@@ -663,6 +664,18 @@ export const PreviewCanvas: React.FC<PreviewCanvasProps> = ({
     <>
       {elements.filter(el => el.type === 'cable').map(el => renderElement(el))}
       {elements.filter(el => el.type !== 'cable').map(el => renderElement(el))}
+      {/* automatic joint marks (as on the canvas): the Jumper drawing, display only */}
+      {autoJoints.map((el) => {
+        const g = arcGeometry(elements, el, POLE_RADIUS * poleSizeScale);
+        if (!g) return null;
+        return (
+          <g key={el.id} data-auto-joint={el.id}>
+            <path d={g.d} stroke={el.strokeColor} strokeWidth={el.strokeWidth} fill="none" strokeLinecap="round" />
+            <circle cx={g.start.x} cy={g.start.y} r={g.dotRadius} fill={el.strokeColor} />
+            <circle cx={g.end.x} cy={g.end.y} r={g.dotRadius} fill={el.strokeColor} />
+          </g>
+        );
+      })}
       {showDistanceLabels && renderConnectionLabels()}
       <CableNameLabels labels={cableNameResult.labels} />
       {voltageDrop && <VoltageDropOverlay elements={elements} result={voltageDrop} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} layoutContext={vdLayoutCtx} boxes={vdBoxes} texts={cableNameResult.labels} tagShifts={cableNameResult.tagShifts} />}
