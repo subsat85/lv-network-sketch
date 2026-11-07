@@ -227,7 +227,7 @@ describe('the sheet, the toolbar, both languages', () => {
     const html = renderToStaticMarkup(<Toolbar />);
     const order = [...html.matchAll(/data-toolbar-tool="([\w]+)"/g)].map((m) => m[1]);
     // (the statistics / load report button was removed from the toolbar: removedTools.test.tsx)
-    expect(order).toEqual(['projects', 'share', 'fullScreen', 'select', 'cable', 'cable_straight', 'transformer', 'voltageDrop', 'cableLibrary', 'deleteSelected']);
+    expect(order).toEqual(['projects', 'share', 'fullScreen', 'select', 'cable', 'cable_straight', 'transformer', 'voltageDrop', 'networkAnalysis', 'cableLibrary', 'deleteSelected']);
     expect(html).toContain(`aria-label="${translate('ar', 'toolbar.cableLibrary')}"`);
     expect(html).not.toContain('data-cable-library');
     const code = readFileSync(resolve(__dirname, '../Toolbar.tsx'), 'utf8');

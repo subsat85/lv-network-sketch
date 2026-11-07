@@ -19,7 +19,7 @@ describe('removed tools', () => {
 
   it('top toolbar: no statistics button; the others in their order', () => {
     const html = renderToStaticMarkup(<Toolbar />);
-    expect(ids(html, 'data-toolbar-tool')).toEqual(['projects', 'share', 'fullScreen', 'select', 'cable', 'cable_straight', 'transformer', 'voltageDrop', 'cableLibrary', 'deleteSelected']);
+    expect(ids(html, 'data-toolbar-tool')).toEqual(['projects', 'share', 'fullScreen', 'select', 'cable', 'cable_straight', 'transformer', 'voltageDrop', 'networkAnalysis', 'cableLibrary', 'deleteSelected']);
     expect(html).not.toContain('lucide-chart-column');
     expect(html).not.toContain('lucide-bar-chart');
     expect(seps(html)).toBe(2); // file | draw | info

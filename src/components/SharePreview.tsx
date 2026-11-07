@@ -1,9 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Share2, FileDown, RotateCcw, RotateCw, ZoomIn, ZoomOut, Maximize, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { X, Share2, FileDown, RotateCcw, RotateCw, ZoomIn, ZoomOut, Maximize, Image as ImageIcon, Trash2, FileText, Files } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import { PreviewCanvas } from './PreviewCanvas';
 import html2canvas from 'html2canvas';
 import { useVoltageView } from '../utils/useE2Study';
+import { cachedVoltageView } from '../utils/e2Presentation';
+import { networkAnalysis } from '../utils/networkAnalysis';
+import { buildReportPdf } from '../utils/networkReport';
+import { reportContext } from './NetworkAnalysisPanel';
+import { pdfFilename } from '../utils/pdfFilename';
 import { loadModelLabel, methodLabel, POLE_STATUS_MARK, WORST_CASE_MARK } from '../utils/vdLabels';
 import { DEFAULT_POWER_FACTOR, isPowerFactorDefault } from '../utils/electricalSettings';
 import jsPDF from 'jspdf';
@@ -170,6 +175,24 @@ export const SharePreview: React.FC<SharePreviewProps> = ({ onClose }) => {
     beginGesture();
   };
 
+  // The network analysis report (tables and results only — the drawing is not in it: the drawing is
+  // exported on its own by handleExport below, unchanged). 'full' is the same report under its own name.
+  const handleReportExport = async (kind: 'report' | 'full') => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      // the same E2 calculation the drawing and the analysis panel show (read only)
+      const analysis = networkAnalysis(elements, cachedVoltageView({ elements, connectionDistances, distanceFlags, electrical }));
+      const pdf = await buildReportPdf(reportContext(analysis, currentProjectName ?? undefined, locale, tCurrent));
+      pdf.save(pdfFilename(currentProjectName, kind, tCurrent));
+    } catch (err) {
+      console.error('Export failed', err);
+      alert(tCurrent('dialogs.exportFailed', { error: err instanceof Error ? err.message : tCurrent('dialogs.unknownError') }));
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const handleExport = async (type: 'pdf' | 'share') => {
     if (isExporting || !contentRef.current) return;
     
@@ -311,6 +334,26 @@ export const SharePreview: React.FC<SharePreviewProps> = ({ onClose }) => {
             data-share-action="pdf"
           >
             <FileDown size={24} />
+          </button>
+          <button
+            onClick={() => handleReportExport('report')}
+            disabled={isExporting}
+            className={`p-2 rounded-full ${isExporting ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'hover:bg-gray-100'}`}
+            title={t('share.exportReport')}
+            aria-label={t('share.exportReport')}
+            data-share-action="report-pdf"
+          >
+            <FileText size={24} />
+          </button>
+          <button
+            onClick={() => handleReportExport('full')}
+            disabled={isExporting}
+            className={`p-2 rounded-full ${isExporting ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'hover:bg-gray-100'}`}
+            title={t('share.exportFull')}
+            aria-label={t('share.exportFull')}
+            data-share-action="full-pdf"
+          >
+            <Files size={24} />
           </button>
           <button 
             onClick={() => handleExport('share')} 

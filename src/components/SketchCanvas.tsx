@@ -26,7 +26,8 @@ import { midPoleId } from '../utils/splitPoleId';
 import { usableDefault, withDefaultCableSpan } from '../utils/defaultCable';
 import { getCableLibrary } from '../store/cableLibraryStore';
 import { arcGeometry, arcPick, ArcPickAction, ArcPickState, autoJointArcs, createArc, listConnectionPoints, sameEnd } from '../utils/cableArcs';
-import { calculateCablePath } from '../utils/cableLayout';
+import { calculateCablePath, cableOffsetLines } from '../utils/cableLayout';
+import { useAnalysisFocus } from '../store/analysisFocusStore';
 import { cableEndArrow, suggestedSplitArrows, SUGGESTED_SPLIT_COLOR } from '../utils/cableArrows';
 import { CableArrowHead } from './CableArrowHead';
 import { createZigzagPath, generateHighQualityArcPath } from '../utils/svgHelpers';
@@ -2029,6 +2030,54 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
   };
 
   const autoJoints = useMemo(() => autoJointArcs(elements), [elements]);
+
+  // the network analysis asks to show a pole / a cable (view only: the elements are never changed)
+  const analysisFocus = useAnalysisFocus((s) => s.focus);
+  const [analysisMark, setAnalysisMark] = useState<{ seq: number; poleId?: string; lines: { p1: Point; p2: Point }[]; color: string } | null>(null);
+  useEffect(() => {
+    if (!analysisFocus) return;
+    const lines: { p1: Point; p2: Point }[] = [];
+    for (const key of analysisFocus.spanKeys ?? []) {
+      const [cid, idx] = [key.slice(0, key.lastIndexOf('#')), Number(key.slice(key.lastIndexOf('#') + 1))];
+      const c = elements.find((e) => e.id === cid);
+      const l = c && c.type === 'cable' ? cableOffsetLines(c as CableElement, elements)[idx] : undefined;
+      if (l) lines.push({ p1: l.p1, p2: l.p2 });
+    }
+    const pole = analysisFocus.poleId ? elements.find((e) => e.id === analysisFocus.poleId) : undefined;
+    const pts = pole ? [{ x: pole.x, y: pole.y }] : lines.flatMap((l) => [l.p1, l.p2]);
+    const r = svgRef.current?.getBoundingClientRect();
+    if (pts.length && r) {
+      const minX = Math.min(...pts.map((p) => p.x)), maxX = Math.max(...pts.map((p) => p.x));
+      const minY = Math.min(...pts.map((p) => p.y)), maxY = Math.max(...pts.map((p) => p.y));
+      // a pole: centred at the present zoom (at least 1); a cable: fitted, never zoomed in past 1.5
+      const fit = Math.min((r.width * 0.8) / Math.max(maxX - minX, 1), (r.height * 0.7) / Math.max(maxY - minY, 1));
+      const scale = pole ? Math.max(transform.scale, 1) : Math.min(Math.max(fit, 0.2), 1.5);
+      setTransform({ x: r.width / 2 - ((minX + maxX) / 2) * scale, y: r.height / 2 - ((minY + maxY) / 2) * scale, scale });
+    }
+    setAnalysisMark({ seq: analysisFocus.seq, ...(pole ? { poleId: pole.id } : {}), lines, color: analysisFocus.color ?? '#2563eb' });
+    const t = setTimeout(() => setAnalysisMark((m) => (m && m.seq === analysisFocus.seq ? null : m)), 4500);
+    return () => clearTimeout(t);
+    // only a new request moves the view
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisFocus?.seq]);
+  const renderAnalysisMark = () => {
+    if (!analysisMark) return null;
+    const pole = analysisMark.poleId ? elements.find((e) => e.id === analysisMark.poleId) : undefined;
+    const R = POLE_RADIUS * poleSizeScale;
+    return (
+      <g data-analysis-mark={analysisMark.poleId ?? 'cable'} style={{ pointerEvents: 'none' }}>
+        {analysisMark.lines.map((l, i) => (
+          <line key={i} x1={l.p1.x} y1={l.p1.y} x2={l.p2.x} y2={l.p2.y} stroke={analysisMark.color} strokeOpacity={0.28} strokeWidth={14} strokeLinecap="round" />
+        ))}
+        {pole && (
+          <circle cx={pole.x} cy={pole.y} r={R + 8} fill="none" stroke="#2563eb" strokeWidth={3}>
+            <animate attributeName="r" values={`${R + 6};${R + 14};${R + 6}`} dur="1.2s" repeatCount="indefinite" />
+            <animate attributeName="stroke-opacity" values="1;0.35;1" dur="1.2s" repeatCount="indefinite" />
+          </circle>
+        )}
+      </g>
+    );
+  };
   const renderAutoJoint = (el: CableArcElement) => {
     const g = arcGeometry(elements, el, arcRadius);
     if (!g) return null;
@@ -2560,6 +2609,8 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
           <CableNameLabels labels={cableNameResult.labels} />
 
           {vdResult && <VoltageDropOverlay elements={elements} result={vdResult} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} layoutContext={vdLayoutCtx} boxes={vdBoxes} viewScale={viewScale} texts={cableNameResult.labels} tagShifts={cableNameResult.tagShifts} />}
+
+          {renderAnalysisMark()}
 
           {renderArcPicker()}
 

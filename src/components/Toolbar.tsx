@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { MousePointer2, Trash2, Activity, Check, ArrowRight, Folder, Share, Minus, Zap, Gauge, Maximize, Library } from 'lucide-react';
+import { MousePointer2, Trash2, Activity, Check, ArrowRight, Folder, Share, Minus, Zap, Gauge, Maximize, Library, ClipboardList } from 'lucide-react';
 import { useDrawingStore } from '../store/drawingStore';
 import { ToolType, CableElement } from '../types/drawing';
 import { LoadReportModal } from './LoadReportModal';
 import { VoltageDropPanel } from './VoltageDropPanel';
 import { CableLibrarySheet } from './cables/CableLibrarySheet';
+import { AnalysisReturnButton, NetworkAnalysisPanel } from './NetworkAnalysisPanel';
+import { useAnalysisFocus } from '../store/analysisFocusStore';
 import { ICON_LG } from './ui/icons';
 import { consumerIncluded } from '../utils/network';
 import { useLocale, useT } from '../store/localeStore';
@@ -113,6 +115,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
       isActive: false
     },
     {
+      // the network analysis: the E2 results per cable, in their own panel (NetworkAnalysisPanel)
+      id: 'networkAnalysis',
+      group: 'info',
+      icon: <ClipboardList {...ICON_LG} />,
+      label: t('toolbar.networkAnalysis'),
+      onClick: () => useAnalysisFocus.getState().setOpen(true),
+      isActive: false
+    },
+    {
       // Stage C2: the cable library (reading only); last of the info group, the others keep their place
       id: 'cableLibrary',
       group: 'info',
@@ -202,6 +213,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onOpenProjects, onOpenShare, o
         consumers={consumers}
       />
       {showVoltageDrop && <VoltageDropPanel onClose={() => setShowVoltageDropPanel(false)} />}
+      <NetworkAnalysisPanel />
+      <AnalysisReturnButton />
       {showCableLibrary && <CableLibrarySheet onClose={() => setShowCableLibrary(false)} />}
     </>
   );
