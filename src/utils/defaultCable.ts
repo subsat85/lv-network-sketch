@@ -35,8 +35,9 @@ export const defaultCableProblem = (d: unknown): string | null => {
 export type DefaultCableState =
   | { kind: 'none' }
   | { kind: 'ok'; cable: DefaultCable }
-  /** a newer revision is in the library: shown only, the chosen revision is still the default */
-  | { kind: 'newer'; cable: DefaultCable; latest: number }
+  /** a newer revision is in the library: the default stays this cable type, and new spans get the
+   *  latest revision (`current`), as every linked span does (cableLibrarySync.ts) */
+  | { kind: 'newer'; cable: DefaultCable; latest: number; current: CableTypeRevision }
   /** the record (or that revision) is not in this device's library: not used */
   | { kind: 'missing'; cable: DefaultCable }
   /** the stored default could not be read: not used */
@@ -46,11 +47,14 @@ export const defaultCableState = (cable: DefaultCable | undefined, types: readon
   if (!cable) return { kind: 'none' };
   const current = types.find((t) => t.id === cable.typeId);
   if (!current || current.revision < cable.revision) return { kind: 'missing', cable };
-  return current.revision > cable.revision ? { kind: 'newer', cable, latest: current.revision } : { kind: 'ok', cable };
+  return current.revision > cable.revision ? { kind: 'newer', cable, latest: current.revision, current } : { kind: 'ok', cable };
 };
 
-/** the default that may be applied now (its own snapshot), or undefined */
-export const usableDefault = (s: DefaultCableState): DefaultCable | undefined => (s.kind === 'ok' || s.kind === 'newer' ? s.cable : undefined);
+/** the default that may be applied now, on the latest revision of its cable type in the library, or undefined */
+export const usableDefault = (s: DefaultCableState): DefaultCable | undefined =>
+  s.kind === 'ok' ? s.cable
+    : s.kind === 'newer' ? { ...s.cable, revision: s.current.revision, snapshot: s.current }
+      : undefined;
 
 /**
  * The span linked to the default cable (its snapshot, never the latest revision). The span's own

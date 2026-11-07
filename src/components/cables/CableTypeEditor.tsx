@@ -41,17 +41,20 @@ export const saveCableForm = async (
     ...(plan.edit ? [{ label: 'data', run: (e: number) => controller.edit(prev.id, e, plan.edit!, meta) }] : []),
     ...plan.verify.map((v) => ({ label: SYMBOL[v.property], run: (e: number) => controller.setVerification(prev.id, e, v.property, v.verification, meta) })),
   ];
-  for (let i = 0; i < steps.length; i++) {
-    try {
-      const r = await steps[i].run(revision);
-      revision = r.revision.revision;
-      saved = revision;
-    } catch (e) {
-      if (e instanceof CableLibraryError && e.kind === 'conflict') return { ok: false, kind: 'conflict', ...(saved ? { savedRevision: saved } : {}) };
-      return { ok: false, kind: 'failed', ...(saved ? { savedRevision: saved } : {}), failed: steps.slice(i).map((s) => s.label) };
+  // one save for the person: the open project is moved once, to the last revision saved (cableLibrarySync)
+  return controller.batch(async (): Promise<SaveOutcome> => {
+    for (let i = 0; i < steps.length; i++) {
+      try {
+        const r = await steps[i].run(revision);
+        revision = r.revision.revision;
+        saved = revision;
+      } catch (e) {
+        if (e instanceof CableLibraryError && e.kind === 'conflict') return { ok: false, kind: 'conflict', ...(saved ? { savedRevision: saved } : {}) };
+        return { ok: false, kind: 'failed', ...(saved ? { savedRevision: saved } : {}), failed: steps.slice(i).map((s) => s.label) };
+      }
     }
-  }
-  return { ok: true, id: prev.id, revision };
+    return { ok: true, id: prev.id, revision };
+  });
 };
 
 // ---------- fields ----------

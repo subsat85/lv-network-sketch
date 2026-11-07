@@ -210,8 +210,9 @@ export const cableTypeUpdateAvailable = (ct: SpanCableType, h: CableTypeHistory)
 };
 
 /**
- * The explicit update of a span to another revision (a future user action, after the diff is shown).
- * The project's overrides are kept as they are.
+ * The update of a span to another revision of its cable type (used by the automatic synchronization
+ * with the library: syncSpansToRevision / cableLibrarySync.ts). The project's overrides are kept as
+ * they are; the snapshot becomes the new revision.
  */
 export const upgradeSpanCableType = (props: SpanProps, to: CableTypeRevision, now?: number): { props: SpanProps; changes: CableTypeChange[] } => {
   const ct = props.cableType;

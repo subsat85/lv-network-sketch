@@ -10,7 +10,9 @@ import { defaultCableState, type DefaultCable, type DefaultCableState } from '..
 // what the screens show — the list, its status, the last error — and calls the library's own
 // functions (cableLibraryStorage.ts) for every read and write: no storage logic is repeated here,
 // nothing is written by reading (apart from the library's own format record), no cable type or
-// default value is ever created by it, and it never touches project data.
+// default value is ever created by it, and it never touches project data. It only tells whoever
+// subscribed which revisions were saved (subscribe / batch): the open project is moved to them by
+// cableLibrarySync.ts, at the drawing store.
 
 /** loading → ready | empty | error. 'idle': nothing asked yet */
 export type CableLibraryStatus = 'idle' | 'loading' | 'ready' | 'empty' | 'error';
@@ -64,6 +66,15 @@ export interface CableLibraryController {
   revision(id: string, revision: number): Promise<CableTypeRevision | undefined>;
   /** This exact revision becomes the app's default cable (the list is read again after it). */
   setDefault(id: string, revision: number): Promise<DefaultCable>;
+  /**
+   * Called with the revisions an edit or a verification saved (after the library has them and the list
+   * is read again). Inside batch() they are held and given once, at its end, as the latest revision of
+   * each cable type saved in it — also when a later step of it failed (what was saved is saved).
+   * A listener that throws never fails the library operation. Returns the unsubscribe function.
+   */
+  subscribe(listener: (saved: readonly CableTypeRevision[]) => void): () => void;
+  /** Several writes that are one save for the person (the editor: the data, then each verification). */
+  batch<T>(run: () => Promise<T>): Promise<T>;
   /** No state is changed after this (results still arriving are dropped). */
   dispose(): void;
 }
@@ -77,6 +88,19 @@ export const createCableLibraryController = (opts: CableLibraryOptions & { libra
   let generation = 0;
   let inFlight: Promise<void> | undefined;
   const set = (patch: Partial<CableLibraryState>) => { if (!disposed) store.setState(patch); };
+
+  // saved revisions → subscribers (held during a batch: the latest of each cable type)
+  const listeners = new Set<(saved: readonly CableTypeRevision[]) => void>();
+  let depth = 0;
+  const held = new Map<string, CableTypeRevision>();
+  const tell = (saved: readonly CableTypeRevision[]) => {
+    if (disposed || !saved.length) return;
+    for (const l of [...listeners]) { try { l(saved); } catch { /* a listener never fails the save */ } }
+  };
+  const saved = (r: CableTypeRevision) => {
+    if (depth) { const h = held.get(r.id); if (!h || h.revision < r.revision) held.set(r.id, r); return; }
+    tell([r]);
+  };
 
   const load = (o: { force?: boolean } = {}): Promise<void> => {
     if (disposed) return Promise.resolve();
@@ -127,13 +151,20 @@ export const createCableLibraryController = (opts: CableLibraryOptions & { libra
     load,
     reload: () => load({ force: true }),
     create: (data, meta) => write('create', () => lib().create(data, meta)),
-    edit: (id, expectedRevision, edit, meta) => write('edit', () => lib().edit(id, expectedRevision, edit, meta)).then(({ revision, changes }) => ({ revision, changes })),
+    edit: (id, expectedRevision, edit, meta) => write('edit', () => lib().edit(id, expectedRevision, edit, meta)).then(({ revision, changes }) => { saved(revision); return { revision, changes }; }),
     setVerification: (id, expectedRevision, property, verification, meta) =>
-      write('verify', () => lib().setVerification(id, expectedRevision, property, verification, meta)).then(({ revision, changes }) => ({ revision, changes })),
+      write('verify', () => lib().setVerification(id, expectedRevision, property, verification, meta)).then(({ revision, changes }) => { saved(revision); return { revision, changes }; }),
     history: (id) => lib().history(id),
     revision: (id, revision) => lib().revision(id, revision),
     setDefault: (id, revision) => write('default', () => lib().setDefault(id, revision)),
-    dispose: () => { disposed = true; inFlight = undefined; },
+    subscribe: (listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
+    batch: async (run) => {
+      depth++;
+      try { return await run(); } finally {
+        if (--depth === 0 && held.size) { const out = [...held.values()]; held.clear(); tell(out); }
+      }
+    },
+    dispose: () => { disposed = true; inFlight = undefined; listeners.clear(); },
   };
 };
 

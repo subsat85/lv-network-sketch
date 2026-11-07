@@ -1,12 +1,13 @@
-import type { CableElement, SpanProps } from '../types/drawing';
+import type { CableElement, DrawingElement, SpanProps } from '../types/drawing';
 import type { CableTypeHistory, CableTypeRevision, ElectricalProperty, SpanCableType } from '../types/cableType';
-import { assignCableType, cableTypeMergeConflict, cableTypeUpdateAvailable, effectiveCableType, latestRevision } from './cableTypeModel';
+import { assignCableType, cableTypeMergeConflict, cableTypeRevisionProblem, cableTypeUpdateAvailable, effectiveCableType, latestRevision, spanCableTypeProblem, upgradeSpanCableType } from './cableTypeModel';
 import { hasElectrical, spanAt, withSpanProps } from './spanModel';
 
 // Stage C4: a library cable type linked to one span, and the link removed. Pure: the span's own
 // fields (R / X / Rn, material, section, data source…) are never read or changed here, nothing is
 // copied from the snapshot into them, and nothing is read from the library at calculation time —
-// the span keeps the exact snapshot it was linked to.
+// the span keeps the snapshot it is linked to. When the library saves a newer revision of that cable
+// type, the open project's spans are moved to it (syncSpansToRevision, applied by cableLibrarySync.ts).
 
 /**
  * The span linked to this revision (reference, revision number and a full snapshot, Stage B).
@@ -55,6 +56,48 @@ export const writeSpanProps = (store: SpanWriter, cableId: string, index: number
   store.updateElement(cable.id, { spanProps: withSpanProps(cable, spanId, next).spanProps });
   store.saveHistory();
   return true;
+};
+
+// ---------- automatic synchronization with the library ----------
+
+/** one span moved to a newer revision of its own cable type */
+export interface SpanSync { cableId: string; index: number; spanId: string; from: number; to: number }
+
+/**
+ * Every span of the drawing linked to `to.id` on an OLDER revision, moved to `to` (the revision just
+ * saved in the library): its reference, revision number and snapshot. Pure and all-or-nothing — the
+ * new cable elements are worked out first and returned; the caller applies them in one step.
+ *   - the project's overrides (R / X / Rn / Xn of this span) are kept as they are (upgradeSpanCableType);
+ *   - every other field of the span (poles, its own values, parallel, system, review…) and every other
+ *     property of the cable (geometry, colour, ids) is kept;
+ *   - the cable type identity never changes: only spans already linked to `to.id`;
+ *   - never backwards: a span on `to.revision` or a later one is left as it is;
+ *   - a span whose link cannot be read, or whose merge is not resolved for its cable type, is left as it
+ *     is (it keeps what it stores until the person chooses);
+ *   - an unreadable revision changes nothing at all.
+ */
+export const syncSpansToRevision = (elements: readonly DrawingElement[], to: CableTypeRevision, now?: number): { updates: { id: string; changes: Partial<CableElement> }[]; spans: SpanSync[] } => {
+  const none = { updates: [], spans: [] };
+  if (cableTypeRevisionProblem(to) !== null) return none;
+  const updates: { id: string; changes: Partial<CableElement> }[] = [];
+  const spans: SpanSync[] = [];
+  for (const e of elements) {
+    if (e.type !== 'cable') continue;
+    let c = e as CableElement;
+    let changed = false;
+    for (let i = 0; i < c.poleIds.length - 1; i++) {
+      const { id: spanId, props } = spanAt(c, i);
+      const ct = props?.cableType;
+      if (!spanId || !props || !ct || ct.typeId !== to.id) continue;
+      if (spanCableTypeProblem(ct) !== null || cableTypeMergeConflict(props)) continue;
+      if (ct.revision >= to.revision) continue;
+      c = withSpanProps(c, spanId, upgradeSpanCableType(props, to, now).props);
+      spans.push({ cableId: c.id, index: i, spanId, from: ct.revision, to: to.revision });
+      changed = true;
+    }
+    if (changed) updates.push({ id: c.id, changes: { spanProps: c.spanProps } });
+  }
+  return { updates, spans };
 };
 
 // ---------- what the span sheet shows about a link ----------

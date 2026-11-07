@@ -110,12 +110,16 @@ describe('choosing the default cable', () => {
     await expect(c.setDefault('ct_nowhere', 1)).rejects.toMatchObject({ kind: 'not-found' });
     expect(lib.data.has('default-cable')).toBe(false);
   });
-  it('a newer revision in the library is reported, never applied; a missing record is not used and nothing replaces it', async () => {
+  it('a newer revision in the library is reported and new spans get it (the default stays the cable type chosen); a missing record is not used and nothing replaces it', async () => {
     const c = createCableLibraryController({ backend: lib.b });
     await c.setDefault(rev1.id, 1);
     await c.edit(rev1.id, 1, { r: v(0.5, 'ac') });
     expect(c.store.getState().defaultCable).toMatchObject({ kind: 'newer', latest: 2, cable: { revision: 1, snapshot: rev1 } });
-    expect(usableDefault(c.store.getState().defaultCable)!.snapshot.r.value).toBe(0.32); // the chosen revision's values
+    // the stored default is not rewritten (still revision 1); what is applied is the latest revision of that type
+    const used = usableDefault(c.store.getState().defaultCable)!;
+    expect(used).toMatchObject({ typeId: rev1.id, revision: 2 });
+    expect(used.snapshot.r.value).toBe(0.5);
+    expect(used.snapshot.revision).toBe(2);
     // the record is not on this device (another library)
     const d = asDefault(rev1);
     expect(defaultCableState(d, [])).toEqual({ kind: 'missing', cable: d });

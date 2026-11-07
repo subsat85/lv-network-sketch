@@ -4,6 +4,8 @@ import { getProjectsMeta, saveProject, Project, ProjectMetadata } from './projec
 import { t } from '../store/localeStore';
 import { getCableLibrary } from '../store/cableLibraryStore';
 import { importKind, prepareImportedCables, usableDefault, type DefaultCable, type ImportCableReport } from './defaultCable';
+import { withLatestLibraryRevisions } from '../store/cableLibrarySync';
+import type { DrawingElement } from '../types/drawing';
 
 // Importing a project file, in two steps so nothing is written before the user decides:
 //   1. planImport  — parse + validate the whole file and look for a saved project with
@@ -45,6 +47,8 @@ export interface ImportDeps {
   newId: () => string;
   /** the default cable that may be applied now (undefined: none chosen, missing or unreadable) */
   defaultCable: () => Promise<DefaultCable | undefined>;
+  /** the project's spans moved to the latest revisions of this device's library (cableLibrarySync.ts) */
+  latestCables: (elements: DrawingElement[]) => Promise<DrawingElement[]>;
 }
 const appDefaultCable = async (): Promise<DefaultCable | undefined> => {
   const c = getCableLibrary();
@@ -57,6 +61,7 @@ const defaultDeps: ImportDeps = {
   now: Date.now,
   newId: () => crypto.randomUUID(),
   defaultCable: appDefaultCable,
+  latestCables: async (elements) => (await withLatestLibraryRevisions(elements, undefined, Date.now())).elements,
 };
 
 export const DEFAULT_IMPORT_NAME = 'Imported Project';
@@ -121,6 +126,10 @@ const projectData = (data: ProjectExportData): Project['data'] => ({
 export const applyImport = async (plan: ImportPlan, choice: ImportChoice, deps: Partial<ImportDeps> = {}): Promise<ApplyResult> => {
   const d = { ...defaultDeps, ...deps };
   if (choice === 'cancel') return { ok: true, status: 'cancelled' };
+  // opened (and saved) on the latest revisions of the library's cable types; as it is when it cannot be read
+  let latest = plan.data.elements;
+  try { latest = await d.latestCables(plan.data.elements); } catch { latest = plan.data.elements; }
+  if (latest !== plan.data.elements) plan = { ...plan, data: { ...plan.data, elements: latest } };
 
   if (choice === 'open') {
     if (plan.conflict) return { ok: false, message: t('dialogs.importConflict') };

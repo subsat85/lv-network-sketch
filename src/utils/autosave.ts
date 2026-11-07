@@ -5,6 +5,7 @@ import { DrawingElement, DrawingStyle } from '../types/drawing';
 import { META_KEY, ProjectData, ProjectMetadata } from './projectStorage';
 import { readElectricalSettings } from './electricalSettings';
 import { readDistanceFlags } from './distances';
+import { withLatestLibraryRevisions } from '../store/cableLibrarySync';
 
 // Automatic draft of the current drawing.
 //
@@ -186,6 +187,8 @@ export interface RestoreOptions {
   storage?: DraftStorage;
   guard?: RestoreGuard;
   rendered?: () => Promise<boolean>;
+  /** the draft's spans moved to the latest revisions of this device's library (cableLibrarySync.ts) */
+  latestCables?: (elements: DrawingElement[]) => Promise<DrawingElement[]>;
 }
 
 const setAside = async (storage: DraftStorage, raw: unknown) => {
@@ -222,6 +225,10 @@ export const restoreDraft = async (opts: RestoreOptions = {}): Promise<RestoreRe
     return { status: 'invalid', reason: 'draft failed to render on the previous start' };
   }
 
+  // Opened on the latest revisions of the library's cable types (as it is when the library cannot be read).
+  let elements = draft.data.elements as DrawingElement[];
+  try { elements = await (opts.latestCables ?? (async (els) => (await withLatestLibraryRevisions(els, undefined, Date.now())).elements))(elements); } catch { /* as stored */ }
+
   // The user already started working before the draft was read: keep their work.
   const now = useDrawingStore.getState();
   if (now.elements !== startState.elements || now.elements.length > 0 || now.currentProjectId) {
@@ -242,7 +249,7 @@ export const restoreDraft = async (opts: RestoreOptions = {}): Promise<RestoreRe
 
   guard.set(String(draft.savedAt));
   const store = useDrawingStore.getState();
-  store.loadProject(draft.data);
+  store.loadProject(elements === draft.data.elements ? draft.data : { ...draft.data, elements });
   store.setProjectInfo(projectId, draft.projectName);
   if (detached) status.show('info', MESSAGES.detached);
   const rendered = await (opts.rendered ?? defaultRendered)();

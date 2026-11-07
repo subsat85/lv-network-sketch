@@ -12,6 +12,7 @@ import {
 import { serializeProject } from '../utils/projectSerialization';
 import { planImport, applyImport, ImportPlan, ImportChoice, copyName } from '../utils/projectImport';
 import { ProjectDataError } from '../utils/projectMigration';
+import { withLatestLibraryRevisions } from '../store/cableLibrarySync';
 import { saveFile, openFile } from '../utils/filePickers';
 import { useLocale, useT } from '../store/localeStore';
 import { directionOf } from '../i18n';
@@ -147,8 +148,11 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({ isOpen, onClose 
     try {
       const project = await loadProject(id);
       if (project) {
+        // opened on the latest revisions of the library's cable types (cableLibrarySync.ts)
+        let elements = project.data.elements;
+        try { elements = (await withLatestLibraryRevisions(project.data.elements, undefined, Date.now())).elements; } catch { /* as saved */ }
         loadProjectToStore({
-          elements: project.data.elements,
+          elements,
           style: project.data.style,
           poleSizeScale: project.data.poleSizeScale,
           consumerVariant: project.data.consumerVariant,
