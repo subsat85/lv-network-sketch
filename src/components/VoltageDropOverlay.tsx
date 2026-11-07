@@ -32,9 +32,13 @@ interface Props {
   texts?: { a: { x: number; y: number }; b: { x: number; y: number }; half: number }[];
   /** pole numbers moved to make room for a cable name on a short span */
   tagShifts?: Map<string, { dx: number; dy: number }>;
+  /** draw the red boxes of spans above their maximum allowable current (default: yes). The drawing
+   *  space passes false: those results are in the network analysis panel and its report; they are
+   *  still computed, and the placing of everything else does not depend on them. */
+  currentWarnings?: boolean;
 }
 
-export const VoltageDropOverlay: React.FC<Props> = ({ elements, result, poleRadius, textScale = 1, layoutContext, boxes, viewScale, texts, tagShifts }) => {
+export const VoltageDropOverlay: React.FC<Props> = ({ elements, result, poleRadius, textScale = 1, layoutContext, boxes, viewScale, texts, tagShifts, currentWarnings = true }) => {
   const L = useMemo(() => vdOverlayLayout(elements, result, {
     ctx: { ...layoutContext, poleRadius },
     fs: 11 * textScale,
@@ -63,7 +67,7 @@ export const VoltageDropOverlay: React.FC<Props> = ({ elements, result, poleRadi
   // spans that cannot be computed for lack of data: a "؟" at their middle
   for (const m of L.missing) out.push(<text key={`span:${m.key}`} x={m.x} y={m.y} textAnchor="middle" fontSize={m.fontSize} fontWeight={700} fill={m.color} stroke="white" strokeWidth={3} paintOrder="stroke" fontFamily="sans-serif" data-vd-missing={m.key}>؟</text>);
   // a span's current above its cable's maximum allowable current: red, with the current and the limit
-  for (const c of L.currentWarnings) out.push(
+  if (currentWarnings) for (const c of L.currentWarnings) out.push(
     <g key={`amp:${c.key}`} data-vd-ampacity={c.key} data-vd-ampacity-current={c.currentA.toFixed(2)} data-vd-ampacity-limit={c.limitA}>
       <rect x={c.x} y={c.y} width={c.w} height={c.h} rx={c.h * 0.25} fill="white" fillOpacity={0.95} stroke="#dc2626" strokeWidth={1.4} />
       <text x={c.x + c.w / 2} y={c.y + c.h * 0.7} textAnchor="middle" fontSize={c.fontSize} fontWeight={700} fill="#dc2626" fontFamily="sans-serif" direction="ltr">{c.text}</text>

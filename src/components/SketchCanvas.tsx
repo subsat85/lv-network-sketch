@@ -2608,7 +2608,7 @@ export const SketchCanvas: React.FC<{ fullScreen?: boolean }> = ({ fullScreen = 
 
           <CableNameLabels labels={cableNameResult.labels} />
 
-          {vdResult && <VoltageDropOverlay elements={elements} result={vdResult} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} layoutContext={vdLayoutCtx} boxes={vdBoxes} viewScale={viewScale} texts={cableNameResult.labels} tagShifts={cableNameResult.tagShifts} />}
+          {vdResult && <VoltageDropOverlay elements={elements} result={vdResult} poleRadius={POLE_RADIUS * poleSizeScale} textScale={distanceTextScale} layoutContext={vdLayoutCtx} boxes={vdBoxes} viewScale={viewScale} texts={cableNameResult.labels} tagShifts={cableNameResult.tagShifts} currentWarnings={false} />}
 
           {renderAnalysisMark()}
 
